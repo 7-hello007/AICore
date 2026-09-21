@@ -1,0 +1,14 @@
+Package: aicore
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: AICore Team <dev@aicore.local>
+Depends: libc6 (>= 2.31)
+Recommends: systemd
+Description: AICore — AI Computer Control Layer
+ AICore is a user-space AI control layer that sits between applications,
+ the operating system, and hardware. It observes system state, infers
+ workload, and adapts resources with rollback safety.
+ .
+ This package installs the AICore daemon, CLI, and dashboard.

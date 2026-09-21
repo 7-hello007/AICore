@@ -1,0 +1,138 @@
+//! ShortHorizonPredictor 单元测试。
+
+use aicore_contracts::{
+    context::{snapshot::ContextSnapshot, workload::WorkloadType},
+    errors::ContractError,
+    memory::context::MemoryContext,
+    prediction::input::PredictionInput,
+    telemetry::snapshot::ComputerSnapshot,
+    traits::predictor::IPredictor,
+};
+use aicore_core::prediction::ShortHorizonPredictor;
+
+fn input_with_memory(memory: Option<MemoryContext>) -> PredictionInput {
+    PredictionInput {
+        snapshot: ComputerSnapshot::default(),
+        context: ContextSnapshot::default(),
+        memory,
+        horizon_ms: 5_000,
+    }
+}
+
+fn consistent_memory(workload: WorkloadType, samples: usize) -> MemoryContext {
+    MemoryContext {
+        recent_workloads: vec![workload; samples.min(8)],
+        dominant_workload: Some(workload),
+        preferred_power_mode: None,
+        sample_count: samples,
+    }
+}
+
+#[test]
+fn predict_without_memory_fails() {
+    let p = ShortHorizonPredictor::with_defaults();
+    let err = p.predict(&input_with_memory(None)).unwrap_err();
+    assert!(matches!(err, ContractError::AiInferenceFailed(_)));
+}
+
+#[test]
+fn predict_with_insufficient_samples_fails() {
+    let p = ShortHorizonPredictor::new(5, 5_000, 0.5);
+    let mem = MemoryContext {
+        recent_workloads: vec![WorkloadType::Development; 2],
+        dominant_workload: Some(WorkloadType::Development),
+        preferred_power_mode: None,
+        sample_count: 2,
+    };
+    let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
+    let msg = format!("{}", err);
+    assert!(msg.contains("insufficient"), "got: {}", msg);
+}
+
+#[test]
+fn predict_with_consistent_samples_succeeds() {
+    let p = ShortHorizonPredictor::new(3, 5_000, 0.5);
+    let mem = consistent_memory(WorkloadType::Development, 5);
+    let pred = p.predict(&input_with_memory(Some(mem))).unwrap();
+    assert_eq!(pred.predicted_workload, WorkloadType::Development);
+    assert!(pred.confidence >= 0.5);
+    assert_eq!(pred.predictor_name, "short_horizon");
+    assert_eq!(pred.horizon_ms, 5_000);
+}
+
+#[test]
+fn confidence_grows_with_samples() {
+    let p = ShortHorizonPredictor::new(3, 5_000, 0.5);
+
+    let few = consistent_memory(WorkloadType::Development, 5);
+    let many = consistent_memory(WorkloadType::Development, 20);
+
+    let c_few = p.predict(&input_with_memory(Some(few))).unwrap().confidence;
+    let c_many = p
+        .predict(&input_with_memory(Some(many)))
+        .unwrap()
+        .confidence;
+
+    assert!(c_many > c_few, "expected {} > {}", c_many, c_few);
+}
+
+#[test]
+fn predict_with_mixed_recent_falls_back_to_dominant() {
+    let p = ShortHorizonPredictor::new(3, 5_000, 0.5);
+    let mem = MemoryContext {
+        recent_workloads: vec![
+            WorkloadType::Gaming,
+            WorkloadType::Development,
+            WorkloadType::VideoEditing,
+        ],
+        dominant_workload: Some(WorkloadType::Development),
+        preferred_power_mode: None,
+        sample_count: 10,
+    };
+    let pred = p.predict(&input_with_memory(Some(mem))).unwrap();
+    assert_eq!(pred.predicted_workload, WorkloadType::Development);
+    // 多数场景置信度是 0.5
+    assert!((pred.confidence - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn predict_with_unknown_dominant_fails() {
+    let p = ShortHorizonPredictor::new(3, 5_000, 0.5);
+    let mem = MemoryContext {
+        recent_workloads: vec![WorkloadType::Unknown; 5],
+        dominant_workload: Some(WorkloadType::Unknown),
+        preferred_power_mode: None,
+        sample_count: 5,
+    };
+    // Unknown 且样本足够 → 一致性检查跳过，多数检查也跳过 → Err
+    let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
+    let msg = format!("{}", err);
+    assert!(msg.contains("no dominant or consistent"), "got: {}", msg);
+}
+
+#[test]
+fn min_confidence_filters_low_confidence() {
+    let p = ShortHorizonPredictor::new(3, 5_000, 0.99);
+    let mem = consistent_memory(WorkloadType::Development, 5);
+    // 一致性场景置信度上限 0.95，小于 0.99 → 会走到 dominant 分支
+    // dominant 置信度 0.5 < 0.99 → 最终 Err
+    let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
+    assert!(matches!(err, ContractError::AiInferenceFailed(_)));
+}
+
+#[test]
+fn name_and_horizon() {
+    let p = ShortHorizonPredictor::new(3, 10_000, 0.5);
+    assert_eq!(p.name(), "short_horizon");
+    assert_eq!(p.horizon_ms(), 10_000);
+    assert_eq!(p.min_samples(), 3);
+    assert!((p.min_confidence() - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn defaults_are_sensible() {
+    let p = ShortHorizonPredictor::with_defaults();
+    assert_eq!(p.min_samples(), 3);
+    assert_eq!(p.horizon_ms(), 5_000);
+    assert!((p.min_confidence() - 0.5).abs() < f32::EPSILON);
+}

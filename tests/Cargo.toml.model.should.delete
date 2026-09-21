@@ -1,0 +1,3 @@
+[[test]]
+name = "model_execution_unit"
+path = "modelNORealPC.execution.unit.test.rs"

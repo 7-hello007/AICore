@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>AICore — Control Center</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+  <div class="brand"><div class="mark">A</div><div><div class="brand-title">AICore</div><div class="brand-sub">AI Computer Control Layer</div></div></div>
+  <div class="live"><span id="connection" class="dot"></span><span id="connection-text">CONNECTING</span><span id="last-update">—</span></div>
+</header>
+<main>
+  <section class="hero">
+    <div><div class="eyebrow">SYSTEM INTELLIGENCE</div><h1>Computer Control Center</h1><p>Observe → Understand → Predict → Decide → Act</p></div>
+    <div class="hero-mode"><span class="label">RUNTIME MODE</span><strong id="mode">—</strong></div>
+  </section>
+  <section class="metrics">
+    <div class="metric"><span>CPU</span><strong id="cpu">—</strong><div class="bar"><i id="cpu-bar"></i></div></div>
+    <div class="metric"><span>GPU</span><strong id="gpu">—</strong><div class="bar"><i id="gpu-bar"></i></div></div>
+    <div class="metric"><span>NPU</span><strong id="npu">—</strong><div class="bar"><i id="npu-bar"></i></div></div>
+    <div class="metric"><span>MEMORY</span><strong id="ram">—</strong><div class="bar"><i id="ram-bar"></i></div></div>
+  </section>
+  <section class="grid two">
+    <article class="panel"><div class="panel-head"><span>Current Context</span><span id="context-badge" class="pill">—</span></div><div id="context" class="kv"></div></article>
+    <article class="panel"><div class="panel-head"><span>Runtime Route</span><span id="route-badge" class="pill">—</span></div><div id="route" class="kv"></div></article>
+  </section>
+  <section class="grid two">
+    <article class="panel"><div class="panel-head"><span>AI Runtime</span><span id="ai-badge" class="pill">—</span></div><div id="ai-runtime" class="kv"></div></article>
+    <article class="panel"><div class="panel-head"><span>Last Tick</span><span id="tick-badge" class="pill">—</span></div><div id="last-tick" class="kv"></div></article>
+  </section>
+  <section class="panel"><div class="panel-head"><span>Recent Activity</span><span class="muted">live stream</span></div><div id="recent-ticks" class="activity"></div></section>
+  <section class="grid two">
+    <article class="panel"><div class="panel-head"><span>Capabilities</span><span id="cap-count" class="pill">0</span></div><div id="capabilities" class="chips"></div></article>
+    <article class="panel"><div class="panel-head"><span>Plugins</span><span id="plugin-count" class="pill">0</span></div><div id="plugins" class="chips"></div></article>
+  </section>
+  <section class="panel error-panel" id="errors-section" hidden><div class="panel-head"><span>System Notices</span></div><div id="errors"></div></section>
+</main>
+<footer>Local dashboard · read-only · data supplied by AICore daemon IPC</footer>
+</div>
+<script src="/app.js"></script>
+</body></html>

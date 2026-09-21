@@ -1,0 +1,479 @@
+[package]
+name = "aicore-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+autotests = false
+autobins = false
+autoexamples = false
+autobenches = false
+
+[dependencies]
+aicore-contracts = { path = "../contracts" }
+aicore-core = { path = "../core" }
+serde_json.workspace = true
+hex.workspace = true
+rand.workspace = true
+ed25519-dalek.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[dev-dependencies]
+aicore-adapter-linux = { path = "../adapters/linux" }
+aicore-adapter-windows = { path = "../adapters/windows" }
+aicore-ai = { path = "../ai" }
+aicore-ai-runtime = { path = "../ai-runtime" }
+aicore-memory = { path = "../memory" }
+aicore-api = { path = "../api" }
+aicore-ipc = { path = "../ipc" }
+aicore-plugin = { path = "../plugin" }
+aicore-tier = { path = "../tier" }
+aicore-tier-l0 = { path = "../tier-l0" }
+aicore-tier-l1 = { path = "../tier-l1" }
+aicore-tier-l2 = { path = "../tier-l2" }
+aicore-task-runtime = { path = "../task-runtime" }
+aicore-runtime-router = { path = "../runtime-router" }
+aicore-service-host = { path = "../service-host" }
+aicore-dashboard = { path = "../apps/aicore-dashboard" }
+aicore-runtime = { path = "../runtime" }
+
+[[test]]
+name = "telemetry_snapshot_contract"
+path = "telemetry.snapshot.contract.test.rs"
+
+[[test]]
+name = "telemetry_normalize_unit"
+path = "telemetry.normalize.unit.test.rs"
+
+[[test]]
+name = "adapter_linux_contract"
+path = "adapter.linux.contract.test.rs"
+
+[[test]]
+name = "adapter_windows_contract"
+path = "adapter.windows.contract.test.rs"
+
+[[test]]
+name = "pipeline_collect_snapshot_integration"
+path = "pipeline.collectSnapshot.integration.test.rs"
+
+[[test]]
+name = "context_build_state_unit"
+path = "context.buildState.unit.test.rs"
+
+[[test]]
+name = "context_classify_workload_unit"
+path = "context.classifyWorkload.unit.test.rs"
+
+[[test]]
+name = "context_publish_event_unit"
+path = "context.publishEvent.unit.test.rs"
+
+[[test]]
+name = "pipeline_context_flow_integration"
+path = "pipeline.contextFlow.integration.test.rs"
+
+[[test]]
+name = "policy_generate_policy_unit"
+path = "policy.generatePolicy.unit.test.rs"
+
+[[test]]
+name = "validator_validate_policy_unit"
+path = "validator.validatePolicy.unit.test.rs"
+
+[[test]]
+name = "pipeline_policy_flow_integration"
+path = "pipeline.policyFlow.integration.test.rs"
+
+[[test]]
+name = "process_controller_contract"
+path = "process.controller.contract.test.rs"
+
+[[test]]
+name = "power_controller_contract"
+path = "power.controller.contract.test.rs"
+
+[[test]]
+name = "pipeline_execute_policy_integration"
+path = "pipeline.executePolicy.integration.test.rs"
+
+[[test]]
+name = "ai_inference_unit"
+path = "ai.inference.unit.test.rs"
+
+[[test]]
+name = "ai_fallback_unit"
+path = "ai.fallback.unit.test.rs"
+
+[[test]]
+name = "pipeline_ai_assisted_policy_integration"
+path = "pipeline.aiAssistedPolicy.integration.test.rs"
+
+[[test]]
+name = "memory_store_history_unit"
+path = "memory.storeHistory.unit.test.rs"
+
+[[test]]
+name = "memory_load_history_unit"
+path = "memory.loadHistory.unit.test.rs"
+
+[[test]]
+name = "pipeline_personalized_policy_integration"
+path = "pipeline.personalizedPolicy.integration.test.rs"
+
+[[test]]
+name = "task_submit_contract_unit"
+path = "task.submitContract.unit.test.rs"
+
+[[test]]
+name = "application_registry_unit"
+path = "application.registry.unit.test.rs"
+
+[[test]]
+name = "pipeline_application_integration"
+path = "pipeline.applicationIntegration.integration.test.rs"
+
+[[test]]
+name = "runtime_adaptive_loop_unit"
+path = "runtime.adaptiveLoop.unit.test.rs"
+
+[[test]]
+name = "runtime_safe_mode_unit"
+path = "runtime.safeMode.unit.test.rs"
+
+[[test]]
+name = "pipeline_adaptive_computer_integration"
+path = "pipeline.adaptiveComputer.integration.test.rs"
+
+[[test]]
+name = "telemetry_refresh_unit"
+path = "telemetry.refresh.unit.test.rs"
+
+[[test]]
+name = "capability_detect_unit"
+path = "capability.detect.unit.test.rs"
+
+[[test]]
+name = "runtime_trace_unit"
+path = "runtime.trace.unit.test.rs"
+
+[[test]]
+name = "system_smoke"
+path = "system.smoke.test.rs"
+
+[[test]]
+name = "daemon_state_unit"
+path = "daemon.state.unit.test.rs"
+
+[[test]]
+name = "daemon_lifecycle_integration"
+path = "daemon.lifecycle.integration.test.rs"
+
+[[test]]
+name = "telemetry_real_data_unit"
+path = "telemetry.realData.unit.test.rs"
+
+[[test]]
+name = "executor_affinity_unit"
+path = "executor.affinity.unit.test.rs"
+
+[[test]]
+name = "controller_gpu_contract"
+path = "controller.gpu.contract.test.rs"
+
+[[test]]
+name = "ai_local_inference_unit"
+path = "ai.localInference.unit.test.rs"
+
+[[test]]
+name = "ai_model_registry_unit"
+path = "ai.modelRegistry.unit.test.rs"
+
+[[test]]
+name = "ai_fallback_flow_integration"
+path = "ai.fallbackFlow.integration.test.rs"
+
+[[test]]
+name = "memory_sqlite_store_unit"
+path = "memory.sqliteStore.unit.test.rs"
+
+[[test]]
+name = "memory_migration_unit"
+path = "memory.migration.unit.test.rs"
+
+[[test]]
+name = "pipeline_personalized_ai_integration"
+path = "pipeline.personalizedAi.integration.test.rs"
+
+[[test]]
+name = "predictor_short_horizon_unit"
+path = "predictor.shortHorizon.unit.test.rs"
+
+[[test]]
+name = "pipeline_predictive_loop_integration"
+path = "pipeline.predictiveLoop.integration.test.rs"
+
+[[test]]
+name = "ipc_recent_ticks_unit"
+path = "ipc.recentTicks.unit.test.rs"
+
+[[test]]
+name = "pipeline_cli_query_integration"
+path = "pipeline.cliQuery.integration.test.rs"
+
+[[test]]
+name = "execution_status_unit"
+path = "execution.status.unit.test.rs"
+
+[[test]]
+name = "plugin_manifest_unit"
+path = "plugin.manifest.unit.test.rs"
+
+[[test]]
+name = "plugin_lifecycle_unit"
+path = "plugin.lifecycle.unit.test.rs"
+
+[[test]]
+name = "pipeline_plugin_load_integration"
+path = "pipeline.pluginLoad.integration.test.rs"
+
+[[test]]
+name = "config_loader_unit"
+path = "config.loader.unit.test.rs"
+
+[[test]]
+name = "tier_registry_unit"
+path = "tier.registry.unit.test.rs"
+
+[[test]]
+name = "tier_capability_discovery_unit"
+path = "tier.capabilityDiscovery.unit.test.rs"
+
+[[test]]
+name = "tier_removal_integration"
+path = "tier.removal.integration.test.rs"
+
+[[test]]
+name = "l0_standalone_unit"
+path = "l0.standalone.unit.test.rs"
+
+[[test]]
+name = "l0_removal_integration"
+path = "l0.removal.integration.test.rs"
+
+[[test]]
+name = "l0_affinity_unit"
+path = "l0.affinity.unit.test.rs"
+
+[[test]]
+name = "workload_fusion_unit"
+path = "workload.fusion.unit.test.rs"
+
+[[test]]
+name = "workload_ml_source_unit"
+path = "workload.mlSource.unit.test.rs"
+
+[[test]]
+name = "workload_layered_inference_integration"
+path = "workload.layeredInference.integration.test.rs"
+
+[[test]]
+name = "transparent_control_unit"
+path = "transparent.control.unit.test.rs"
+
+[[test]]
+name = "control_trace_unit"
+path = "control.trace.unit.test.rs"
+
+[[test]]
+name = "rollback_integration"
+path = "rollback.integration.test.rs"
+
+[[test]]
+name = "ai_runtime_unit"
+path = "aiRuntime.unit.test.rs"
+
+[[test]]
+name = "ai_runtime_bridge_integration"
+path = "aiRuntime.bridge.integration.test.rs"
+
+[[test]]
+name = "ai_runtime_fallback_integration"
+path = "aiRuntime.fallback.integration.test.rs"
+
+[[test]]
+name = "task_queue_unit"
+path = "task.queue.unit.test.rs"
+
+[[test]]
+name = "task_lifecycle_unit"
+path = "task.lifecycle.unit.test.rs"
+
+[[test]]
+name = "pipeline_task_pipeline_integration"
+path = "pipeline.taskPipeline.integration.test.rs"
+
+[[test]]
+name = "l1_standalone_unit"
+path = "l1.standalone.unit.test.rs"
+
+[[test]]
+name = "l2_standalone_unit"
+path = "l2.standalone.unit.test.rs"
+
+[[test]]
+name = "tier_multi_level_integration"
+path = "tier.multiLevel.integration.test.rs"
+
+[[test]]
+name = "runtime_routing_unit"
+path = "runtime.routing.unit.test.rs"
+
+[[test]]
+name = "runtime_route_fallback_integration"
+path = "runtime.routeFallback.integration.test.rs"
+
+[[test]]
+name = "memory_retention_scheduler_unit"
+path = "memory.retentionScheduler.unit.test.rs"
+
+[[test]]
+name = "memory_retention_audit_unit"
+path = "memory.retentionAudit.unit.test.rs"
+
+[[test]]
+name = "memory_retention_integration"
+path = "memory.retention.integration.test.rs"
+
+[[test]]
+name = "plugin_signature_unit"
+path = "plugin.signature.unit.test.rs"
+
+[[test]]
+name = "plugin_loader_unit"
+path = "plugin.loader.unit.test.rs"
+
+[[test]]
+name = "plugin_sandbox_unit"
+path = "plugin.sandbox.unit.test.rs"
+
+[[test]]
+name = "plugin_loader_integration"
+path = "plugin.loader.integration.test.rs"
+
+[[test]]
+name = "dashboard_render_unit"
+path = "dashboard.render.unit.test.rs"
+
+[[test]]
+name = "dashboard_client_integration"
+path = "dashboard.client.integration.test.rs"
+
+[[test]]
+name = "installer_smoke"
+path = "installer.smoke.test.rs"
+
+[[test]]
+name = "acceptance_project_engineering"
+path = "acceptance.projectEngineering.test.rs"
+
+[[test]]
+name = "contracts_project_freeze"
+path = "contracts.projectFreeze.test.rs"
+
+[[test]]
+name = "ai_runtime_real_model_unit"
+path = "aiRuntime.realModel.unit.test.rs"
+
+[[test]]
+name = "ai_runtime_real_model_integration"
+path = "aiRuntime.realModel.integration.test.rs"
+
+[[test]]
+name = "ai_runtime_timeout_integration"
+path = "aiRuntime.timeout.integration.test.rs"
+
+[[test]]
+name = "runtime_binding_unit"
+path = "runtime.binding.unit.test.rs"
+
+[[test]]
+name = "runtime_route_execution_integration"
+path = "runtime.routeExecution.integration.test.rs"
+
+[[test]]
+name = "runtime_native_fallback_integration"
+path = "runtime.nativeFallback.integration.test.rs"
+
+[[test]]
+name = "hardware_telemetry_unit"
+path = "hardware.telemetry.unit.test.rs"
+
+[[test]]
+name = "hardware_executor_unit"
+path = "hardware.executor.unit.test.rs"
+
+[[test]]
+name = "hardware_capability_unit"
+path = "hardware.capability.unit.test.rs"
+
+[[test]]
+name = "controller_gpu_real_integration"
+path = "controller.gpuReal.integration.test.rs"
+
+[[test]]
+name = "controller_npu_real_integration"
+path = "controller.npuReal.integration.test.rs"
+
+[[test]]
+name = "dashboard_web_api_integration"
+path = "dashboard.webApi.integration.test.rs"
+
+[[test]]
+name = "dashboard_web_snapshot_integration"
+path = "dashboard.webSnapshot.integration.test.rs"
+
+[[test]]
+name = "dashboard_data_plane_integration"
+path = "dashboard.dataPlane.integration.test.rs"
+
+[[test]]
+name = "service_lifecycle_unit"
+path = "service.lifecycle.unit.test.rs"
+
+[[test]]
+name = "service_upgrade_integration"
+path = "service.upgrade.integration.test.rs"
+
+[[test]]
+name = "installer_windows_e2e"
+path = "installer.windows.e2e.test.rs"
+
+[[test]]
+name = "plugin_signature_verification_unit"
+path = "plugin.signatureVerification.unit.test.rs"
+
+[[test]]
+name = "plugin_trust_store_unit"
+path = "plugin.trustStore.unit.test.rs"
+
+[[test]]
+name = "plugin_process_isolation_integration"
+path = "plugin.processIsolation.integration.test.rs"
+
+[[test]]
+name = "stability_long_run_integration"
+path = "stability.longRun.integration.test.rs"
+
+[[test]]
+name = "l0_real_workload_e2e"
+path = "l0.realWorkload.e2e.test.rs"
+
+[[test]]
+name = "stability_failure_recovery_integration"
+path = "stability.failureRecovery.integration.test.rs"
+
+[[test]]
+name = "model_execution_unit"
+path = "modelNORealPC.execution.unit.test.rs"

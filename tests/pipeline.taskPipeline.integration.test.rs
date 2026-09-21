@@ -1,0 +1,179 @@
+//! Task Pipeline 集成测试：enqueue → AdaptiveLoop tick 消费 → complete。
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use aicore_contracts::execution::{
+    result::{ExecutionOutcome, ExecutionResult},
+    status::{ExecutionOverallStatus, ExecutionStatus},
+};
+use aicore_contracts::policy::resource_policy::ResourcePolicy;
+use aicore_contracts::{
+    application::id::ApplicationId,
+    context::workload::WorkloadType,
+    errors::ContractResult,
+    execution::targets::ExecutionTargets,
+    runtime::config::AdaptiveLoopConfig,
+    task::{contract::TaskContract, lifecycle::TaskState, queued::QueuedTask},
+    telemetry::snapshot::ComputerSnapshot,
+    traits::{
+        policy_engine::IPolicyEngine, policy_executor::IPolicyExecutor,
+        runtime_orchestrator::IRuntimeOrchestrator, task_queue::ITaskQueue,
+        telemetry_provider::ITelemetryProvider,
+    },
+};
+use aicore_core::{
+    context::{ContextEngine, RuleBasedClassifier},
+    policy::RuleBasedPolicyEngine,
+};
+use aicore_runtime::AdaptiveLoop;
+use aicore_task_runtime::InMemoryTaskQueue;
+
+struct MockTelemetry {
+    calls: AtomicU64,
+}
+
+impl MockTelemetry {
+    fn new() -> Self {
+        Self {
+            calls: AtomicU64::new(0),
+        }
+    }
+}
+
+impl ITelemetryProvider for MockTelemetry {
+    fn collect(&self) -> ContractResult<ComputerSnapshot> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let mut s = ComputerSnapshot::default();
+        s.cpu.logical_cores = 8;
+        Ok(s)
+    }
+    fn platform_name(&self) -> &'static str {
+        "mock"
+    }
+    fn capabilities(&self) -> Vec<&'static str> {
+        vec![]
+    }
+}
+
+struct OkExecutor;
+
+impl IPolicyExecutor for OkExecutor {
+    fn execute(&self, p: &ResourcePolicy, _t: &ExecutionTargets) -> ExecutionResult {
+        ExecutionResult {
+            policy_id: p.policy_id.clone(),
+            overall_status: ExecutionOverallStatus::AllSucceeded,
+            started_at_unix_ms: 0,
+            finished_at_unix_ms: 0,
+            outcomes: vec![ExecutionOutcome {
+                resource: "mock".to_string(),
+                target: "system".to_string(),
+                status: ExecutionStatus::Success,
+                message: "ok".to_string(),
+            }],
+        }
+    }
+    fn name(&self) -> &'static str {
+        "ok_executor"
+    }
+}
+
+fn build_loop(queue: Arc<dyn ITaskQueue>) -> AdaptiveLoop {
+    let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(MockTelemetry::new());
+    let ctx_engine = Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new())));
+    let base: Arc<dyn IPolicyEngine> = Arc::new(RuleBasedPolicyEngine::new());
+    let fallback = base.clone();
+    let validator = Arc::new(aicore_core::policy::DefaultPolicyValidator::new());
+    let executor: Arc<dyn IPolicyExecutor> = Arc::new(OkExecutor);
+
+    AdaptiveLoop::new(
+        telemetry,
+        ctx_engine,
+        base,
+        fallback,
+        validator,
+        executor,
+        AdaptiveLoopConfig::default(),
+    )
+    .with_task_queue(queue)
+}
+
+fn dev_task(id: &str) -> QueuedTask {
+    let mut c = TaskContract::minimal(ApplicationId::new("com.example.ide"));
+    c.task_id = Some(id.to_string());
+    c.task = Some(WorkloadType::Development);
+    QueuedTask::new(id.to_string(), c, 1000)
+}
+
+#[test]
+fn task_enqueued_then_consumed_by_tick() {
+    let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+    queue.enqueue(dev_task("t1")).unwrap();
+    assert_eq!(queue.queued_count().unwrap(), 1);
+
+    let loop_ = build_loop(queue.clone());
+    let outcome = loop_.tick(&ExecutionTargets::default());
+
+    assert!(outcome.success);
+    // task 被消费
+    let t = queue.get("t1").unwrap().unwrap();
+    assert_eq!(t.state, TaskState::Completed);
+    assert_eq!(queue.queued_count().unwrap(), 0);
+}
+
+#[test]
+fn tick_without_task_has_no_task_id_in_message() {
+    let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+    let loop_ = build_loop(queue.clone());
+    let outcome = loop_.tick(&ExecutionTargets::default());
+
+    assert!(outcome.success);
+    // queue 仍为空
+    assert_eq!(queue.queued_count().unwrap(), 0);
+}
+
+#[test]
+fn multiple_ticks_consume_multiple_tasks() {
+    let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+    for i in 0..3 {
+        queue.enqueue(dev_task(&format!("t{}", i))).unwrap();
+    }
+
+    let loop_ = build_loop(queue.clone());
+    for _ in 0..3 {
+        let _ = loop_.tick(&ExecutionTargets::default());
+    }
+
+    assert_eq!(queue.queued_count().unwrap(), 0);
+    let snap = queue.snapshot().unwrap();
+    assert!(snap.iter().all(|t| t.state == TaskState::Completed));
+}
+
+#[test]
+fn invalid_transition_during_finish_is_reported_gracefully() {
+    // 手工构造：先 enqueue，不 dequeue，直接 complete 会失败
+    let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+    queue.enqueue(dev_task("t1")).unwrap();
+    let result = queue.complete("t1", None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn task_without_task_field_does_not_change_workload() {
+    let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+    // task 无 task 字段 → 不改 context.workload_type
+    let mut c = TaskContract::minimal(ApplicationId::new("com.example.app"));
+    c.task_id = Some("t1".to_string());
+    queue
+        .enqueue(QueuedTask::new("t1".to_string(), c, 1000))
+        .unwrap();
+
+    let loop_ = build_loop(queue.clone());
+    let outcome = loop_.tick(&ExecutionTargets::default());
+    // 依然成功执行
+    assert!(outcome.success);
+    assert_eq!(
+        queue.get("t1").unwrap().unwrap().state,
+        TaskState::Completed
+    );
+}

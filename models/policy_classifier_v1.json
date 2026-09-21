@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "name": "policy_classifier_v1",
+  "version": "1.0.0",
+  "feature_dim": 4,
+  "labels": ["boost_cpu", "boost_gpu", "boost_npu", "power_save", "keep_base"],
+  "weights": [
+    [0.8, 0.0, 0.0, 0.0],
+    [0.0, 0.9, 0.0, 0.0],
+    [0.0, 0.0, 0.9, 0.0],
+    [0.0, 0.0, 0.0, 0.3],
+    [0.2, 0.2, 0.2, 0.2]
+  ]
+}

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AICore MSI Template (WiX v3)
+
+  Build:
+    candle aicore.wxs
+    light -out aicore.msi aicore.wixobj
+
+  或通过 build-msi.ps1 自动构建。
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="AICore"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="AICore Team"
+           UpgradeCode="7E2D1A40-0E4C-4C4A-A1A0-0C3A4D6B19D2">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="AICore AI Computer Control Layer"/>
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="AICore">
+          <Component Id="AiCoredBinary" Guid="*">
+            <File Id="AiCoredExe"
+                  Source="$(var.BinDir)\aicored.exe"
+                  KeyPath="yes"/>
+          </Component>
+          <Component Id="AiCoreCliBinary" Guid="*">
+            <File Id="AiCoreExe"
+                  Source="$(var.BinDir)\aicore.exe"
+                  KeyPath="yes"/>
+          </Component>
+          <Component Id="AiCoreService" Guid="*">
+            <ServiceInstall Id="AiCoredService"
+                            Name="aicored"
+                            DisplayName="AICore Daemon"
+                            Description="AI Computer Control Layer"
+                            Type="ownProcess"
+                            Start="auto"
+                            ErrorControl="normal"
+                            Vital="yes"/>
+            <ServiceControl Id="AiCoredServiceControl"
+                            Name="aicored"
+                            Start="install"
+                            Stop="both"
+                            Remove="uninstall"
+                            Wait="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Main" Title="AICore" Level="1">
+      <ComponentRef Id="AiCoredBinary"/>
+      <ComponentRef Id="AiCoreCliBinary"/>
+      <ComponentRef Id="AiCoreService"/>
+    </Feature>
+  </Product>
+</Wix>

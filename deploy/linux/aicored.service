@@ -1,0 +1,56 @@
+[Unit]
+Description=AICore Daemon — AI Computer Control Layer
+Documentation=https://github.com/aicore/aicore
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 专用非特权用户
+User=aicore
+Group=aicore
+
+# 可执行文件与参数
+ExecStart=/usr/local/bin/aicored \
+    --config /etc/aicore/config.json \
+    --ipc-path /run/aicore/aicored.sock \
+    --state-path /var/lib/aicore/status.json \
+    --memory-path /var/lib/aicore/memory.db \
+    --plugins-dir /usr/local/share/aicore/plugins \
+    --log-format json
+
+# 优雅退出
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# 重启策略
+Restart=on-failure
+RestartSec=5
+
+# 状态目录与运行时目录
+StateDirectory=aicore
+RuntimeDirectory=aicore
+StateDirectoryMode=0750
+RuntimeDirectoryMode=0750
+
+# 安全强化
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+ReadWritePaths=/var/lib/aicore /run/aicore
+
+# 资源限制
+LimitNOFILE=65536
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

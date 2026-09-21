@@ -1,0 +1,16 @@
+{
+  "version": "V2",
+  "started_at_unix_ms": 1789828634,
+  "tick_count": 500,
+  "total_ms": 4610,
+  "avg_tick_ms": 8.716,
+  "p50_tick_ms": 8,
+  "p95_tick_ms": 11,
+  "p99_tick_ms": 13,
+  "max_tick_ms": 20,
+  "successful_ticks": 0,
+  "failed_ticks": 500,
+  "noop_ticks": 0,
+  "platform": "linux",
+  "capabilities_count": 16
+}

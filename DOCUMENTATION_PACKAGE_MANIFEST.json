@@ -1,0 +1,15 @@
+{
+  "name": "AICore Documentation Package",
+  "project": "AICore — AI Computer Control Layer",
+  "baseline": "PROJECT_PLAN.md",
+  "initial_file_count": 54,
+  "added_engineering_documents": 12,
+  "final_file_count": 66,
+  "test_directory_policy": "Flat tests/ directory; no subdirectories",
+  "platforms": [
+    "Windows",
+    "Linux"
+  ],
+  "macos": "Future / not implemented in first stage",
+  "package_scope": "global docs only; no destination/; current-state notes are inside docs/quality"
+}

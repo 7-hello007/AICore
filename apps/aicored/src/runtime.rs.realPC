@@ -1,0 +1,268 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use aicore_ai::workload::MlWorkloadSource;
+use aicore_ai_runtime::{PureRustRuntime, RuntimeBackedProvider};
+use aicore_contracts::{
+    capability::entry::CapabilityEntry,
+    memory::retention::RetentionPolicy,
+    runtime::config::AdaptiveLoopConfig,
+    traits::{
+        ai_runtime::IAiRuntime, policy_engine::IPolicyEngine, policy_executor::IPolicyExecutor,
+        task_queue::ITaskQueue, telemetry_provider::ITelemetryProvider,
+    },
+};
+use aicore_core::{
+    context::{ContextEngine, RuleBasedClassifier},
+    executor::{DefaultPolicyExecutor, TransparentExecutor},
+    policy::{AiAssistedPolicyEngine, DefaultPolicyValidator, RuleBasedPolicyEngine},
+    prediction::ShortHorizonPredictor,
+};
+use aicore_memory::{RetentionScheduler, SqliteMemoryStore};
+use aicore_runtime::AdaptiveLoop;
+use aicore_runtime_router::{DefaultRuntimeBinder, SafeRuntimeRouter};
+use aicore_tier::TierHub;
+use aicore_tier_l0::register_l0_with_fusion;
+use aicore_tier_l1::register_l1;
+use aicore_tier_l2::register_l2;
+use aicore_core::event_bus::EventBus;
+
+/// 组装好的 daemon 运行时。
+pub struct DaemonRuntime {
+    pub loop_: AdaptiveLoop,
+    pub platform_name: &'static str,
+    pub capabilities: Vec<CapabilityEntry>,
+    pub retention: Option<Arc<RetentionScheduler>>,
+}
+
+/// 完整构造：memory + task_queue。
+pub fn build_runtime_full(
+    memory_path: Option<&Path>,
+    task_queue: Option<Arc<dyn ITaskQueue>>,
+) -> DaemonRuntime {
+    let (telemetry, executor, platform_name) = build_platform_components();
+
+    let ctx_engine = Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new())).with_max_active_apps(16));
+    let mut tier_hub = TierHub::new();
+    let ml_source = MlWorkloadSource::with_default_weights().map(|s| Arc::new(s) as Arc<dyn aicore_contracts::traits::workload_source::IWorkloadSource>);
+    let _ = register_l0_with_fusion(&tier_hub, ml_source.into_iter().collect());
+    let _ = register_l1(&tier_hub);
+    let _ = register_l2(&tier_hub);
+    let tier_hub = Arc::new(tier_hub);
+
+    let base: Arc<dyn IPolicyEngine> = Arc::new(RuleBasedPolicyEngine::new());
+
+    // Production default AI provider：真实本地 JSON 权重运行时，不依赖 Mock。
+    let shared_ai_runtime: Option<Arc<PureRustRuntime>> = {
+        let model_path = model_path();
+        let runtime = Arc::new(PureRustRuntime::new());
+        let spec = aicore_contracts::ai::runtime::ModelSpec {
+            name: "policy_classifier_v1".to_string(),
+            version: "1.0.0".to_string(),
+            kind: aicore_contracts::ai::runtime::ModelKind::FeatureWeighted,
+            source: aicore_contracts::ai::runtime::ModelSource::File { path: model_path.display().to_string() },
+            onnx_spec: None,
+        };
+        match runtime.load_model(&spec) {
+            Ok(_) => Some(runtime),
+            Err(e) => {
+                tracing::warn!(component="aicored", event="real_model_init_failed", error=%e, "falling back to rule-based policy engine only");
+                None
+            }
+        }
+    };
+
+    let ai: Option<Arc<dyn aicore_contracts::traits::ai_provider::IAiProvider>> = shared_ai_runtime.as_ref().and_then(|runtime| {
+        let spec = aicore_contracts::ai::runtime::ModelSpec {
+            name: "policy_classifier_v1".to_string(),
+            version: "1.0.0".to_string(),
+            kind: aicore_contracts::ai::runtime::ModelKind::FeatureWeighted,
+            source: aicore_contracts::ai::runtime::ModelSource::File { path: model_path().display().to_string() },
+            onnx_spec: None,
+        };
+        match runtime.loaded_models().into_iter().find(|h| h.model_name == spec.name) {
+            Some(handle) => Some(Arc::new(RuntimeBackedProvider::new(runtime.clone(), handle, 4)) as Arc<dyn aicore_contracts::traits::ai_provider::IAiProvider>),
+            None => None,
+        }
+    });
+
+    let primary: Arc<dyn IPolicyEngine> =
+        Arc::new(AiAssistedPolicyEngine::new(base.clone(), ai.clone(), 0.6));
+    let fallback = base;
+
+    let validator = Arc::new(DefaultPolicyValidator::new());
+
+    let event_bus = Arc::new(EventBus::new());
+    let transparent = Arc::new(TransparentExecutor::new(executor.clone()));
+    let loop_ = AdaptiveLoop::new(
+        telemetry,
+        ctx_engine,
+        primary,
+        fallback,
+        validator,
+        executor,
+        AdaptiveLoopConfig::default(),
+    )
+    .with_event_bus(event_bus)
+    .with_transparent_executor(transparent);
+
+    // V2-B：启用 memory（同时保留 Arc 供 retention 使用）
+    let mut memory_for_retention: Option<
+        Arc<dyn aicore_contracts::traits::memory_store::IMemoryStore>,
+    > = None;
+    let loop_ = if let Some(path) = memory_path {
+        match SqliteMemoryStore::open(path) {
+            Ok(store) => {
+                tracing::info!(
+                    component = "aicored",
+                    event = "memory_store_opened",
+                    path = %path.display(),
+                    "sqlite memory store opened"
+                );
+                let memory: Arc<dyn aicore_contracts::traits::memory_store::IMemoryStore> =
+                    Arc::new(store);
+                memory_for_retention = Some(memory.clone());
+                loop_.with_memory(memory)
+            },
+            Err(e) => {
+                tracing::warn!(
+                    component = "aicored",
+                    event = "memory_store_open_failed",
+                    path = %path.display(),
+                    error = %e,
+                    "running without memory"
+                );
+                loop_
+            },
+        }
+    } else {
+        loop_
+    };
+
+    // V2-H：启用短期预测器
+    let predictor: Arc<dyn aicore_contracts::traits::predictor::IPredictor> =
+        Arc::new(ShortHorizonPredictor::with_defaults());
+    let loop_ = loop_.with_predictor(predictor);
+
+    // V3.2 Phase 3：Runtime Routing
+    let router: Arc<dyn aicore_contracts::traits::runtime_router::IRuntimeRouter> =
+        Arc::new(SafeRuntimeRouter::new());
+    let loop_ = loop_.with_runtime_router(router).with_tier_hub(tier_hub.clone());
+
+    let mut binder = DefaultRuntimeBinder::new();
+    if let (Some(runtime), Some(ai_provider)) = (shared_ai_runtime.clone(), ai.as_ref()) {
+        // AI Provider 与 Runtime Routing 共享同一个已加载模型实例，避免双加载和状态漂移。
+        if let Some(handle) = runtime.loaded_models().into_iter().find(|h| h.model_name == "policy_classifier_v1") {
+            binder = binder.with_ai_runtime(runtime, handle);
+        }
+        let _ = ai_provider.name();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let exec = Arc::new(aicore_adapter_linux::LinuxHardwareExecutor::new()) as Arc<dyn aicore_contracts::traits::hardware_executor::IHardwareExecutor>;
+        binder = binder.with_gpu_executor(exec.clone()).with_npu_executor(exec);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let exec = Arc::new(aicore_adapter_windows::WindowsHardwareExecutor::new()) as Arc<dyn aicore_contracts::traits::hardware_executor::IHardwareExecutor>;
+        binder = binder.with_gpu_executor(exec.clone()).with_npu_executor(exec);
+    }
+
+    let binder: Arc<dyn aicore_contracts::traits::runtime_binder::IRuntimeBinder> = Arc::new(binder);
+    let loop_ = loop_.with_runtime_binder(binder);
+
+    // V3-G：启用 Task Queue
+    let loop_ = if let Some(q) = task_queue {
+        loop_.with_task_queue(q)
+    } else {
+        loop_
+    };
+
+    let capabilities = build_capabilities();
+
+    // V3-J：Retention Scheduler（默认 enabled，从 memory store 复用 profile）
+    let retention: Option<Arc<RetentionScheduler>> = memory_for_retention.and_then(|store| {
+        let policy = RetentionPolicy::default();
+        match RetentionScheduler::new(store, policy) {
+            Ok(s) => Some(Arc::new(s)),
+            Err(e) => {
+                tracing::warn!(
+                    component = "aicored",
+                    event = "retention_init_failed",
+                    error = %e,
+                    "retention scheduler not started"
+                );
+                None
+            },
+        }
+    });
+
+    DaemonRuntime {
+        loop_,
+        platform_name,
+        capabilities,
+        retention,
+    }
+}
+
+fn model_path() -> PathBuf {
+    if let Ok(path) = std::env::var("AICORE_MODEL_PATH") { return PathBuf::from(path); }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidate = parent.join("models").join("policy_classifier_v1.json");
+            if candidate.exists() { return candidate; }
+            let candidate = parent.join("..").join("..").join("models").join("policy_classifier_v1.json");
+            if candidate.exists() { return candidate; }
+        }
+    }
+    Path::new("models/policy_classifier_v1.json").to_path_buf()
+}
+
+#[cfg(target_os = "linux")]
+fn build_platform_components() -> (
+    Arc<dyn ITelemetryProvider>,
+    Arc<dyn IPolicyExecutor>,
+    &'static str,
+) {
+    use aicore_adapter_linux::{
+        LinuxPowerController, LinuxProcessController, LinuxTelemetryProvider,
+    };
+    let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(LinuxTelemetryProvider::new());
+    let executor: Arc<dyn IPolicyExecutor> = Arc::new(DefaultPolicyExecutor::new(
+        Some(Arc::new(LinuxProcessController::new())),
+        Some(Arc::new(LinuxPowerController::new())),
+    ));
+    (telemetry, executor, "linux")
+}
+
+#[cfg(target_os = "windows")]
+fn build_platform_components() -> (
+    Arc<dyn ITelemetryProvider>,
+    Arc<dyn IPolicyExecutor>,
+    &'static str,
+) {
+    use aicore_adapter_windows::{
+        WindowsPowerController, WindowsProcessController, WindowsTelemetryProvider,
+    };
+    let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(WindowsTelemetryProvider::new());
+    let executor: Arc<dyn IPolicyExecutor> = Arc::new(DefaultPolicyExecutor::new(
+        Some(Arc::new(WindowsProcessController::new())),
+        Some(Arc::new(WindowsPowerController::new())),
+    ));
+    (telemetry, executor, "windows")
+}
+
+#[cfg(target_os = "linux")]
+fn build_capabilities() -> Vec<CapabilityEntry> {
+    use aicore_adapter_linux::LinuxCapabilityProvider;
+    use aicore_contracts::traits::capability_provider::ICapabilityProvider;
+    LinuxCapabilityProvider::new().capabilities_detailed()
+}
+
+#[cfg(target_os = "windows")]
+fn build_capabilities() -> Vec<CapabilityEntry> {
+    use aicore_adapter_windows::WindowsCapabilityProvider;
+    use aicore_contracts::traits::capability_provider::ICapabilityProvider;
+    WindowsCapabilityProvider::new().capabilities_detailed()
+}

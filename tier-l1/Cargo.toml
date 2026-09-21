@@ -1,0 +1,12 @@
+[package]
+name = "aicore-tier-l1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aicore-contracts = { path = "../contracts" }
+aicore-tier = { path = "../tier" }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "aicore-contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+base64ct = { workspace = true }
+zeroize = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

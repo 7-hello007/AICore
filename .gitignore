@@ -1,0 +1,83 @@
+# Rust / Cargo
+# 构建产物
+/target/
+
+# rustfmt 备份
+**/*.rs.bk
+
+# 本地 cargo 缓存
+/vendor/
+
+# Cargo.lock 说明
+# Cargo.lock 必须提交。
+#
+# AICore 是 workspace，含多个 [[bin]]：
+#   - aicored
+#   - aicore
+#   - aicore-dashboard
+#   - aicore-dashboard-web
+#   - aicore-bench
+#   - aicore-l0-realworld
+#   - plugin-echo
+#
+# 对二进制项目，Cargo 官方推荐提交 Cargo.lock 以锁定依赖版本，
+# 保证所有环境（本地 / CI / 发布）使用完全相同的依赖树。
+
+# 构建 / 发布产物
+/dist/
+
+# 打包临时目录
+*.deb
+*.tar.gz
+*.tar.xz
+*.rpm
+*.msi
+
+# aicored 运行时状态文件
+*.log
+*.status.json
+*.json.tmp
+
+# SQLite 数据库与 WAL
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# 本地 benchmark 输出
+/benchmarks/*-local.json
+/benchmarks/*-nightly.json
+
+# 测试临时目录
+/tmp-test/
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime
+*.sublime-workspace
+*.sublime-project
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# 个人路径
+/mydoc

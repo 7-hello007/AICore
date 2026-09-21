@@ -1,0 +1,11 @@
+[package]
+name = "aicore-runtime-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aicore-contracts = { path = "../contracts" }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "aicore-adapter-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aicore-contracts = { path = "../../contracts" }
+sysinfo = "0.30"
+serde.workspace = true
+tracing.workspace = true
+rayon-core = { workspace = true }
+rayon = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Power",
+    "Win32_UI_WindowsAndMessaging",
+] }

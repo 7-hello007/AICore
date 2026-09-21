@@ -1,0 +1,238 @@
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use aicore_api::ApplicationRegistry;
+use aicore_contracts::{
+    runtime::{daemon_config::DaemonConfig, daemon_status::DaemonStatus, tick::TickOutcome},
+    traits::runtime_orchestrator::IRuntimeOrchestrator,
+};
+use aicore_ipc::{IpcHandler, IpcServer};
+use aicore_plugin::{discover_from_dir, register_discovered, PluginRegistry};
+use tokio::sync::mpsc;
+
+use crate::ipc_handler::DaemonIpcHandler;
+use crate::runtime::DaemonRuntime;
+use crate::state::write_status_atomic;
+use crate::tick_history::TickHistory;
+
+pub struct SchedulerConfig {
+    pub runtime: DaemonRuntime,
+    pub config: DaemonConfig,
+    pub state_path: PathBuf,
+    pub ipc_path: PathBuf,
+    pub plugins_dir: PathBuf,
+    pub task_queue: Arc<dyn aicore_contracts::traits::task_queue::ITaskQueue>,
+    pub once: bool,
+    pub shutdown_rx: mpsc::Receiver<()>,
+}
+
+/// 运行 daemon 的主循环。
+pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
+    let SchedulerConfig {
+        runtime,
+        config,
+        state_path,
+        ipc_path,
+        plugins_dir,
+        task_queue,
+        once,
+        mut shutdown_rx,
+    } = params;
+
+    let pid = std::process::id();
+    let status = Arc::new(Mutex::new(DaemonStatus::new(pid)));
+    let history = Arc::new(TickHistory::with_default_capacity());
+    let plugins = Arc::new(PluginRegistry::new());
+
+    let report = discover_from_dir(&plugins_dir);
+    match register_discovered(&plugins, &report) {
+        Ok(n) => tracing::info!(
+            component = "aicored",
+            event = "plugins_registered",
+            registered = n,
+            discovered = report.discovered.len(),
+            rejected = report.rejected.len(),
+            dir = %plugins_dir.display(),
+            "plugin discovery complete"
+        ),
+        Err(e) => tracing::warn!(
+            component = "aicored",
+            event = "plugin_register_failed",
+            error = %e,
+            "plugin registration failed"
+        ),
+    }
+
+    let last_policy_json: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let last_context_json: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let targets = runtime.execution_targets.clone();
+
+    {
+        let guard = status.lock().expect("status lock");
+        write_status_atomic(&state_path, &guard)?;
+    }
+
+    let interval_ms = config.telemetry.sampling_interval_ms;
+    let write_every = config.state_write_interval_ticks;
+
+    tracing::info!(
+        component = "aicored",
+        event = "daemon_started",
+        pid = pid,
+        platform = runtime.platform_name,
+        interval_ms = interval_ms,
+        state_path = %state_path.display(),
+        ipc_path = %ipc_path.display(),
+        plugins_dir = %plugins_dir.display(),
+        "daemon started"
+    );
+
+    let registry = Arc::new(ApplicationRegistry::new());
+    let handler: Arc<dyn IpcHandler> = Arc::new(DaemonIpcHandler::new(
+        registry,
+        status.clone(),
+        history.clone(),
+        plugins.clone(),
+        task_queue.clone(),
+        runtime.capabilities.clone(),
+        format!("{}-daemon", runtime.platform_name),
+        last_policy_json.clone(),
+        last_context_json.clone(),
+    ));
+
+    let (ipc_shutdown_tx, ipc_shutdown_rx) = mpsc::channel::<()>(1);
+    let ipc_server = IpcServer::bind(ipc_path.clone(), handler)?.with_shutdown(ipc_shutdown_rx);
+
+    let ipc_task = if once {
+        None
+    } else {
+        let ipc = ipc_server;
+        Some(tokio::spawn(async move {
+            ipc.run().await;
+        }))
+    };
+
+    if once {
+        let outcome = runtime.loop_.tick(&targets);
+        {
+            let mut guard = status.lock().expect("status lock");
+            guard.record_tick(&outcome);
+            write_status_atomic(&state_path, &guard)?;
+        }
+        history.append(&outcome);
+        log_tick(&outcome);
+        tracing::info!(
+            component = "aicored",
+            event = "daemon_once_done",
+            tick_id = outcome.tick_id,
+            success = outcome.success,
+            "once mode finished"
+        );
+        return Ok(());
+    }
+
+    let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+    interval.tick().await;
+
+    loop {
+        tokio::select! {
+            biased;
+
+            _ = shutdown_rx.recv() => {
+                tracing::info!(
+                    component = "aicored",
+                    event = "shutdown_signal",
+                    "shutdown signal received"
+                );
+                break;
+            }
+
+            _ = interval.tick() => {
+                let outcome = runtime.loop_.tick(&targets);
+                let count = {
+                    let mut guard = status.lock().expect("status lock");
+                    guard.record_tick(&outcome);
+                    guard.tick_count
+                };
+                history.append(&outcome);
+                log_tick(&outcome);
+
+                // V3-J：Retention 检查
+                if let Some(retention) = &runtime.retention {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    if retention.should_run(now) {
+                        match retention.run_once_at(now) {
+                            Ok(report) => tracing::info!(
+                                component = "aicored",
+                                event = "retention_ran",
+                                removed = report.records_removed,
+                                retention_days = report.retention_days,
+                                skipped = report.skipped,
+                                success = report.success,
+                                "retention ran"
+                            ),
+                            Err(e) => tracing::warn!(
+                                component = "aicored",
+                                event = "retention_failed",
+                                error = %e,
+                                "retention failed"
+                            ),
+                        }
+                    }
+                }
+
+                if count % write_every == 0 {
+                    let guard = status.lock().expect("status lock");
+                    if let Err(e) = write_status_atomic(&state_path, &guard) {
+                        tracing::warn!(
+                            component = "aicored",
+                            event = "state_write_failed",
+                            error = %e,
+                            "failed to write state file"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = ipc_shutdown_tx.send(()).await;
+    if let Some(task) = ipc_task {
+        let _ = tokio::time::timeout(Duration::from_millis(config.shutdown_timeout_ms), task).await;
+    }
+
+    let metrics = runtime.loop_.metrics();
+    tracing::info!(
+        component = "aicored",
+        event = "daemon_stopping",
+        successful = metrics.successful_ticks,
+        failed = metrics.failed_ticks,
+        current_mode = ?runtime.loop_.current_mode(),
+        "daemon stopping"
+    );
+
+    let guard = status.lock().expect("status lock");
+    let _ = write_status_atomic(&state_path, &guard);
+    Ok(())
+}
+
+fn log_tick(outcome: &TickOutcome) {
+    tracing::info!(
+        component = "aicored",
+        event = "tick",
+        tick_id = outcome.tick_id,
+        trace_id = %outcome.trace_id,
+        success = outcome.success,
+        duration_ms = outcome.duration_ms,
+        mode = ?outcome.mode_after,
+        workload = ?outcome.workload_type,
+        policy_id = ?outcome.policy_id,
+        predicted = ?outcome.predicted_workload,
+        prediction_conf = ?outcome.prediction_confidence,
+        "tick completed"
+    );
+}

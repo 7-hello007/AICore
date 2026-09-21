@@ -1,0 +1,38 @@
+[package]
+name = "aicore-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "aicored"
+path = "src/main.rs"
+
+[dependencies]
+aicore-contracts = { path = "../../contracts" }
+aicore-core = { path = "../../core" }
+aicore-runtime = { path = "../../runtime" }
+aicore-runtime-router = { path = "../../runtime-router" }
+aicore-ai = { path = "../../ai" }
+aicore-memory = { path = "../../memory" }
+aicore-api = { path = "../../api" }
+aicore-ipc = { path = "../../ipc" }
+aicore-task-runtime = { path = "../../task-runtime" }
+aicore-plugin = { path = "../../plugin" }
+aicore-adapter-linux = { path = "../../adapters/linux" }
+aicore-adapter-windows = { path = "../../adapters/windows" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+aicore-ai-runtime = { path = "../../ai-runtime" }
+
+aicore-tier = { path = "../../tier" }
+
+aicore-tier-l0 = { path = "../../tier-l0" }
+
+aicore-tier-l1 = { path = "../../tier-l1" }
+
+aicore-tier-l2 = { path = "../../tier-l2" }

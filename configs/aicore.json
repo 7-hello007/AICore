@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "daemon": {
+    "telemetry": {
+      "sampling_interval_ms": 100
+    },
+    "state_write_interval_ticks": 10,
+    "shutdown_timeout_ms": 5000,
+    "initial_mode": "normal"
+  },
+  "plugins_dir": null,
+  "memory_path": null,
+  "logging_level": "info",
+  "logging_json": false
+}

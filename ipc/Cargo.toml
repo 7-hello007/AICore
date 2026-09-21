@@ -1,0 +1,17 @@
+[package]
+name = "aicore-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aicore-contracts = { path = "../contracts" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "sync", "time", "macros", "rt", "rt-multi-thread", "fs"] }
+
+[target.'cfg(windows)'.dependencies]
+tokio = { workspace = true, features = ["net", "io-util", "sync", "time", "macros", "rt", "rt-multi-thread", "fs"] }

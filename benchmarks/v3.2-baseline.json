@@ -1,0 +1,22 @@
+{
+  "version": "V3.2",
+  "started_at_unix_ms": 1789913761,
+  "tick_count": 200,
+  "total_ms": 2164,
+  "avg_tick_ms": 10.3,
+  "p50_tick_ms": 10,
+  "p95_tick_ms": 13,
+  "p99_tick_ms": 16,
+  "max_tick_ms": 17,
+  "min_tick_ms": 8,
+  "successful_ticks": 0,
+  "failed_ticks": 200,
+  "noop_ticks": 0,
+  "rss_mb_before": 7,
+  "rss_mb_after": 10,
+  "rss_growth_mb": 3,
+  "threads_before": 17,
+  "threads_after": 17,
+  "platform": "linux",
+  "capabilities_count": 16
+}

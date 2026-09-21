@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# 构建 .tar.gz 包（用于非 deb 系统）。
+#
+# 用法：
+#   ./build_tar.sh                       # 版本从 workspace 读取
+#   AICORE_VERSION=<version> ./build_tar.sh  # 显式覆盖版本
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${REPO_ROOT}/scripts/lib/version.sh"
+
+command -v cargo >/dev/null 2>&1 || { echo "error: cargo not found" >&2; exit 1; }
+
+VERSION="${AICORE_VERSION:-${WORKSPACE_VERSION}}"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+PKG_NAME="aicore-${VERSION}-${OS}-${ARCH}"
+
+STAGE="${REPO_ROOT}/dist/${PKG_NAME}"
+TARGET_DIR="${REPO_ROOT}/target/release"
+
+rm -rf "${STAGE}"
+mkdir -p "${STAGE}/bin"
+
+install -m 0755 "${TARGET_DIR}/aicored" "${STAGE}/bin/"
+install -m 0755 "${TARGET_DIR}/aicore" "${STAGE}/bin/"
+[ -x "${TARGET_DIR}/aicore-dashboard" ] && \
+    install -m 0755 "${TARGET_DIR}/aicore-dashboard" "${STAGE}/bin/" || true
+
+cp "${REPO_ROOT}/deploy/linux/install.sh"   "${STAGE}/"
+cp "${REPO_ROOT}/deploy/linux/uninstall.sh" "${STAGE}/"
+cp "${REPO_ROOT}/deploy/linux/upgrade.sh"   "${STAGE}/"
+cp "${REPO_ROOT}/deploy/linux/rollback.sh"  "${STAGE}/"
+cp "${REPO_ROOT}/deploy/linux/aicored.service" "${STAGE}/"
+
+cd "${REPO_ROOT}/dist"
+tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
+echo
+echo "package: ${REPO_ROOT}/dist/${PKG_NAME}.tar.gz"
+ls -lh "${PKG_NAME}.tar.gz"

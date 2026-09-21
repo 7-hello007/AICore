@@ -1,0 +1,257 @@
+use std::sync::Arc;
+use std::time::Instant;
+
+use aicore_contracts::{
+    control::{
+        rollback::RollbackRecord,
+        stage::{ControlStage, StageOutcome},
+        trace::ControlTrace,
+    },
+    execution::{status::ExecutionOverallStatus, targets::ExecutionTargets},
+    policy::resource_policy::ResourcePolicy,
+    traits::{
+        policy_executor::IPolicyExecutor,
+        post_condition_checker::{IPostConditionChecker, PostConditionResult},
+        transparent_executor::ITransparentExecutor,
+    },
+};
+
+/// 透明执行器。
+///
+/// 包装 V2 `IPolicyExecutor`，在 Apply 后可选调用 `IPostConditionChecker` 做 Verify。
+/// Verify 失败或 Apply 失败时，回退到 `prior_policy`。
+pub struct TransparentExecutor {
+    inner: Arc<dyn IPolicyExecutor>,
+    checker: Option<Arc<dyn IPostConditionChecker>>,
+}
+
+impl TransparentExecutor {
+    pub fn new(inner: Arc<dyn IPolicyExecutor>) -> Self {
+        Self {
+            inner,
+            checker: None,
+        }
+    }
+
+    pub fn with_checker(mut self, checker: Arc<dyn IPostConditionChecker>) -> Self {
+        self.checker = Some(checker);
+        self
+    }
+
+    pub fn has_checker(&self) -> bool {
+        self.checker.is_some()
+    }
+}
+
+impl ITransparentExecutor for TransparentExecutor {
+    fn execute_transparent(
+        &self,
+        policy: &ResourcePolicy,
+        targets: &ExecutionTargets,
+        prior_policy: Option<&ResourcePolicy>,
+    ) -> ControlTrace {
+        let trace_start = Instant::now();
+        let trace_id = format!("control-{}", policy.policy_id);
+
+        let mut stages: Vec<StageOutcome> = Vec::with_capacity(6);
+
+        // 1. Observe：V3-E 阶段视为已由 AdaptiveLoop 完成；只记录跳过。
+        stages.push(StageOutcome::skipped(
+            ControlStage::Observe,
+            "observation handled by AdaptiveLoop",
+        ));
+
+        // 2. Decide：policy 已由 PolicyEngine 生成；记录跳过。
+        stages.push(StageOutcome::skipped(
+            ControlStage::Decide,
+            format!("policy prepared: source={:?}", policy.source),
+        ));
+
+        // 3. Validate：进入本执行器前必须通过 Validator；记录跳过。
+        stages.push(StageOutcome::skipped(
+            ControlStage::Validate,
+            "policy validated before execution",
+        ));
+
+        // 4. Apply
+        let apply_start = Instant::now();
+        let apply_result = self.inner.execute(policy, targets);
+        let apply_duration = apply_start.elapsed().as_millis() as u64;
+        let apply_status = apply_result.overall_status;
+
+        stages.push(match apply_status {
+            ExecutionOverallStatus::AllSucceeded | ExecutionOverallStatus::PartiallySucceeded => {
+                StageOutcome::success(
+                    ControlStage::Apply,
+                    apply_duration,
+                    format!("overall={:?}", apply_status),
+                )
+            },
+            ExecutionOverallStatus::NoOp => {
+                StageOutcome::skipped(ControlStage::Apply, format!("overall={:?}", apply_status))
+            },
+            ExecutionOverallStatus::AllFailed => StageOutcome::failed(
+                ControlStage::Apply,
+                apply_duration,
+                format!("overall={:?}", apply_status),
+            ),
+        });
+
+        // 5. Verify
+        let verify_start = Instant::now();
+        let verify_outcome = self.run_verify(policy, &apply_result, &apply_status);
+        let verify_duration = verify_start.elapsed().as_millis() as u64;
+
+        let mut should_rollback = false;
+        let mut rollback_reason = String::new();
+
+        match verify_outcome {
+            PostConditionResult::Passed => {
+                stages.push(StageOutcome::success(
+                    ControlStage::Verify,
+                    verify_duration,
+                    "post-condition passed",
+                ));
+            },
+            PostConditionResult::NotApplicable => {
+                stages.push(StageOutcome::skipped(
+                    ControlStage::Verify,
+                    "post-condition not applicable",
+                ));
+            },
+            PostConditionResult::Failed(reason) => {
+                should_rollback = true;
+                rollback_reason = format!("verify failed: {}", reason);
+                stages.push(StageOutcome::failed(
+                    ControlStage::Verify,
+                    verify_duration,
+                    &rollback_reason,
+                ));
+            },
+        }
+
+        // Apply 失败时也触发回退
+        if apply_status == ExecutionOverallStatus::AllFailed {
+            should_rollback = true;
+            rollback_reason = "apply returned AllFailed".to_string();
+        }
+
+        // 6. Rollback
+        let rollback = if should_rollback {
+            self.do_rollback(policy, targets, prior_policy, &rollback_reason, &mut stages)
+        } else {
+            let rec = RollbackRecord::not_triggered();
+            stages.push(StageOutcome::skipped(
+                ControlStage::Rollback,
+                "no rollback needed",
+            ));
+            rec
+        };
+
+        let total_duration_ms = trace_start.elapsed().as_millis() as u64;
+
+        ControlTrace {
+            trace_id,
+            policy_id: policy.policy_id.clone(),
+            stages,
+            final_status: apply_status,
+            rollback,
+            total_duration_ms,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "transparent_executor"
+    }
+}
+
+impl TransparentExecutor {
+    fn run_verify(
+        &self,
+        policy: &ResourcePolicy,
+        result: &aicore_contracts::execution::result::ExecutionResult,
+        apply_status: &ExecutionOverallStatus,
+    ) -> PostConditionResult {
+        // Apply 失败 → Verify 失败
+        if *apply_status == ExecutionOverallStatus::AllFailed {
+            return PostConditionResult::Failed("apply returned AllFailed".to_string());
+        }
+
+        // NoOp（能力缺失）→ 不适用
+        if *apply_status == ExecutionOverallStatus::NoOp {
+            return PostConditionResult::NotApplicable;
+        }
+
+        // 有 checker 时调用
+        if let Some(checker) = &self.checker {
+            return checker.verify(policy, result);
+        }
+
+        // 无 checker：Apply 成功即视为 Verify 通过
+        PostConditionResult::Passed
+    }
+
+    fn do_rollback(
+        &self,
+        policy: &ResourcePolicy,
+        targets: &ExecutionTargets,
+        prior_policy: Option<&ResourcePolicy>,
+        reason: &str,
+        stages: &mut Vec<StageOutcome>,
+    ) -> RollbackRecord {
+        let start = Instant::now();
+
+        let prior = match prior_policy {
+            Some(p) => p,
+            None => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                stages.push(StageOutcome::failed(
+                    ControlStage::Rollback,
+                    duration_ms,
+                    "no prior policy available for rollback",
+                ));
+                return RollbackRecord::triggered(
+                    Some(policy.policy_id.clone()),
+                    None,
+                    reason,
+                    false,
+                );
+            },
+        };
+
+        // 用 inner executor 回退到 prior
+        let result = self.inner.execute(prior, targets);
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        let succeeded = matches!(
+            result.overall_status,
+            ExecutionOverallStatus::AllSucceeded | ExecutionOverallStatus::PartiallySucceeded
+        );
+
+        let detail = format!(
+            "rollback to policy_id={} status={:?}",
+            prior.policy_id, result.overall_status
+        );
+
+        if succeeded {
+            stages.push(StageOutcome::success(
+                ControlStage::Rollback,
+                duration_ms,
+                detail,
+            ));
+        } else {
+            stages.push(StageOutcome::failed(
+                ControlStage::Rollback,
+                duration_ms,
+                detail,
+            ));
+        }
+
+        RollbackRecord::triggered(
+            Some(policy.policy_id.clone()),
+            Some(prior.policy_id.clone()),
+            reason,
+            succeeded,
+        )
+    }
+}

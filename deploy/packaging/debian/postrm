@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /var/lib/aicore /run/aicore /etc/aicore
+        if getent passwd aicore >/dev/null; then
+            userdel aicore || true
+        fi
+        if getent group aicore >/dev/null; then
+            groupdel aicore || true
+        fi
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        systemctl daemon-reload || true
+        ;;
+    *)
+        echo "postrm called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

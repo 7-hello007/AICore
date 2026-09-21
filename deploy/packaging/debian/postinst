@@ -1,0 +1,34 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # 创建用户与组
+        if ! getent group aicore >/dev/null; then
+            groupadd --system aicore || true
+        fi
+        if ! getent passwd aicore >/dev/null; then
+            useradd --system --gid aicore \
+                --home-dir /var/lib/aicore \
+                --shell /usr/sbin/nologin \
+                --comment "AICore daemon" \
+                aicore || true
+        fi
+
+        install -d -m 0750 -o aicore -g aicore /var/lib/aicore
+        install -d -m 0750 -o aicore -g aicore /run/aicore
+        install -d -m 0755 /etc/aicore
+
+        systemctl daemon-reload || true
+        systemctl enable aicored.service || true
+        systemctl start aicored.service || true
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -124,9 +124,9 @@ fn hardware_capability_set_filters() {
 
 #[test]
 fn dashboard_snapshot_has_schema_version() {
-    let snap = DashboardSnapshot::new(1_700_000_000);
+    let snap = DashboardSnapshot::new(1_700_000_000_000);
     assert_eq!(snap.schema_version.to_string(), "1.0");
-    assert_eq!(snap.fetched_at_unix_secs, 1_700_000_000);
+    assert_eq!(snap.fetched_at_unix_ms, 1_700_000_000_000);
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn dashboard_snapshot_default_is_empty() {
 
 #[test]
 fn dashboard_snapshot_serde_roundtrip() {
-    let snap = DashboardSnapshot::new(1_700_000_000);
+    let snap = DashboardSnapshot::new(1_700_000_000_000);
     let json = serde_json::to_string(&snap).expect("serialize");
     let back: DashboardSnapshot = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, snap);

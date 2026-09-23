@@ -4,7 +4,8 @@ use aicore_contracts::{
     application::{id::ApplicationId, registration::ApplicationRegistration},
     context::snapshot::ContextSnapshot,
     errors::{ContractError, ContractResult},
-    task::contract::TaskContract,
+    task::{contract::TaskContract, queued::QueuedTask},
+    traits::task_queue::ITaskQueue,
 };
 
 use crate::context_merge::apply_task_contract;
@@ -23,11 +24,25 @@ pub struct SubmitResult {
 /// 阶段七只做进程内 API；跨进程 IPC 由后续阶段引入。
 pub struct PublicApi {
     registry: Arc<ApplicationRegistry>,
+    task_queue: Arc<dyn ITaskQueue>,
 }
 
 impl PublicApi {
     pub fn new(registry: Arc<ApplicationRegistry>) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            task_queue: Arc::new(aicore_task_runtime::InMemoryTaskQueue::new()),
+        }
+    }
+
+    /// 使用 daemon 已有的共享 TaskQueue，确保进程内 API 与 IPC 具有相同提交语义。
+    pub fn with_task_queue(mut self, task_queue: Arc<dyn ITaskQueue>) -> Self {
+        self.task_queue = task_queue;
+        self
+    }
+
+    pub fn task_queue(&self) -> &Arc<dyn ITaskQueue> {
+        &self.task_queue
     }
 
     pub fn registry(&self) -> &Arc<ApplicationRegistry> {
@@ -84,10 +99,21 @@ impl PublicApi {
             }
         }
 
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let queued = QueuedTask::new(
+            contract.task_id.clone().unwrap_or_default(),
+            contract.clone(),
+            now,
+        );
+        let assigned = self.task_queue.enqueue(queued)?;
+
         Ok(SubmitResult {
             accepted: true,
-            task_id: contract.task_id.clone(),
-            message: format!("accepted for {}", contract.application_id),
+            task_id: Some(assigned),
+            message: format!("queued for {}", contract.application_id),
         })
     }
 

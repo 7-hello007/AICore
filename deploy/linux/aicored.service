@@ -49,8 +49,7 @@ ReadWritePaths=/var/lib/aicore /run/aicore
 
 # 资源限制
 LimitNOFILE=65536
-MemoryMax=512M
-TasksMax=128
+# Memory/Tasks limits are deployment-specific; configure with a systemd drop-in.
 
 [Install]
 WantedBy=multi-user.target

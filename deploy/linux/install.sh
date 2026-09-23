@@ -59,7 +59,6 @@ fi
 install -d -m 0755 "${BIN_DIR}"
 install -d -m 0755 "${UNIT_DIR}"
 install -d -m 0750 -o aicore -g aicore "${STATE_DIR}"
-install -d -m 0750 -o aicore -g aicore "${RUNTIME_DIR}"
 install -d -m 0755 "${CONFIG_DIR}"
 install -d -m 0755 "${SHARE_DIR}"
 install -d -m 0755 "${SHARE_DIR}/plugins"
@@ -71,8 +70,12 @@ for bin in aicored aicore aicore-dashboard; do
 done
 
 # 6. systemd unit
-install -m 0644 "${SCRIPT_DIR}/aicored.service" "${UNIT_DIR}/aicored.service"
-echo "installed ${UNIT_DIR}/aicored.service"
+sed \
+    -e "s|/usr/local/bin/aicored|${BIN_DIR}/aicored|g" \
+    -e "s|/usr/local/share/aicore|${SHARE_DIR}|g" \
+    "${SCRIPT_DIR}/aicored.service" > "${UNIT_DIR}/aicored.service"
+chmod 0644 "${UNIT_DIR}/aicored.service"
+echo "installed ${UNIT_DIR}/aicored.service (PREFIX=${PREFIX})"
 
 # 7. 默认配置（若不存在）
 if [ ! -f "${CONFIG_DIR}/config.json" ]; then

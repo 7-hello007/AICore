@@ -238,7 +238,14 @@ async fn call_ipc(ipc_path: &Path, request: Request) -> Result<ResponseData, Cli
         .await
         .map_err(|e| CliError::Ipc(e.to_string()))?;
 
-    let request_id = format!("cli-{}", std::process::id());
+    let request_id = format!(
+        "cli-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
     let resp = client
         .call(&request_id, request, Duration::from_secs(5))
         .await

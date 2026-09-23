@@ -11,7 +11,7 @@ use aicore_dashboard::{render, DashboardSnapshot};
 
 fn empty_snapshot() -> DashboardSnapshot {
     DashboardSnapshot {
-        fetched_at_unix_secs: 1_700_000_000,
+        fetched_at_unix_ms: 1_700_000_000_000,
         ..Default::default()
     }
 }
@@ -39,7 +39,7 @@ fn status_renders_daemon_info() {
     st.successful_ticks = 40;
     st.failed_ticks = 2;
     st.current_mode = RuntimeMode::Normal;
-    st.last_tick_at_unix_ms = 1_700_000_000;
+    st.last_tick_at_unix_ms = 1_700_000_000_000;
     s.daemon_status = Some(st);
 
     let out = render(&s, 100);
@@ -61,7 +61,7 @@ fn recent_ticks_table_renders_rows() {
     s.recent_ticks = vec![TickSummary {
         tick_id: 7,
         trace_id: "trace-7".to_string(),
-        timestamp_unix_ms: 1_700_000_000,
+        timestamp_unix_ms: 1_700_000_000_000,
         duration_ms: 12,
         success: true,
         workload_type: "Development".to_string(),

@@ -72,10 +72,14 @@ impl EventBus {
     }
 
     pub fn publish(&self, event: &Event) {
-        if let Ok(subs) = self.subscribers.read() {
-            for sub in subs.iter() {
-                sub.handle(event);
-            }
+        // Subscriber callbacks may subscribe/unsubscribe; never call them
+        // while holding the registry lock. Changes apply to the next publish.
+        let subscribers = match self.subscribers.read() {
+            Ok(subs) => subs.clone(),
+            Err(_) => return,
+        };
+        for sub in subscribers {
+            sub.handle(event);
         }
     }
 

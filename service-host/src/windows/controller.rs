@@ -59,6 +59,41 @@ fn run_sc(args: &[&str]) -> std::io::Result<std::process::Output> {
     Command::new("sc.exe").args(args).output()
 }
 
+#[cfg(target_os = "windows")]
+fn quote_windows_arg(arg: &str) -> String {
+    if !arg.chars().any(|c| c.is_whitespace() || c == '"') {
+        return arg.to_string();
+    }
+    format!("\"{}\"", arg.replace('"', "\\\""))
+}
+
+#[cfg(target_os = "windows")]
+fn parse_sc_state(text: &str) -> ServiceState {
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("STATE") {
+            continue;
+        }
+        let rhs = trimmed
+            .split_once(':')
+            .map(|(_, rhs)| rhs)
+            .unwrap_or(trimmed);
+        let token = rhs
+            .split_whitespace()
+            .nth(1)
+            .or_else(|| rhs.split_whitespace().next())
+            .unwrap_or("");
+        return match token {
+            "RUNNING" => ServiceState::Running,
+            "STOPPED" => ServiceState::Stopped,
+            "START_PENDING" => ServiceState::Starting,
+            "STOP_PENDING" => ServiceState::Stopping,
+            _ => ServiceState::Unknown,
+        };
+    }
+    ServiceState::Unknown
+}
+
 #[cfg(not(target_os = "windows"))]
 fn not_supported() -> ServiceOperationResult {
     ServiceOperationResult::failed(
@@ -73,7 +108,7 @@ impl IServiceController for WindowsServiceController {
         #[cfg(target_os = "windows")]
         {
             if let Err(e) = config.validate() {
-                return ServiceOperationResult::failed(ServiceState::Failed, e);
+                return ServiceOperationResult::failed(ServiceState::Failed, e.to_string());
             }
             if let Ok(mut slot) = self.config.lock() {
                 *slot = Some(config.clone());
@@ -82,7 +117,13 @@ impl IServiceController for WindowsServiceController {
             let bin_path = if config.args.is_empty() {
                 format!("\"{}\"", config.binary_path)
             } else {
-                format!("\"{}\" {}", config.binary_path, config.args.join(" "))
+                let args = config
+                    .args
+                    .iter()
+                    .map(|arg| quote_windows_arg(arg))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("\"{}\" {}", config.binary_path, args)
             };
 
             let start = if config.auto_start { "auto" } else { "demand" };
@@ -237,17 +278,7 @@ impl IServiceController for WindowsServiceController {
             match run_sc(&["query", &self.service_name()]) {
                 Ok(out) if out.status.success() => {
                     let text = String::from_utf8_lossy(&out.stdout);
-                    if text.contains("RUNNING") {
-                        ServiceState::Running
-                    } else if text.contains("STOPPED") {
-                        ServiceState::Stopped
-                    } else if text.contains("START_PENDING") {
-                        ServiceState::Starting
-                    } else if text.contains("STOP_PENDING") {
-                        ServiceState::Stopping
-                    } else {
-                        ServiceState::Unknown
-                    }
+                    parse_sc_state(&text)
                 },
                 _ => ServiceState::NotInstalled,
             }

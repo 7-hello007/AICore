@@ -101,7 +101,7 @@ impl IAiRuntime for OnnxRuntimeBackend {
         // 提前取 provider 名称，避免 session 被 move 后再借用
         let provider_name = session.provider_name();
 
-        let now = now_unix_secs();
+        let now = now_unix_ms();
         let seq = self.next_seq.fetch_add(1, Ordering::SeqCst);
         let handle = ModelHandle {
             handle_id: format!("onnx-{}-{}-{}", spec.name, now, seq),
@@ -252,9 +252,9 @@ impl IAiRuntime for OnnxRuntimeBackend {
     }
 }
 
-fn now_unix_secs() -> u64 {
+fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }

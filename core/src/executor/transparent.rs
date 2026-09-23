@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use aicore_contracts::{
@@ -23,6 +23,7 @@ use aicore_contracts::{
 pub struct TransparentExecutor {
     inner: Arc<dyn IPolicyExecutor>,
     checker: Option<Arc<dyn IPostConditionChecker>>,
+    last_result: Mutex<Option<aicore_contracts::execution::result::ExecutionResult>>,
 }
 
 impl TransparentExecutor {
@@ -30,6 +31,7 @@ impl TransparentExecutor {
         Self {
             inner,
             checker: None,
+            last_result: Mutex::new(None),
         }
     }
 
@@ -78,6 +80,9 @@ impl ITransparentExecutor for TransparentExecutor {
         let apply_result = self.inner.execute(policy, targets);
         let apply_duration = apply_start.elapsed().as_millis() as u64;
         let apply_status = apply_result.overall_status;
+        if let Ok(mut slot) = self.last_result.lock() {
+            *slot = Some(apply_result.clone());
+        }
 
         stages.push(match apply_status {
             ExecutionOverallStatus::AllSucceeded | ExecutionOverallStatus::PartiallySucceeded => {
@@ -150,14 +155,30 @@ impl ITransparentExecutor for TransparentExecutor {
 
         let total_duration_ms = trace_start.elapsed().as_millis() as u64;
 
+        let final_status = if rollback.triggered {
+            if rollback.succeeded == Some(true) {
+                ExecutionOverallStatus::NoOp
+            } else {
+                ExecutionOverallStatus::AllFailed
+            }
+        } else {
+            apply_status
+        };
+
         ControlTrace {
             trace_id,
             policy_id: policy.policy_id.clone(),
             stages,
-            final_status: apply_status,
+            final_status,
             rollback,
             total_duration_ms,
         }
+    }
+
+    fn last_execution_result(
+        &self,
+    ) -> Option<aicore_contracts::execution::result::ExecutionResult> {
+        self.last_result.lock().ok().and_then(|slot| slot.clone())
     }
 
     fn name(&self) -> &'static str {

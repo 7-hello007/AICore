@@ -57,16 +57,7 @@ impl L2NativeTaskProvider {
             ))
         })?;
 
-        let allowed = matches!(
-            (record.state, next),
-            (TaskState::Queued, TaskState::Running)
-                | (TaskState::Queued, TaskState::Cancelled)
-                | (TaskState::Queued, TaskState::Failed)
-                | (TaskState::Running, TaskState::Completed)
-                | (TaskState::Running, TaskState::Failed)
-                | (TaskState::Running, TaskState::Cancelled)
-                | (TaskState::Queued, TaskState::Expired)
-        );
+        let allowed = record.state.can_transition_to(next);
 
         if !allowed {
             return Err(ContractError::InvalidRequest(format!(

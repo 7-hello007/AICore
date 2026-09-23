@@ -177,7 +177,7 @@ fn gpu_route_without_capability_not_executed() {
 #[test]
 fn gpu_route_with_capability_but_no_executor_degraded() {
     // Phase 4：有 GPU capability 但未注册 executor → 降级（不执行）。
-    let caps = HardwareCapabilitySet::new("Test GPU").with(HardwareCapabilityEntry::supported(
+    let caps = HardwareCapabilitySet::new("gpu:test").with(HardwareCapabilityEntry::supported(
         HardwareCapability::DeviceIdentity,
     ));
     let b = DefaultRuntimeBinder::new().with_hardware(caps);

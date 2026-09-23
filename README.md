@@ -1,12 +1,12 @@
 # AICore — AI Computer Control Layer
 
-Version: 0.3.2 — V3.2 engineering-close implementation candidate
+Version: 0.4.0 — V4 defect-correction implementation candidate
 
 AICore 是面向 Windows / Linux 的 AI 原生计算机智能控制层。它位于应用软件与操作系统资源控制之间，通过 Context、Prediction、Policy、Validator、Executor、Runtime、Adapter 与 Memory 形成闭环。
 
 ## Current engineering state
 
-当前源码以 V3.2 engineering-close candidate 为基线：
+当前源码以 V4 defect-correction implementation candidate 为基线：
 
 - Core / Contracts / Runtime / Adapter / AI Runtime / Memory / Plugin / Tier 已进入统一工程骨架。
 - L0 / L1 / L2 为三个独立、可插拔的兼容等级，彼此不依赖。
@@ -16,16 +16,16 @@ AICore 是面向 Windows / Linux 的 AI 原生计算机智能控制层。它位�
 
 ## Verification
 
-本交付包未在当前环境执行 Rust 编译，因为环境没有 `cargo` / `rustc`。进入下一产品阶段前必须在目标 Windows/Linux CI 上执行：
+当前已在 WSL/Linux、Rust 1.75 执行编译、Clippy 和 Model Mode 验证。完整结果与安全测试筛选范围见 [V4 验证报告](docs/quality/V4_DEFECT_CORRECTION_REPORT.md)。未筛选完整测试仍未运行，不宣称 V4 工程闭环完成。
 
 ```text
 cargo fmt --all -- --check
-cargo build --workspace --all-targets
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+cargo check --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-targets --locked --no-run
 ```
 
-并执行实际平台 service / IPC / dashboard / GPU-NPU capability / stability smoke。
+本轮仅允许 `AICORE_EXECUTION_MODE=model`。测试中真实 affinity / power / GPU 控制项不得在本轮执行；真实 service 和安装验收属于另行授权的平台验证。
 
 ## Project structure
 
@@ -64,9 +64,9 @@ Apache License 2.0. See `LICENSE` and `NOTICE`.
 
 ## 当前工程状态
 
-当前源码为 **AICore V3.2 工程收口实现候选**。已将 Core/Runtime/Tier/Task/Memory/IPC/Plugin/Deploy/Dashboard 等模块整理为同一主闭环，并保留 Windows/Linux capability-gated 适配。
+当前源码为 **AICore V4 缺陷修复实现候选**。已将 Core/Runtime/Tier/Task/Memory/IPC/Plugin/Deploy/Dashboard 等模块整理为同一主闭环，并保留 Windows/Linux capability-gated 适配。
 
-本工作环境没有 Rust toolchain，因此此压缩包不宣称“已在真实 Windows/Linux 主机通过全部编译与硬件验收”；最终 release 必须经过项目 CI 和真实目标机验收。
+本轮验证有 Rust 工具链，但不包含真实硬件控制或服务安装认证。Windows 定向交叉编译通过不等于 Windows 完整运行验证。
 
 
 ## Engineering completion

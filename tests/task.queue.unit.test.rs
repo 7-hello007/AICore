@@ -92,7 +92,7 @@ fn deadline_overrides_priority() {
 }
 
 #[test]
-fn expired_task_is_removed_before_dequeue() {
+fn expired_task_is_marked_expired_before_dequeue() {
     let q = InMemoryTaskQueue::new();
     q.enqueue(task("expired", None, Some(500))).unwrap(); // deadline 已经过去
 
@@ -100,7 +100,9 @@ fn expired_task_is_removed_before_dequeue() {
     assert!(got.is_none());
 
     let snapshot = q.snapshot().unwrap();
-    assert!(snapshot.iter().all(|t| t.task_id != "expired"));
+    assert!(snapshot
+        .iter()
+        .any(|t| t.task_id == "expired" && t.state == TaskState::Expired));
     assert_eq!(q.queued_count().unwrap(), 0);
 }
 

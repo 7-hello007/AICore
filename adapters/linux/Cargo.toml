@@ -10,5 +10,3 @@ sysinfo = "0.30"
 serde.workspace = true
 tracing.workspace = true
 libc = "0.2"
-rayon-core = { workspace = true }
-rayon = { workspace = true }

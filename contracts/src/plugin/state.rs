@@ -29,7 +29,7 @@ impl PluginState {
 
     /// 是否处于"终态"（不再自动转换）。
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Rejected | Self::Failed)
+        matches!(self, Self::Rejected)
     }
 
     /// 是否允许转换到 `next`。

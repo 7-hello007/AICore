@@ -89,17 +89,41 @@ impl HardwareCapabilityEntry {
     }
 }
 
+/// 硬件设备类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HardwareDeviceKind {
+    Gpu,
+    Npu,
+    #[default]
+    Unknown,
+}
+
 /// 硬件能力清单。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareCapabilitySet {
     pub device_name: String,
+    #[serde(default)]
+    pub device_kind: HardwareDeviceKind,
     pub entries: Vec<HardwareCapabilityEntry>,
 }
 
 impl HardwareCapabilitySet {
     pub fn new(device_name: impl Into<String>) -> Self {
+        let device_name = device_name.into();
+        let device_kind = if device_name.starts_with("drm:")
+            || device_name.starts_with("nvidia:")
+            || device_name.starts_with("gpu:")
+        {
+            HardwareDeviceKind::Gpu
+        } else if device_name.starts_with("npu:") || device_name.starts_with("accel:") {
+            HardwareDeviceKind::Npu
+        } else {
+            HardwareDeviceKind::Unknown
+        };
         Self {
-            device_name: device_name.into(),
+            device_name,
+            device_kind,
             entries: Vec::new(),
         }
     }

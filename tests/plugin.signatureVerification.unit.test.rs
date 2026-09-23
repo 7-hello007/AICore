@@ -3,7 +3,7 @@
 use ed25519_dalek::{Signer, SigningKey};
 
 use aicore_contracts::plugin::signature::{PluginSignature, SignatureAlgorithm};
-use aicore_plugin::{SignatureVerifier, SignatureVerifyError};
+use aicore_plugin::{SignatureVerifier, SignatureVerifyError, TrustEntry, TrustStore};
 
 fn keypair() -> (SigningKey, [u8; 32]) {
     use rand::RngCore;
@@ -75,5 +75,17 @@ fn ed25519_malformed_signature_length_fails() {
 
 #[test]
 fn ed25519_public_key_mismatch_detected_at_trust_level() {
-    // 由 TrustStore 检查，不在这里测
+    let (sk, pk) = keypair();
+    let (_, other_pk) = keypair();
+    let message = b"trusted plugin artifact";
+    let signature = sk.sign(message);
+    let sig = PluginSignature::ed25519(hex::encode(signature.to_bytes()), hex::encode(pk));
+
+    let store = TrustStore::new();
+    store
+        .register(TrustEntry::trusted("plugin.test", hex::encode(other_pk)))
+        .unwrap();
+    let result = store.verify("plugin.test", message, Some(&sig)).unwrap();
+    assert!(!result.accepted);
+    assert!(result.reason.contains("public key mismatch"));
 }

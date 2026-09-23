@@ -49,6 +49,9 @@ impl ModelWeights {
             ));
         }
         for (i, row) in self.weights.iter().enumerate() {
+            if row.iter().any(|weight| !weight.is_finite()) {
+                return Err(format!("weights[{}] contains a non-finite value", i));
+            }
             if row.len() != self.feature_dim {
                 return Err(format!(
                     "weights[{}] length {} != feature_dim {}",
@@ -65,6 +68,9 @@ impl ModelWeights {
     ///
     /// 返回按分数降序排列的 `(label, score)`。
     pub fn infer(&self, features: &[f32]) -> Result<Vec<(String, f32)>, String> {
+        if features.iter().any(|feature| !feature.is_finite()) {
+            return Err("features contain a non-finite value".to_string());
+        }
         if features.len() != self.feature_dim {
             return Err(format!(
                 "feature dimension {} != expected {}",
@@ -83,6 +89,10 @@ impl ModelWeights {
             })
             .collect();
 
+        if scores.iter().any(|(_, score)| !score.is_finite()) {
+            return Err("non-finite inference logit".to_string());
+        }
+
         // softmax（数值稳定）
         let max = scores
             .iter()
@@ -90,8 +100,8 @@ impl ModelWeights {
             .fold(f32::NEG_INFINITY, f32::max);
         let exps: Vec<f32> = scores.iter().map(|(_, s)| (s - max).exp()).collect();
         let sum: f32 = exps.iter().sum();
-        if sum <= 0.0 {
-            return Err("softmax denominator is zero".to_string());
+        if !sum.is_finite() || sum <= 0.0 {
+            return Err("softmax denominator is not finite and positive".to_string());
         }
 
         for ((_, score), exp) in scores.iter_mut().zip(exps.iter()) {
@@ -101,5 +111,51 @@ impl ModelWeights {
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(scores)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelWeights;
+
+    fn model() -> ModelWeights {
+        ModelWeights {
+            schema_version: "1.0".into(),
+            name: "finite-test".into(),
+            version: "1.0.0".into(),
+            feature_dim: 1,
+            labels: vec!["a".into(), "b".into()],
+            weights: vec![vec![2.0], vec![-2.0]],
+        }
+    }
+
+    #[test]
+    fn non_finite_features_are_rejected() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(model().infer(&[value]).is_err());
+        }
+    }
+
+    #[test]
+    fn non_finite_weights_are_rejected() {
+        let mut model = model();
+        model.weights[0][0] = f32::INFINITY;
+        assert!(model.validate().is_err());
+    }
+
+    #[test]
+    fn overflowing_logits_are_rejected() {
+        assert!(model().infer(&[f32::MAX]).is_err());
+    }
+
+    #[test]
+    fn finite_softmax_is_normalized_and_sorted() {
+        let scores = model().infer(&[100.0]).unwrap();
+        assert_eq!(scores[0].0, "a");
+        assert!(scores
+            .iter()
+            .all(|(_, score)| score.is_finite() && (0.0..=1.0).contains(score)));
+        assert!((scores.iter().map(|(_, score)| score).sum::<f32>() - 1.0).abs() < 1e-6);
+        assert!(model().infer(&[]).is_err());
     }
 }

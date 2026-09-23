@@ -1,5 +1,5 @@
 use crate::control::trace::ControlTrace;
-use crate::execution::targets::ExecutionTargets;
+use crate::execution::{result::ExecutionResult, targets::ExecutionTargets};
 use crate::policy::resource_policy::ResourcePolicy;
 
 /// 透明控制执行器。
@@ -18,6 +18,11 @@ pub trait ITransparentExecutor: Send + Sync {
         targets: &ExecutionTargets,
         prior_policy: Option<&ResourcePolicy>,
     ) -> ControlTrace;
+
+    /// 最近一次 Apply 的真实执行结果。实现可覆盖，用于审计/可观测性。
+    fn last_execution_result(&self) -> Option<ExecutionResult> {
+        None
+    }
 
     fn name(&self) -> &'static str;
 }

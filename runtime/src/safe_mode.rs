@@ -37,7 +37,10 @@ impl SafeModeController {
             return self.current_mode();
         }
 
-        let mut mode = self.mode.write().expect("safe_mode lock poisoned");
+        let mut mode = self
+            .mode
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous = *mode;
         let next = match previous {
             RuntimeMode::Safe => RuntimeMode::Recovery,
@@ -58,7 +61,10 @@ impl SafeModeController {
         self.consecutive_successes.store(0, Ordering::SeqCst);
         let failures = self.consecutive_failures.fetch_add(1, Ordering::SeqCst) + 1;
 
-        let mut mode = self.mode.write().expect("safe_mode lock poisoned");
+        let mut mode = self
+            .mode
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let next = if failures >= self.config.safe_threshold {
             RuntimeMode::Safe
         } else if failures >= self.config.degraded_threshold {
@@ -71,7 +77,10 @@ impl SafeModeController {
     }
 
     pub fn current_mode(&self) -> RuntimeMode {
-        *self.mode.read().expect("safe_mode lock poisoned")
+        *self
+            .mode
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub fn consecutive_failures(&self) -> u32 {

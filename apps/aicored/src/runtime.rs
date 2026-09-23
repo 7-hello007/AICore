@@ -376,9 +376,19 @@ pub fn build_runtime_full(
          */
         #[cfg(target_os = "linux")]
         {
+            use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
             let exec = Arc::new(aicore_adapter_linux::LinuxHardwareExecutor::new())
                 as Arc<dyn aicore_contracts::traits::hardware_executor::IHardwareExecutor>;
-
+            let hardware_telemetry = aicore_adapter_linux::LinuxHardwareTelemetryProvider::new();
+            let capability = aicore_adapter_linux::LinuxHardwareCapabilityProvider::new();
+            for device in hardware_telemetry.gpu_devices() {
+                platform_binder =
+                    platform_binder.with_hardware(capability.gpu_capability(&device.id));
+            }
+            for device in hardware_telemetry.npu_devices() {
+                platform_binder =
+                    platform_binder.with_hardware(capability.npu_capability(&device.id));
+            }
             platform_binder = platform_binder
                 .with_gpu_executor(exec.clone())
                 .with_npu_executor(exec);
@@ -391,9 +401,20 @@ pub fn build_runtime_full(
          */
         #[cfg(target_os = "windows")]
         {
+            use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
             let exec = Arc::new(aicore_adapter_windows::WindowsHardwareExecutor::new())
                 as Arc<dyn aicore_contracts::traits::hardware_executor::IHardwareExecutor>;
-
+            let hardware_telemetry =
+                aicore_adapter_windows::WindowsHardwareTelemetryProvider::new();
+            let capability = aicore_adapter_windows::WindowsHardwareCapabilityProvider::new();
+            for device in hardware_telemetry.gpu_devices() {
+                platform_binder =
+                    platform_binder.with_hardware(capability.gpu_capability(&device.id));
+            }
+            for device in hardware_telemetry.npu_devices() {
+                platform_binder =
+                    platform_binder.with_hardware(capability.npu_capability(&device.id));
+            }
             platform_binder = platform_binder
                 .with_gpu_executor(exec.clone())
                 .with_npu_executor(exec);

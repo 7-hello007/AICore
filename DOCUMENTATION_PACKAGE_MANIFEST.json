@@ -1,15 +1,335 @@
 {
-  "name": "AICore Documentation Package",
-  "project": "AICore — AI Computer Control Layer",
-  "baseline": "PROJECT_PLAN.md",
-  "initial_file_count": 54,
-  "added_engineering_documents": 12,
-  "final_file_count": 66,
-  "test_directory_policy": "Flat tests/ directory; no subdirectories",
-  "platforms": [
-    "Windows",
-    "Linux"
-  ],
-  "macos": "Future / not implemented in first stage",
-  "package_scope": "global docs only; no destination/; current-state notes are inside docs/quality"
+  "schema_version": 2,
+  "package": "AICore documentation",
+  "project_version": "0.4.0",
+  "baseline": "destination.md",
+  "generated_at_utc": "2026-09-23T00:05:23Z",
+  "final_file_count": 65,
+  "files": [
+    {
+      "path": "docs/CURRENT_BASELINE.md",
+      "sha256": "140840d7d06d1e558c26336c82edef600e1353d861033d8f8f661e45fe880357",
+      "size_bytes": 2114
+    },
+    {
+      "path": "docs/DOCUMENTATION_INDEX.md",
+      "sha256": "502bdb18794519ff5a0e8bddf5cdb4cbfb0f5951f0864aaff7464c77709efc1f",
+      "size_bytes": 1779
+    },
+    {
+      "path": "docs/PRODUCT_DEFINITION.md",
+      "sha256": "27be8deb522f53f669e273f137f00f535842f8b8b8e39cf08ba01ea6db45f0b8",
+      "size_bytes": 1028
+    },
+    {
+      "path": "docs/PRODUCT_EVOLUTION.md",
+      "sha256": "e415770bc39e16792276b48b77eac75961405ce637952aa77fee67b20483672a",
+      "size_bytes": 491
+    },
+    {
+      "path": "docs/PROJECT_GLOSSARY.md",
+      "sha256": "b47cc38a1515a863a5f1fd462a1211e6b172037d5d381c52764e6b4cbb31741c",
+      "size_bytes": 706
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "25d40433db8220dc8e29a718e396febb80f3365ffb816236730d5cbf5f2f09d4",
+      "size_bytes": 2102
+    },
+    {
+      "path": "docs/SYSTEM_ARCHITECTURE.md",
+      "sha256": "e7795941d69da2aa6bbd4490584ef168b15c82c5b22ac6f0be29051aee14a89c",
+      "size_bytes": 2018
+    },
+    {
+      "path": "docs/SYSTEM_BOUNDARY.md",
+      "sha256": "365726097b9e580abbec78c81f9136bef9cd89faae6c25d4bfd7bd3548a4946e",
+      "size_bytes": 904
+    },
+    {
+      "path": "docs/SYSTEM_REQUIREMENTS.md",
+      "sha256": "fdea20b939ccf31ef10afb331b26910c268100779ff58c656c80d951ce05e18f",
+      "size_bytes": 1250
+    },
+    {
+      "path": "docs/ai/AI_ARCHITECTURE.md",
+      "sha256": "c095f9ac728f6c12e7ed8ef0cf7f76e8674aeca09051413ab5c1676f23e1aa89",
+      "size_bytes": 581
+    },
+    {
+      "path": "docs/ai/INFERENCE_POLICY.md",
+      "sha256": "e1b542fbc434bf421391e2152cd7ad428b13714bfd54e95fffce2c3767806b47",
+      "size_bytes": 414
+    },
+    {
+      "path": "docs/ai/MODEL_LIFECYCLE.md",
+      "sha256": "8a10090066060852d3ea47b52a6b1bca31eb355a9b5d07eb895e216b6f6ea2f2",
+      "size_bytes": 302
+    },
+    {
+      "path": "docs/architecture/ADAPTER_PLANE.md",
+      "sha256": "6c6ac708a3f66bec12d9ba45dbfe8a68c01f989ebd9d89696fbefc6648d8a0e6",
+      "size_bytes": 506
+    },
+    {
+      "path": "docs/architecture/ADRS.md",
+      "sha256": "58e91229f24be31f89e51511f4304411160ccbe4fc1c2345b2cf578de3256a8b",
+      "size_bytes": 404
+    },
+    {
+      "path": "docs/architecture/ARCHITECTURE_RULES.md",
+      "sha256": "604572366a7aaeb61ddf54eeb6d7194cf4561834b6c77f81e8ca743e378a3885",
+      "size_bytes": 629
+    },
+    {
+      "path": "docs/architecture/CONTROL_PLANE.md",
+      "sha256": "0bdf912328529ff41d498b10feac5b7e45b156f31927c744cda951f08f7a5c31",
+      "size_bytes": 707
+    },
+    {
+      "path": "docs/architecture/DATA_PLANE.md",
+      "sha256": "eccc20ea086766a275a6619cbbf4f0605044920b3a333903353b010c28c97433",
+      "size_bytes": 509
+    },
+    {
+      "path": "docs/architecture/SYSTEM_ARCHITECTURE.md",
+      "sha256": "2c5f50296f352bfe812e224b9c7fed4dc4a5599793b1d8799a3f7232756a799e",
+      "size_bytes": 1148
+    },
+    {
+      "path": "docs/context/COMPATIBILITY_MODEL.md",
+      "sha256": "34df77ccbaf225c6329c2858231b3ec05b9b5138f3670be54e46a3e6ee455801",
+      "size_bytes": 610
+    },
+    {
+      "path": "docs/context/TIER_ARCHITECTURE.md",
+      "sha256": "9c1d0ccb1b4673c2948952aa36c3ed64e6f6d2f9872c27f9fa552915b8be3f3a",
+      "size_bytes": 1003
+    },
+    {
+      "path": "docs/contracts/API_DESIGN.md",
+      "sha256": "4e93de8d316e98eb08016e9e8538f280c3c0867df05dbf0186f684342077017c",
+      "size_bytes": 466
+    },
+    {
+      "path": "docs/contracts/CONTRACT_ARCHITECTURE.md",
+      "sha256": "f47d35e79cccab9d92a31f28bc34bf2caf85580c11b81bb9889cd21d54015009",
+      "size_bytes": 649
+    },
+    {
+      "path": "docs/contracts/DATA_MODEL.md",
+      "sha256": "cdb34259c95784cc3761fc578274a8019f7d0f5372f472c5f335ef2ad7c61b7c",
+      "size_bytes": 818
+    },
+    {
+      "path": "docs/contracts/EVENT_SYSTEM.md",
+      "sha256": "c85d8844a0196ef8cfa1ae58a4ea0e673841bf546eff75288ad2c3f84baadc91",
+      "size_bytes": 368
+    },
+    {
+      "path": "docs/contracts/IPC_PROTOCOL.md",
+      "sha256": "869dd21dcf870019002ab282031495e59bf18edb11087f3bba8f38e030e3b7e4",
+      "size_bytes": 526
+    },
+    {
+      "path": "docs/governance/ADR_POLICY.md",
+      "sha256": "a27db7f8bc1710ce6fd5724b5805b4331c1da78f0a5dcbe81256a1777e31451f",
+      "size_bytes": 230
+    },
+    {
+      "path": "docs/governance/CODING_STANDARD.md",
+      "sha256": "167ca111f97d139076354ee934e5d87b2ece559a8a8118d59fe300c7f8f13551",
+      "size_bytes": 394
+    },
+    {
+      "path": "docs/governance/DOCUMENTATION_STANDARD.md",
+      "sha256": "ed6cd7ad18aaaed8bec8e31c31f7f38fbbb6385bcc09f42de1edec4133a89249",
+      "size_bytes": 260
+    },
+    {
+      "path": "docs/memory/DATA_LIFECYCLE.md",
+      "sha256": "5db1ea7ebf0ae56460292d59ad70d02605ca53befe64e7174e1692bb0875552a",
+      "size_bytes": 262
+    },
+    {
+      "path": "docs/memory/MEMORY_ARCHITECTURE.md",
+      "sha256": "b2f254c97041f6033f4edd9ce95e4a4cc1c1cadd19bac6e5c9aed5725075284b",
+      "size_bytes": 431
+    },
+    {
+      "path": "docs/operations/BUILD_RELEASE.md",
+      "sha256": "679ab13fcf7e17b9468cf55c8748476cf555212d18f997aa83c9848618796f4e",
+      "size_bytes": 312
+    },
+    {
+      "path": "docs/operations/CI_CD.md",
+      "sha256": "5c4a94f5a3ffcc6f93fba96169addacab49fbf7e65ade1d7592b70d9ea51c0ea",
+      "size_bytes": 416
+    },
+    {
+      "path": "docs/operations/CONFIGURATION.md",
+      "sha256": "7e83f08ef7af6fad3916333f4505213e2eeb41f98dcde8a5fce7bfaf77dd7b5b",
+      "size_bytes": 207
+    },
+    {
+      "path": "docs/operations/OBSERVABILITY.md",
+      "sha256": "92b048dde764846d93c4a8e2ba7faff5f16cf8e2c0275a04ad38ca5793ad217c",
+      "size_bytes": 285
+    },
+    {
+      "path": "docs/platform/ADAPTER_RULES.md",
+      "sha256": "002dd0f640d2baf2ff7e93c0d7502d78b41157ba05e7c505cabd6fc28d6566b6",
+      "size_bytes": 355
+    },
+    {
+      "path": "docs/platform/PLATFORM_ARCHITECTURE.md",
+      "sha256": "b59b3c1f9f40a63aecda15ed943da92922686757e1d39bf255758953b07c1926",
+      "size_bytes": 303
+    },
+    {
+      "path": "docs/platform/PLATFORM_CAPABILITY_MATRIX.md",
+      "sha256": "dd065b9135bdb8061821bedfacb27031ea0132be2d0ce303c10df564dc69c5da",
+      "size_bytes": 795
+    },
+    {
+      "path": "docs/plugin/PLUGIN_ARCHITECTURE.md",
+      "sha256": "cea64a05c5e32557d30509d7c99b403f0b71c5302680ff8c0bb1861748b974fd",
+      "size_bytes": 365
+    },
+    {
+      "path": "docs/plugin/PLUGIN_LIFECYCLE.md",
+      "sha256": "2c73cfdf0b3472817fccc4c1b4f7ac72c699f3206b799ac3d0db3bccd2d159e5",
+      "size_bytes": 243
+    },
+    {
+      "path": "docs/plugin/PLUGIN_SECURITY.md",
+      "sha256": "4cda0f772104342ffbe489eaf6c93e753b9c04d733069b6d64fecd860a0225c5",
+      "size_bytes": 296
+    },
+    {
+      "path": "docs/policy/POLICY_RESOLUTION.md",
+      "sha256": "03ea197599e09267f90260ead4fb08e2150b2f10236b7c2641d614ab2b23a936",
+      "size_bytes": 345
+    },
+    {
+      "path": "docs/policy/POLICY_SYSTEM.md",
+      "sha256": "83332fd76ee1776cd7e0203440927ff01005411f1f2bdbf889179c8c04909936",
+      "size_bytes": 407
+    },
+    {
+      "path": "docs/policy/RESOURCE_CONTROL.md",
+      "sha256": "53d4c452bb0a202d9f4445ffe3ddaba22116579f06844080addfcb0ac94fdb98",
+      "size_bytes": 324
+    },
+    {
+      "path": "docs/quality/ACCEPTANCE_MODEL.md",
+      "sha256": "dc703e3de13887cada5082a77cc5f802f85c0b5fc962a9515dae0f5d5feae16d",
+      "size_bytes": 302
+    },
+    {
+      "path": "docs/quality/BENCHMARKING.md",
+      "sha256": "1ceb8338774419c0d2f8d355227772f3e75fc6ce0e885f3ad8397d46f5c1fc79",
+      "size_bytes": 344
+    },
+    {
+      "path": "docs/quality/ENGINEERING_COMPLETION_REPORT.md",
+      "sha256": "d893d83b755bf3bc8a0a0a8396f49a2c7be6ced3b9690832d0266516b3833700",
+      "size_bytes": 3493
+    },
+    {
+      "path": "docs/quality/ENGINEERING_STATUS.md",
+      "sha256": "1b756cb75ec331ea86bcc46608c86bb27e0be5c5863a962cc266a7e36f134402",
+      "size_bytes": 1153
+    },
+    {
+      "path": "docs/quality/RELEASE_GATE.md",
+      "sha256": "0969d31f01a498bed56f2f330956aecfeaa67b18c6bb6390d6f1b172ff1304e0",
+      "size_bytes": 1035
+    },
+    {
+      "path": "docs/quality/TESTING_STRATEGY.md",
+      "sha256": "757c909dce9ead6d0c2ed786da19a825a6e30d010fd3d886e6eafe1bd689df76",
+      "size_bytes": 220
+    },
+    {
+      "path": "docs/quality/TEST_NAMING.md",
+      "sha256": "fbd408cdaea7f21e92b3dd62bc47521398c6123cc47fc2be7f10d562c59c64f9",
+      "size_bytes": 461
+    },
+    {
+      "path": "docs/quality/TRACEABILITY.md",
+      "sha256": "77a92221de17f16a70b6fbb936b385b42224b520e29fb26121e7de40f164d6b7",
+      "size_bytes": 324
+    },
+    {
+      "path": "docs/quality/V3_2_IMPLEMENTATION_STATUS.md",
+      "sha256": "f600c8b5e82e36065dd6451c77242ad8882d6b460645991623bd28e7cef45bbe",
+      "size_bytes": 2161
+    },
+    {
+      "path": "docs/quality/V4_DEFECT_CORRECTION_REPORT.md",
+      "sha256": "2e121139b01ee570f264c507c584634c61c426da1ff995f7bd3d02c6387baf53",
+      "size_bytes": 1921
+    },
+    {
+      "path": "docs/quality/V4_RELEASE_READINESS.md",
+      "sha256": "aa5280bfae38dff2cd62302359bcf6806ecbda8b3609e2d20fa0182bea118940",
+      "size_bytes": 780
+    },
+    {
+      "path": "docs/quality/VERIFICATION_RUNBOOK.md",
+      "sha256": "157491e778f8412ffc00140aca156bc6100a65f5d61c38f0e898eda40268e57a",
+      "size_bytes": 885
+    },
+    {
+      "path": "docs/runtime/FAILURE_RECOVERY.md",
+      "sha256": "88eb03f6b6276bb30c692863229db02816fc51c9cecde5bd25d4b8e4957f54c6",
+      "size_bytes": 489
+    },
+    {
+      "path": "docs/runtime/RUNTIME_ARCHITECTURE.md",
+      "sha256": "10ac0825fe9fcf54320fc9382839facdda24f83a3789e6583eaa4c479632a733",
+      "size_bytes": 454
+    },
+    {
+      "path": "docs/runtime/STATE_MACHINE.md",
+      "sha256": "386326638bf91b1c8d3939fce2e20a8f687d461909feb31c65f3d37e01ea2df9",
+      "size_bytes": 408
+    },
+    {
+      "path": "docs/security/DATA_PRIVACY.md",
+      "sha256": "d04c09180f46f0a93b1462721db3103372cb9de6f336fdc9df125ecc93515ea1",
+      "size_bytes": 288
+    },
+    {
+      "path": "docs/security/PERMISSION_MODEL.md",
+      "sha256": "5f7a446792606c9586395741897fffc569f94003f4e159bf2dda4966aaa5460c",
+      "size_bytes": 303
+    },
+    {
+      "path": "docs/security/SECURITY_ARCHITECTURE.md",
+      "sha256": "47432dd1d705315b1208cfaa55b7388b08624110d69b84bf73f2b4f65d02fe9f",
+      "size_bytes": 357
+    },
+    {
+      "path": "docs/security/THREAT_MODEL.md",
+      "sha256": "1bf5bf51e08e4ff905d91bc80b56ad0114238c0a4c49da6c15eee1b2bde848fe",
+      "size_bytes": 407
+    },
+    {
+      "path": "docs/ui/DASHBOARD_ARCHITECTURE.md",
+      "sha256": "b33a56dc432f85a3935f02f29d4205ada3c6d83c0a6371617fea0de4034ed0fe",
+      "size_bytes": 343
+    },
+    {
+      "path": "docs/ui/DASHBOARD_DATA_FLOW.md",
+      "sha256": "4e3e8824b53bfb9a1fd25ddd11f62e41b1d0825118650eb4d8b2c9c106352069",
+      "size_bytes": 327
+    },
+    {
+      "path": "docs/ui/DASHBOARD_DESIGN.md",
+      "sha256": "495495276b762b8b4caa0ff229bea498d497bc744e4a3726a22fa979349e9f59",
+      "size_bytes": 657
+    }
+  ]
 }

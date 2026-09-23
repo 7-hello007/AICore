@@ -17,7 +17,7 @@ use crate::runtime::{
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DashboardSnapshot {
     pub schema_version: SchemaVersion,
-    pub fetched_at_unix_secs: u64,
+    pub fetched_at_unix_ms: u64,
 
     // === 核心运行时 ===
     pub daemon_status: Option<DaemonStatus>,
@@ -55,10 +55,10 @@ impl DashboardSnapshot {
     /// 当前 schema 版本。
     pub const SCHEMA_VERSION: SchemaVersion = SchemaVersion::CURRENT;
 
-    pub fn new(fetched_at_unix_secs: u64) -> Self {
+    pub fn new(fetched_at_unix_ms: u64) -> Self {
         Self {
             schema_version: Self::SCHEMA_VERSION,
-            fetched_at_unix_secs,
+            fetched_at_unix_ms,
             ..Default::default()
         }
     }

@@ -15,7 +15,7 @@
 #   - blank_lines_lower_bound
 #
 # 在 stable 上使用会打出 warning 并被静默忽略。
-# 详见 docs/decisions/ADR-004-rustfmt-policy.md。
+# 该格式策略由本文件直接定义；不绑定 ADR 编号，避免与架构 ADR 编号冲突。
 
 edition = "2021"
 max_width = 100

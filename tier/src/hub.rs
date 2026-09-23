@@ -63,10 +63,18 @@ impl TierHub {
             .map_err(|e| TierHubError::Registry(e.to_string()))?;
 
         // 能力实现也要一起注销，否则会留下悬空 provider。
-        let _ = self.workload_sources.unregister(id);
-        let _ = self.task_sources.unregister(id);
-        let _ = self.adaptation_providers.unregister(id);
-        let _ = self.native_task_providers.unregister(id);
+        self.workload_sources
+            .unregister(id)
+            .map_err(|e| TierHubError::Capability(e.to_string()))?;
+        self.task_sources
+            .unregister(id)
+            .map_err(|e| TierHubError::Capability(e.to_string()))?;
+        self.adaptation_providers
+            .unregister(id)
+            .map_err(|e| TierHubError::Capability(e.to_string()))?;
+        self.native_task_providers
+            .unregister(id)
+            .map_err(|e| TierHubError::Capability(e.to_string()))?;
 
         Ok(removed)
     }

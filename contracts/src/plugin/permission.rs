@@ -13,6 +13,10 @@ pub enum PluginPermission {
     ProcessRead,
     #[serde(rename = "process.control")]
     ProcessControl,
+    #[serde(rename = "gpu.read")]
+    GpuRead,
+    #[serde(rename = "npu.read")]
+    NpuRead,
     #[serde(rename = "power.control")]
     PowerControl,
     #[serde(rename = "gpu.control")]
@@ -25,6 +29,12 @@ pub enum PluginPermission {
     AiProvider,
     #[serde(rename = "adapter.registration")]
     AdapterRegistration,
+    #[serde(rename = "task.submit")]
+    TaskSubmit,
+    #[serde(rename = "plugin.install")]
+    PluginInstall,
+    #[serde(rename = "plugin.control")]
+    PluginControl,
 }
 
 impl PluginPermission {
@@ -37,6 +47,9 @@ impl PluginPermission {
                 | Self::GpuControl
                 | Self::NpuControl
                 | Self::AdapterRegistration
+                | Self::TaskSubmit
+                | Self::PluginInstall
+                | Self::PluginControl
         )
     }
 
@@ -45,12 +58,17 @@ impl PluginPermission {
             Self::TelemetryRead => "telemetry.read",
             Self::ProcessRead => "process.read",
             Self::ProcessControl => "process.control",
+            Self::GpuRead => "gpu.read",
+            Self::NpuRead => "npu.read",
             Self::PowerControl => "power.control",
             Self::GpuControl => "gpu.control",
             Self::NpuControl => "npu.control",
             Self::MemoryAccess => "memory.access",
             Self::AiProvider => "ai.provider",
             Self::AdapterRegistration => "adapter.registration",
+            Self::TaskSubmit => "task.submit",
+            Self::PluginInstall => "plugin.install",
+            Self::PluginControl => "plugin.control",
         }
     }
 }

@@ -58,3 +58,34 @@ fn bus_without_subscribers_is_noop() {
     bus.publish(&event); // 不应 panic
     assert_eq!(bus.subscriber_count(), 0);
 }
+
+#[test]
+fn subscriber_can_unsubscribe_during_delivery() {
+    struct SelfRemoving(std::sync::Weak<EventBus>);
+    impl EventSubscriber for SelfRemoving {
+        fn handle(&self, _: &Event) {
+            assert!(self.0.upgrade().unwrap().unsubscribe(self.name()));
+        }
+        fn name(&self) -> &'static str {
+            "self_removing"
+        }
+    }
+    let bus = Arc::new(EventBus::new());
+    bus.subscribe(Arc::new(SelfRemoving(Arc::downgrade(&bus))));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        bus.publish(&Event::ContextUpdated(ContextUpdated {
+            version: "1.0".into(),
+            timestamp_unix_ms: 0,
+            context: ContextSnapshot::default(),
+        }));
+        sender.send(bus.subscriber_count()).unwrap();
+    });
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap(),
+        0
+    );
+    worker.join().unwrap();
+}

@@ -1,10 +1,16 @@
 # Verification Runbook
 
+## V4 model-only safety boundary
+
+Do not run the unfiltered suite or platform installation steps below in a model-only verification session. Nine host-control tests are enumerated in `V4_DEFECT_CORRECTION_REPORT.md`; use its exact safe filters and report excluded tests separately. Build `aicore-daemon` and `plugin-echo` before process tests. Set `AICORE_EXECUTION_MODE=model` and use a fresh temporary directory for config, status, IPC, plugins and memory (including `TMPDIR` for legacy migration defaults).
+
+The Linux/Windows installation instructions below describe separate target-host certification, NOT commands authorized by this V4 task.
+
 ```text
 cargo fmt --all -- --check
-cargo build --workspace --all-targets
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+cargo build --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-targets --locked
 ```
 
 ## Linux

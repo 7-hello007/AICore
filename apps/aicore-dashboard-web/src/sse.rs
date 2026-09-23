@@ -63,8 +63,13 @@ pub async fn stream(stream: &mut TcpStream, state: Arc<AppState>) -> std::io::Re
 }
 
 async fn write_event(stream: &mut TcpStream, id: u64, json: &str) -> std::io::Result<()> {
-    // JSON 里可能有换行，需要每行加 `data:` 前缀；这里 JSON 是单行
-    let payload = format!("id: {}\ndata: {}\n\n", id, json);
+    let mut payload = format!("id: {}\n", id);
+    for line in json.lines() {
+        payload.push_str("data: ");
+        payload.push_str(line);
+        payload.push('\n');
+    }
+    payload.push('\n');
     stream.write_all(payload.as_bytes()).await?;
     stream.flush().await?;
     Ok(())

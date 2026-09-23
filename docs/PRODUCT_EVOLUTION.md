@@ -8,7 +8,7 @@ flowchart LR
     V2[V2 Predictive + Personal]
     V3[V3 Transparent Adaptation]
     V32[V3.2 Engineering Closure]
-    V4[V4 Deep Runtime / OS Integration]
+    V4[V4 Defect Fix / Engineering Closure]
     V5[V5 AI-native Computer Platform]
     V1 --> V2 --> V3 --> V32 --> V4 --> V5
 ```

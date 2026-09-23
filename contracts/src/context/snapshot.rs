@@ -9,7 +9,7 @@ use super::workload::{InteractionLevel, WorkloadType};
 /// - ContextSnapshot 是“用户在做什么、应用在做什么”。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ContextSnapshot {
-    /// 采集时间，Unix epoch 秒。
+    /// 采集时间，Unix epoch 毫秒。
     pub timestamp_unix_ms: Option<u64>,
 
     /// 前台应用名，例如 "Code"、"chrome"。

@@ -20,8 +20,6 @@ ed25519-dalek.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [dev-dependencies]
-aicore-adapter-linux = { path = "../adapters/linux" }
-aicore-adapter-windows = { path = "../adapters/windows" }
 aicore-ai = { path = "../ai" }
 aicore-ai-runtime = { path = "../ai-runtime" }
 aicore-memory = { path = "../memory" }
@@ -477,3 +475,8 @@ path = "stability.failureRecovery.integration.test.rs"
 [[test]]
 name = "model_execution_unit"
 path = "modelNORealPC.execution.unit.test.rs"
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+aicore-adapter-linux = { path = "../adapters/linux" }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+aicore-adapter-windows = { path = "../adapters/windows" }

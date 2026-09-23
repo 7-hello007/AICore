@@ -5,24 +5,20 @@ echo "==> fmt"
 cargo fmt --all -- --check
 
 echo "==> clippy"
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --locked -- -D warnings
 
 echo "==> build"
-cargo build --workspace --all-targets
+cargo build --workspace --all-targets --locked
 
-echo "==> unit"
-cargo nextest run --workspace -E 'binary_id(/unit/)'
+echo "==> complete test suite"
+if cargo nextest --version >/dev/null 2>&1; then
+    cargo nextest run --workspace --locked
+else
+    echo "cargo-nextest not installed; falling back to cargo test"
+    cargo test --workspace --all-targets --locked
+fi
 
-echo "==> contract"
-cargo nextest run --workspace -E 'binary_id(/contract/)'
-
-echo "==> integration"
-cargo nextest run --workspace -E 'binary_id(/integration/)'
-
-echo "==> smoke (10s)"
-AICORE_SMOKE_SECONDS=10 cargo nextest run --workspace -E 'binary_id(/smoke/)'
+echo "==> static V4 audit"
+"$(dirname "$0")/audit_v4_static.sh"
 
 echo "==> all green"
-
-# Static source/package consistency gate.
-"$(dirname "$0")/audit_v32_static.sh"

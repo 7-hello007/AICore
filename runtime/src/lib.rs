@@ -3,7 +3,7 @@ pub mod logging;
 pub mod metrics;
 pub mod safe_mode;
 
-// model - 要删除model_binder.rs
+// Model mode keeps runtime binding isolated from host hardware control.
 pub mod model_binder;
 
 pub use adaptive_loop::AdaptiveLoop;

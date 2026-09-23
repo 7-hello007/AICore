@@ -12,7 +12,7 @@ use crate::signature::{SignatureVerifier, SignatureVerifyError};
 pub struct TrustEntry {
     pub plugin_id: String,
     pub level: TrustLevel,
-    /// 期望的 Ed25519 公钥（hex）；None 表示只按 level 判定。
+    /// 期望的 Ed25519 公钥（hex）；Trusted 必须为 Some，其他 level 可为 None。
     pub public_key_hex: Option<String>,
     /// 是否允许 control 类权限。
     pub allow_control: bool,
@@ -156,19 +156,37 @@ impl TrustStore {
                     },
                 };
 
-                // 校验公钥是否匹配
-                if let Some(expected_pk) = &entry.public_key_hex {
-                    let actual_pk = sig.public_key_hex.as_ref().ok_or(TrustError::Signature(
-                        SignatureVerifyError::MissingPublicKey,
-                    ))?;
-                    if actual_pk != expected_pk {
+                // Trusted 必须绑定 TrustStore 中的 Ed25519 公钥。
+                if sig.algorithm != aicore_contracts::plugin::signature::SignatureAlgorithm::Ed25519
+                {
+                    return Ok(TrustVerification {
+                        plugin_id: plugin_id.to_string(),
+                        accepted: false,
+                        level: entry.level,
+                        reason: "trusted plugin requires Ed25519 signature".to_string(),
+                    });
+                }
+                let expected_pk = match &entry.public_key_hex {
+                    Some(key) if !key.trim().is_empty() => key,
+                    _ => {
                         return Ok(TrustVerification {
                             plugin_id: plugin_id.to_string(),
                             accepted: false,
                             level: entry.level,
-                            reason: "public key mismatch".to_string(),
+                            reason: "trusted plugin has no pinned public key".to_string(),
                         });
-                    }
+                    },
+                };
+                let actual_pk = sig.public_key_hex.as_ref().ok_or(TrustError::Signature(
+                    SignatureVerifyError::MissingPublicKey,
+                ))?;
+                if actual_pk != expected_pk {
+                    return Ok(TrustVerification {
+                        plugin_id: plugin_id.to_string(),
+                        accepted: false,
+                        level: entry.level,
+                        reason: "public key mismatch".to_string(),
+                    });
                 }
 
                 match SignatureVerifier::verify_bytes(artifact_bytes, sig) {

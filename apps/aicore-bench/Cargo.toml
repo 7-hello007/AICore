@@ -14,7 +14,11 @@ aicore-contracts = { path = "../../contracts" }
 aicore-core = { path = "../../core" }
 aicore-runtime = { path = "../../runtime" }
 aicore-ai = { path = "../../ai" }
-aicore-adapter-linux = { path = "../../adapters/linux" }
-aicore-adapter-windows = { path = "../../adapters/windows" }
 serde.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+aicore-adapter-linux = { path = "../../adapters/linux" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+aicore-adapter-windows = { path = "../../adapters/windows" }

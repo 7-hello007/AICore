@@ -214,7 +214,7 @@ impl DaemonIpcHandler {
     fn build_dashboard_snapshot(&self) -> DashboardSnapshot {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
+            .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
         let mut snap = DashboardSnapshot::new(now);

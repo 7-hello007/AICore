@@ -28,7 +28,7 @@ fn snapshot_serializes_to_json() {
     let snap = DashboardSnapshot::new(1_700_000_000);
     let json = serde_json::to_string(&snap).unwrap();
     assert!(json.contains("schema_version"));
-    assert!(json.contains("fetched_at_unix_secs"));
+    assert!(json.contains("fetched_at_unix_ms"));
 
     let back: DashboardSnapshot = serde_json::from_str(&json).unwrap();
     assert_eq!(back, snap);

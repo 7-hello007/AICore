@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use aicore_contracts::platform::service::{
-    IServiceController, ServiceOperationResult, ServiceState,
-};
+use aicore_contracts::platform::service::{IServiceController, ServiceState};
 
 /// 升级计划。
 ///
@@ -92,5 +90,3 @@ impl UpgradePlan {
         }
     }
 }
-
-pub fn _unused(_r: ServiceOperationResult) {}

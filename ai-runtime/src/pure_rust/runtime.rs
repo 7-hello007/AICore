@@ -81,7 +81,7 @@ impl IAiRuntime for PureRustRuntime {
             .validate()
             .map_err(|e| ContractError::InvalidRequest(format!("invalid model: {}", e)))?;
 
-        let now = now_unix_secs();
+        let now = now_unix_ms();
         let seq = self.next_seq.fetch_add(1, Ordering::SeqCst);
         let handle = ModelHandle {
             handle_id: format!("model-{}-{}-{}", weights.name, now, seq),
@@ -202,9 +202,9 @@ impl IAiRuntime for PureRustRuntime {
     }
 }
 
-fn now_unix_secs() -> u64 {
+fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }

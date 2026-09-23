@@ -54,8 +54,16 @@ impl JsonFileStore {
     fn persist_profile(&self, profile: &UserProfile) -> ContractResult<()> {
         let json = serde_json::to_string_pretty(profile)
             .map_err(|e| ContractError::AdapterUnavailable(format!("serialize profile: {}", e)))?;
-        fs::write(&self.profile_path, json)
-            .map_err(|e| ContractError::AdapterUnavailable(format!("write profile: {}", e)))?;
+        if let Some(parent) = self.profile_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                ContractError::AdapterUnavailable(format!("create profile dir: {}", e))
+            })?;
+        }
+        let tmp = self.profile_path.with_extension("json.tmp");
+        fs::write(&tmp, json)
+            .map_err(|e| ContractError::AdapterUnavailable(format!("write temp profile: {}", e)))?;
+        fs::rename(&tmp, &self.profile_path)
+            .map_err(|e| ContractError::AdapterUnavailable(format!("replace profile: {}", e)))?;
         Ok(())
     }
 }
@@ -81,6 +89,10 @@ fn load_profile_from(path: &PathBuf) -> UserProfile {
 
 impl IMemoryStore for JsonFileStore {
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()> {
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|_| ContractError::AdapterUnavailable("history lock poisoned".into()))?;
         if let Some(parent) = self.history_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -94,10 +106,6 @@ impl IMemoryStore for JsonFileStore {
             .map_err(|e| ContractError::AdapterUnavailable(format!("open history: {}", e)))?;
         writeln!(file, "{}", line)
             .map_err(|e| ContractError::AdapterUnavailable(format!("append history: {}", e)))?;
-        let mut cache = self
-            .cache
-            .write()
-            .map_err(|_| ContractError::AdapterUnavailable("history lock poisoned".into()))?;
         cache.push(record.clone());
         Ok(())
     }
@@ -112,14 +120,13 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn clear_history(&self) -> ContractResult<()> {
-        {
-            let mut cache = self
-                .cache
-                .write()
-                .map_err(|_| ContractError::AdapterUnavailable("history lock poisoned".into()))?;
-            cache.clear();
-        }
-        self.persist_history(&[])
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|_| ContractError::AdapterUnavailable("history lock poisoned".into()))?;
+        self.persist_history(&[])?;
+        cache.clear();
+        Ok(())
     }
 
     fn record_count(&self) -> ContractResult<usize> {
@@ -139,14 +146,13 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn save_profile(&self, profile: &UserProfile) -> ContractResult<()> {
-        {
-            let mut p = self
-                .profile
-                .write()
-                .map_err(|_| ContractError::AdapterUnavailable("profile lock poisoned".into()))?;
-            *p = profile.clone();
-        }
-        self.persist_profile(profile)
+        let mut p = self
+            .profile
+            .write()
+            .map_err(|_| ContractError::AdapterUnavailable("profile lock poisoned".into()))?;
+        self.persist_profile(profile)?;
+        *p = profile.clone();
+        Ok(())
     }
 
     fn delete_records_before(&self, cutoff_unix_ms: u64) -> ContractResult<usize> {
@@ -156,10 +162,15 @@ impl IMemoryStore for JsonFileStore {
                 .write()
                 .map_err(|_| ContractError::AdapterUnavailable("history lock poisoned".into()))?;
             let before = cache.len();
-            cache.retain(|r| r.timestamp_unix_ms >= cutoff_unix_ms);
-            let removed = before - cache.len();
+            let retained: Vec<_> = cache
+                .iter()
+                .filter(|r| r.timestamp_unix_ms >= cutoff_unix_ms)
+                .cloned()
+                .collect();
+            let removed = before - retained.len();
             if removed > 0 {
-                self.persist_history(&cache)?;
+                self.persist_history(&retained)?;
+                *cache = retained;
             }
             removed
         };

@@ -81,7 +81,12 @@ impl ITaskQueue for InMemoryTaskQueue {
             .map(|t| t.task_id.clone())
             .collect();
         for id in expired_ids {
-            let _ = state.tasks.remove(&id);
+            if let Some(task) = state.tasks.get_mut(&id) {
+                transition(task.state, TaskState::Expired)?;
+                task.state = TaskState::Expired;
+                task.finished_at_unix_ms = Some(now_ms);
+                task.result_message = Some("deadline expired before execution".to_string());
+            }
         }
 
         // 2. 找最高优先级的 Queued

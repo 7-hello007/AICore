@@ -70,6 +70,6 @@ pub struct ResourcePolicy {
     pub memory: MemoryPolicy,
     pub power: PowerPolicy,
     pub background: BackgroundPolicy,
-    /// 生成时间，Unix epoch 秒。
+    /// 生成时间，Unix epoch 毫秒。
     pub created_at_unix_ms: u64,
 }

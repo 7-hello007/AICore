@@ -1,39 +1,35 @@
 # Current Engineering Baseline
 
-本文件不是目标设计，而是当前仓库状态的入口说明。
-
 ## 当前结论
 
-上传版本已经形成完整的 Rust workspace、Core/Contracts/Runtime/Adapter/AI/Memory/Plugin/Tier/IPC/CLI/TUI/Web 代码骨架，并且存在大量单元、契约和集成测试。
+当前源码版本为 **AICore V4 defect-correction implementation candidate (`0.4.0`)**。V4 的边界是修复 V3.2 已有实现中的缺陷，不增加新的产品业务，不删除既有产品逻辑。
 
-但“代码存在”不等于“工程完成”。当前仍存在：
+本轮重点修复：
 
-- Main daemon 没有把多个 V3/V3.2 组件全部接入主闭环。
-- GPU/NPU 真控制仍存在明确 stub。
-- Windows hardware telemetry/control 仍有未实现路径。
-- ONNX backend 没有真实 `ort` dependency，测试模型仍有 placeholder。
-- IPC 的 Ack/handshake/security/backpressure/dedup 尚未完整实现。
-- Plugin timeout/isolation/trust persistence 尚未达到生产级。
-- TierHub/L0/L1/L2 已存在，但不等于已经进入 daemon 主循环。
-- Web Dashboard 已有功能原型，但视觉、HTTP 实现和安全策略仍需产品化。
-- 本次审计环境没有 `cargo`，所以没有把本地编译/测试结果冒充为通过；最终门禁必须在 CI / 实际 Windows/Linux 环境执行。
+- Runtime route decision 与有副作用的 binding 分离；binding 只能在 Policy Validator 接受后执行。
+- TaskContract 已有 priority / power / GPU / NPU / privacy / task_id 约束进入现有 policy 链；每 tick 不再把一个 policy 错误完成多个 task。
+- 过期 task 保留并进入 `Expired` 状态。
+- Platform Runtime Binder 注入实际探测到的 GPU/NPU capability，并区分 GPU/NPU 设备类型。
+- TransparentExecutor 保留真实 Apply ExecutionResult；rollback/verify 后 final status 不再伪装为 Apply 成功。
+- Model verify 覆盖 process priority / affinity / background throttle。
+- Historical record id 加入时间戳，避免 daemon 重启后重复。
+- Trusted plugin 强制 pinned Ed25519 public key；补齐既有 permission model 中缺失权限。
+- IPC 增加消息上限，修复 Windows named-pipe 首实例生命周期竞态，并限制 connection 内 dedup 集合增长。
+- Memory lock poison 不再静默成功；JSON profile 改为临时文件 + rename。
+- Dashboard HTTP 请求头读取不再固定一次 8192 字节，增加安全响应头，SSE 支持多行 data。
+- Workspace 版本、MSRV 元数据和 release profile 更新为 V4。
 
-历史缺陷与后续路线以发布前审计记录和版本变更记录为准，不作为运行时依赖。
+## 验证边界
 
+2026-09-23 已使用 WSL/Linux Rust/Cargo 1.75 验证当前源码。编译、Clippy、模型闭环和经过安全筛选的测试已执行；详见 `quality/V4_DEFECT_CORRECTION_REPORT.md`。未筛选全套测试包含真实硬件控制，按本轮约束未运行，V4 closure 尚未宣布。
 
-## Code package status
-The source package is V3.2 engineering-close candidate. Target-host CI evidence remains the final gate before V4 entry.
+V4 release gate 必须在目标环境运行：
 
+```text
+cargo fmt --all -- --check
+cargo build --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-targets --locked --no-run
+```
 
-## V3.2 修复基线
-
-本仓库的 V3.2 代码目标是：
-
-- Core / Runtime / Tier / Task Pipeline 形成真实闭环；
-- L0 / L1 / L2 仅依赖稳定 Contracts，彼此不直接依赖；
-- Windows / Linux 仅通过 Adapter 暴露平台差异；
-- Terminal 与 Web Dashboard 共享同一状态数据面；
-- 内存 retention 使用统一时间单位；
-- IPC / Plugin / Deployment / CI 均具备生产化约束。
-
-当前环境未安装 Rust toolchain，因此本次修复包只报告静态源码与结构性验证结果；真实平台测试必须在 Windows / Linux CI 或目标设备上执行后，才能把 V3.2 标记为最终 release。
+本轮只执行安全筛选测试和 Model Mode；服务安装、真实硬件控制不属于本轮可执行验证。当前 AdaptiveLoop 每 tick 消费一个任务，不能宣称已经支持 8 个独立任务/tick。

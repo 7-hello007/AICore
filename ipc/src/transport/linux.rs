@@ -2,10 +2,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
-use super::IpcTransport;
+use super::{read_bounded_message, IpcTransport};
 
 /// Linux Unix Domain Socket 传输。
 pub struct IpcStream {
@@ -26,12 +26,7 @@ impl IpcStream {
 #[async_trait]
 impl IpcTransport for IpcStream {
     async fn read_message(&mut self) -> io::Result<Option<String>> {
-        let mut line = String::new();
-        let n = self.reader.read_line(&mut line).await?;
-        if n == 0 {
-            return Ok(None);
-        }
-        Ok(Some(line.trim_end_matches(['\r', '\n']).to_string()))
+        read_bounded_message(&mut self.reader).await
     }
 
     async fn write_message(&mut self, msg: &str) -> io::Result<()> {
@@ -69,14 +64,32 @@ impl Drop for IpcListener {
 
 /// 监听 Unix Domain Socket。
 ///
-/// 若 `path` 已存在且是 socket，会先删除，避免 "address already in use"。
+/// 仅清理已失效的 socket；保留普通文件、符号链接和正在监听的 socket。
 pub fn server_listen(path: impl AsRef<Path>) -> io::Result<IpcListener> {
     let path = path.as_ref().to_path_buf();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    if path.exists() {
-        let _ = std::fs::remove_file(&path);
+    if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+        use std::os::unix::fs::FileTypeExt;
+        if !metadata.file_type().is_socket() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "IPC path is not a socket",
+            ));
+        }
+        match std::os::unix::net::UnixStream::connect(&path) {
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    "IPC socket is active",
+                ))
+            },
+            Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+                std::fs::remove_file(&path)?;
+            },
+            Err(error) => return Err(error),
+        }
     }
     let inner = UnixListener::bind(&path)?;
     Ok(IpcListener { inner, path })
@@ -86,4 +99,22 @@ pub fn server_listen(path: impl AsRef<Path>) -> io::Result<IpcListener> {
 pub async fn client_connect(path: impl AsRef<Path>) -> io::Result<IpcStream> {
     let stream = UnixStream::connect(path.as_ref()).await?;
     Ok(IpcStream::from_stream(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn listener_preserves_existing_files_and_active_sockets() {
+        let root = std::env::temp_dir().join(format!("aicore-ipc-preserve-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("keep.txt");
+        std::fs::write(&path, "preserve").unwrap();
+        assert!(super::server_listen(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "preserve");
+        let socket = root.join("active.sock");
+        let listener = super::server_listen(&socket).unwrap();
+        assert!(super::server_listen(&socket).is_err());
+        assert!(socket.exists());
+        drop(listener);
+    }
 }

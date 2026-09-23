@@ -18,6 +18,8 @@ pub struct MockServiceController {
     fail_next_upgrade: Mutex<bool>,
     /// 下一次 start 是否失败
     fail_next_start: Mutex<bool>,
+    /// 下一次 stop 是否失败
+    fail_next_stop: Mutex<bool>,
     /// 备份的 binary path 栈
     backups: Mutex<Vec<String>>,
     current_binary: Mutex<String>,
@@ -36,6 +38,7 @@ impl MockServiceController {
             }),
             fail_next_upgrade: Mutex::new(false),
             fail_next_start: Mutex::new(false),
+            fail_next_stop: Mutex::new(false),
             backups: Mutex::new(Vec::new()),
             current_binary: Mutex::new("/mock/bin/aicored".to_string()),
         }
@@ -47,7 +50,16 @@ impl MockServiceController {
     }
 
     pub fn with_failing_start(self) -> Self {
-        *self.fail_next_start.lock().unwrap() = true;
+        if let Ok(mut flag) = self.fail_next_start.lock() {
+            *flag = true;
+        }
+        self
+    }
+
+    pub fn with_failing_stop(self) -> Self {
+        if let Ok(mut flag) = self.fail_next_stop.lock() {
+            *flag = true;
+        }
         self
     }
 
@@ -80,8 +92,16 @@ impl IServiceController for MockServiceController {
     }
 
     fn start(&self) -> ServiceOperationResult {
-        if *self.fail_next_start.lock().unwrap() {
-            *self.fail_next_start.lock().unwrap() = false;
+        let fail = self
+            .fail_next_start
+            .lock()
+            .map(|mut flag| {
+                let fail = *flag;
+                *flag = false;
+                fail
+            })
+            .unwrap_or(false);
+        if fail {
             let mut s = self.state.lock().unwrap();
             s.state = ServiceState::Failed;
             return ServiceOperationResult::failed(ServiceState::Failed, "mock start failure");
@@ -92,14 +112,34 @@ impl IServiceController for MockServiceController {
     }
 
     fn stop(&self) -> ServiceOperationResult {
+        let fail = self
+            .fail_next_stop
+            .lock()
+            .map(|mut flag| {
+                let fail = *flag;
+                *flag = false;
+                fail
+            })
+            .unwrap_or(false);
+        if fail {
+            return ServiceOperationResult::failed(ServiceState::Failed, "mock stop failure");
+        }
         let mut s = self.state.lock().unwrap();
         s.state = ServiceState::Stopped;
         ServiceOperationResult::ok(ServiceState::Stopped)
     }
 
     fn upgrade(&self, new_binary_path: &str) -> ServiceOperationResult {
-        if *self.fail_next_upgrade.lock().unwrap() {
-            *self.fail_next_upgrade.lock().unwrap() = false;
+        let fail = self
+            .fail_next_upgrade
+            .lock()
+            .map(|mut flag| {
+                let fail = *flag;
+                *flag = false;
+                fail
+            })
+            .unwrap_or(false);
+        if fail {
             return ServiceOperationResult::failed(ServiceState::Stopped, "mock upgrade failure");
         }
         // 备份当前 binary

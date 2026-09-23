@@ -84,7 +84,7 @@ fn render_ai_runtime(s: &DashboardSnapshot, _w: usize) -> String {
 
 fn render_header(s: &DashboardSnapshot, w: usize) -> String {
     let bar = "═".repeat(w);
-    let ts = format_unix(s.fetched_at_unix_secs);
+    let ts = format_unix(s.fetched_at_unix_ms / 1000);
     let mut out = String::new();
     out.push_str(&bar);
     out.push('\n');

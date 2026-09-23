@@ -2,12 +2,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
 };
 
-use super::IpcTransport;
+use super::{read_bounded_message, IpcTransport};
 
 type ServerRead = tokio::io::ReadHalf<NamedPipeServer>;
 type ServerWrite = tokio::io::WriteHalf<NamedPipeServer>;
@@ -45,15 +45,10 @@ impl IpcStream {
 #[async_trait]
 impl IpcTransport for IpcStream {
     async fn read_message(&mut self) -> io::Result<Option<String>> {
-        let mut line = String::new();
-        let n = match self {
-            Self::Server { reader, .. } => reader.read_line(&mut line).await?,
-            Self::Client { reader, .. } => reader.read_line(&mut line).await?,
-        };
-        if n == 0 {
-            return Ok(None);
+        match self {
+            Self::Server { reader, .. } => read_bounded_message(reader).await,
+            Self::Client { reader, .. } => read_bounded_message(reader).await,
         }
-        Ok(Some(line.trim_end_matches(['\r', '\n']).to_string()))
     }
 
     async fn write_message(&mut self, msg: &str) -> io::Result<()> {
@@ -90,11 +85,10 @@ impl IpcListener {
 }
 
 pub fn server_listen(path: impl AsRef<Path>) -> io::Result<IpcListener> {
-    let path = path.as_ref().to_path_buf();
-    let _ = ServerOptions::new()
-        .first_pipe_instance(true)
-        .create(&path)?;
-    Ok(IpcListener { path })
+    // 实际 pipe instance 在 accept() 中创建并保持到连接完成，避免创建后立即 drop 的竞态。
+    Ok(IpcListener {
+        path: path.as_ref().to_path_buf(),
+    })
 }
 
 pub async fn client_connect(path: impl AsRef<Path>) -> io::Result<IpcStream> {

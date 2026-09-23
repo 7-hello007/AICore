@@ -126,3 +126,39 @@ fn json_file_store_round_trip() {
     let _ = std::fs::remove_file(&profile);
     let _: PathBuf = tmp;
 }
+
+#[test]
+fn json_write_failure_preserves_cached_records_and_profile() {
+    let tmp = std::env::temp_dir().join(format!("aicore-json-failure-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let history = tmp.join("history.json");
+    let profile = tmp.join("profile.json");
+    let store = JsonFileStore::new(&history, &profile);
+    store
+        .append_record(&rec(
+            "saved",
+            WorkloadType::Development,
+            PowerMode::Balanced,
+        ))
+        .unwrap();
+    let original_profile = store.load_profile().unwrap();
+    store.save_profile(&original_profile).unwrap();
+    // A directory at the temporary-file path reliably causes a write failure,
+    // including when the test runs with elevated privileges.
+    std::fs::create_dir(history.with_extension("json.tmp")).unwrap();
+    std::fs::create_dir(profile.with_extension("json.tmp")).unwrap();
+    assert!(store.clear_history().is_err());
+    assert_eq!(store.record_count().unwrap(), 1);
+    assert!(store.delete_records_before(u64::MAX).is_err());
+    assert_eq!(store.record_count().unwrap(), 1);
+    let mut changed_profile = original_profile.clone();
+    changed_profile.history_enabled = !original_profile.history_enabled;
+    assert!(store.save_profile(&changed_profile).is_err());
+    assert_eq!(store.load_profile().unwrap(), original_profile);
+    let reopened = JsonFileStore::new(&history, &profile);
+    assert_eq!(
+        reopened.load_records(10).unwrap(),
+        store.load_records(10).unwrap()
+    );
+    assert_eq!(reopened.load_profile().unwrap(), original_profile);
+}

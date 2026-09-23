@@ -1,30 +1,14 @@
-# AICore Windows Deployment (Draft)
+# AICore Windows Deployment
 
-**状态**：Draft / 未在 Windows 环境验证。
+**状态**：实现候选；必须在 Windows CI / 目标机验证。
 
-## 计划
+## 两种运行方式
 
-- Windows Service 包装 `aicored.exe`（通过 `windows-service` crate 或
-  `sc.exe create` + 服务宿主 wrapper）。
-- MSI 或 WiX 安装包（未实现；V3-M.2 或 V4）。
-- 安装 / 升级 / 回滚脚本：PowerShell。
+- 开发模式：使用普通启动/停止脚本直接运行 `aicored.exe`。
+- Windows Service：使用 `service-install.ps1` / 对应卸载脚本注册和管理服务。
 
-## 当前可用的最小脚本
+Windows Service 路径已经存在，因此文档不再声明“未注册为 Windows Service”。生产部署仍应使用专用低权限服务账户，并验证 ACL、自动重启、升级/回滚和 Named Pipe 权限。
 
-`install.ps1` / `uninstall.ps1` 提供"以普通用户运行"的开发模式：
-直接在后台启动 `aicored.exe`，日志写文件；不注册为 Windows Service。
+## Release gate
 
-## 服务注册（未来）
-
-```powershell
-sc.exe create aicored `
-    binPath= "C:\Program Files\AICore\aicored.exe --interval-ms 100" `
-    start= auto `
-    DisplayName= "AICore Daemon"
-sc.exe start aicored
-已知限制
-未注册为 Windows Service。
-
-无 ACL 隔离。
-
-无自动重启。
+在真实 Windows 主机执行 service install/start/query/stop/uninstall、IPC、Dashboard 和 upgrade/rollback smoke 后，才能把该部署路径标记为已验证。

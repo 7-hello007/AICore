@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 
 use aicore_contracts::plugin::signature::{PluginSignature, SignatureAlgorithm};
@@ -10,8 +11,17 @@ pub struct SignatureVerifier;
 impl SignatureVerifier {
     /// 计算文件的 SHA-256（十六进制小写）。
     pub fn compute_sha256(path: impl AsRef<Path>) -> std::io::Result<PluginSignature> {
-        let bytes = std::fs::read(path.as_ref())?;
-        Ok(Self::compute_sha256_from_bytes(&bytes))
+        let mut file = std::fs::File::open(path.as_ref())?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let read = file.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        Ok(PluginSignature::sha256(format!("{:x}", hasher.finalize())))
     }
 
     /// 从内存字节计算 SHA-256。
@@ -27,6 +37,20 @@ impl SignatureVerifier {
         path: impl AsRef<Path>,
         expected: &PluginSignature,
     ) -> Result<(), SignatureVerifyError> {
+        if !expected.is_well_formed() {
+            return Err(SignatureVerifyError::MalformedExpected);
+        }
+        if expected.algorithm == SignatureAlgorithm::Sha256 {
+            let actual = Self::compute_sha256(path.as_ref())
+                .map_err(|e| SignatureVerifyError::Io(e.to_string()))?;
+            if actual.hash_hex != expected.hash_hex {
+                return Err(SignatureVerifyError::Mismatch {
+                    expected: expected.hash_hex.clone(),
+                    actual: actual.hash_hex,
+                });
+            }
+            return Ok(());
+        }
         let bytes =
             std::fs::read(path.as_ref()).map_err(|e| SignatureVerifyError::Io(e.to_string()))?;
         Self::verify_bytes(&bytes, expected)

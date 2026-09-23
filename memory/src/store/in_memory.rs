@@ -23,37 +23,55 @@ impl InMemoryStore {
 
 impl IMemoryStore for InMemoryStore {
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()> {
-        if let Ok(mut records) = self.records.write() {
-            records.push(record.clone());
-        }
+        let mut records = self
+            .records
+            .write()
+            .map_err(|_| ContractError::LockPoisoned("records lock poisoned".to_string()))?;
+        records.push(record.clone());
         Ok(())
     }
 
     fn load_records(&self, limit: usize) -> ContractResult<Vec<HistoricalRecord>> {
-        let records = self.records.read().map(|r| r.clone()).unwrap_or_default();
+        let records = self
+            .records
+            .read()
+            .map_err(|_| ContractError::LockPoisoned("records lock poisoned".to_string()))?
+            .clone();
         let start = records.len().saturating_sub(limit);
         Ok(records[start..].to_vec())
     }
 
     fn clear_history(&self) -> ContractResult<()> {
-        if let Ok(mut records) = self.records.write() {
-            records.clear();
-        }
+        let mut records = self
+            .records
+            .write()
+            .map_err(|_| ContractError::LockPoisoned("records lock poisoned".to_string()))?;
+        records.clear();
         Ok(())
     }
 
     fn record_count(&self) -> ContractResult<usize> {
-        Ok(self.records.read().map(|r| r.len()).unwrap_or(0))
+        Ok(self
+            .records
+            .read()
+            .map_err(|_| ContractError::LockPoisoned("records lock poisoned".to_string()))?
+            .len())
     }
 
     fn load_profile(&self) -> ContractResult<UserProfile> {
-        Ok(self.profile.read().map(|p| p.clone()).unwrap_or_default())
+        Ok(self
+            .profile
+            .read()
+            .map_err(|_| ContractError::LockPoisoned("profile lock poisoned".to_string()))?
+            .clone())
     }
 
     fn save_profile(&self, profile: &UserProfile) -> ContractResult<()> {
-        if let Ok(mut p) = self.profile.write() {
-            *p = profile.clone();
-        }
+        let mut p = self
+            .profile
+            .write()
+            .map_err(|_| ContractError::LockPoisoned("profile lock poisoned".to_string()))?;
+        *p = profile.clone();
         Ok(())
     }
 

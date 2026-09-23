@@ -4,7 +4,7 @@ use std::time::Instant;
 use aicore_contracts::{
     ai::runtime::ModelHandle,
     errors::ContractResult,
-    hardware::capability::{HardwareCapability, HardwareCapabilitySet},
+    hardware::capability::{HardwareCapability, HardwareCapabilitySet, HardwareDeviceKind},
     runtime::route::RuntimeRouteSource,
     traits::hardware_executor::{
         HardwareExecutionHint, HardwareExecutionRequest, IHardwareExecutor,
@@ -82,15 +82,17 @@ impl DefaultRuntimeBinder {
     }
 
     fn gpu_capability_present(&self) -> bool {
-        self.hardware
-            .iter()
-            .any(|h| h.is_supported(HardwareCapability::DeviceIdentity))
+        self.hardware.iter().any(|h| {
+            h.device_kind == HardwareDeviceKind::Gpu
+                && h.is_supported(HardwareCapability::DeviceIdentity)
+        })
     }
 
     fn npu_capability_present(&self) -> bool {
-        self.hardware
-            .iter()
-            .any(|h| h.is_supported(HardwareCapability::DeviceIdentity))
+        self.hardware.iter().any(|h| {
+            h.device_kind == HardwareDeviceKind::Npu
+                && h.is_supported(HardwareCapability::DeviceIdentity)
+        })
     }
 }
 
@@ -241,7 +243,10 @@ impl DefaultRuntimeBinder {
         let device_id = self
             .hardware
             .iter()
-            .find(|h| h.is_supported(HardwareCapability::DeviceIdentity))
+            .find(|h| {
+                h.device_kind == HardwareDeviceKind::Gpu
+                    && h.is_supported(HardwareCapability::DeviceIdentity)
+            })
             .map(|h| h.device_name.clone())
             .unwrap_or_else(|| {
                 if cfg!(target_os = "windows") {
@@ -314,7 +319,10 @@ impl DefaultRuntimeBinder {
         let device_id = self
             .hardware
             .iter()
-            .find(|h| h.is_supported(HardwareCapability::DeviceIdentity))
+            .find(|h| {
+                h.device_kind == HardwareDeviceKind::Npu
+                    && h.is_supported(HardwareCapability::DeviceIdentity)
+            })
             .map(|h| h.device_name.clone())
             .unwrap_or_else(|| {
                 if cfg!(target_os = "windows") {

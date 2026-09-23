@@ -33,7 +33,7 @@ get_workspace_version() {
 }
 
 # 加载时立即解析版本，并导出到环境。
-WORKSPACE_VERSION="$(get_workspace_version)"
+WORKSPACE_VERSION="${AICORE_VERSION:-$(get_workspace_version)}"
 if [ -z "$WORKSPACE_VERSION" ]; then
     echo "错误：无法从 ${_version_repo_root}/Cargo.toml 读取 workspace.package.version" >&2
     return 1 2>/dev/null || exit 1

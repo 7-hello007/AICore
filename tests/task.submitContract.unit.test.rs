@@ -28,7 +28,10 @@ fn submit_minimal_contract_succeeds() {
     let contract = TaskContract::minimal(app);
     let result = api.submit_task(&contract).unwrap();
     assert!(result.accepted);
-    assert!(result.task_id.is_none());
+    assert!(result
+        .task_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with("task-")));
 }
 
 #[test]

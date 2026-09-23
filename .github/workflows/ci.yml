@@ -12,31 +12,31 @@ env:
 
 jobs:
   lint:
-  name: fmt + clippy + lockfile
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
+    name: fmt + clippy + lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - uses: dtolnay/rust-toolchain@1.75
-      with:
-        components: rustfmt, clippy
+      - uses: dtolnay/rust-toolchain@1.75
+        with:
+          components: rustfmt, clippy
 
-    - uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Format
-      run: cargo fmt --all -- --check
+      - name: Format
+        run: cargo fmt --all -- --check
 
-    - name: Clippy
-      run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
-    - name: Cargo.lock is up-to-date
-      run: cargo update --workspace --locked --dry-run
+      - name: Cargo.lock is up-to-date
+        run: cargo metadata --locked --format-version 1 > cargo-metadata.json
 
   build-and-test:
     name: ${{ matrix.os }} / ${{ matrix.group }}

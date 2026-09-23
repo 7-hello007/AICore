@@ -271,52 +271,44 @@ impl AdaptiveLoop {
     fn ai_runtime_health_json(&self) -> Option<String> {
         let binder = self.runtime_binder.as_ref()?;
         let models = binder.loaded_models();
-        let summary = serde_json::json!({
-            "runtime_name": binder.name(),
-            "healthy": !models.is_empty(),
-            "loaded_models": models.len(),
-            "state": if models.is_empty() { "not_ready" } else { "ready" },
-        });
-        Some(summary.to_string())
+        let summary = aicore_contracts::dashboard::snapshot::AiRuntimeHealthSummary {
+            runtime_name: binder.name().to_string(),
+            healthy: !models.is_empty(),
+            loaded_models: models.len(),
+            degraded_reason: if models.is_empty() {
+                Some("no model loaded".to_string())
+            } else {
+                None
+            },
+        };
+        serde_json::to_string(&summary).ok()
     }
 
-    /// 运行 Runtime Routing：Router 决策 + Binder 绑定。
-    ///
-    /// 返回 (route, binding)。
-    /// - 无 router → (None, None)。
-    /// - 无 binder → (Some(route), None)。
-    /// - 任何失败 → 返回已有的部分结果，不影响 tick 主流程。
-    fn run_runtime_routing(
+    /// 只做 Runtime 路由决策。该阶段无系统副作用。
+    fn decide_runtime_route(
         &self,
         state: &aicore_core::domain::computer_state::ComputerState,
         context: &aicore_contracts::context::snapshot::ContextSnapshot,
-    ) -> (
-        Option<aicore_contracts::runtime::route::RuntimeRoute>,
-        Option<BindingResult>,
-    ) {
-        let router = match &self.runtime_router {
-            Some(r) => r,
-            None => return (None, None),
-        };
-
-        let route = match router.decide(&state.snapshot, context) {
-            Ok(r) => r,
+    ) -> Option<aicore_contracts::runtime::route::RuntimeRoute> {
+        let router = self.runtime_router.as_ref()?;
+        match router.decide(&state.snapshot, context) {
+            Ok(route) => Some(route),
             Err(e) => {
-                tracing::warn!(
-                    component = "adaptive_loop",
-                    event = "route_decide_failed",
-                    error = %e,
-                    "router.decide failed"
-                );
-                return (None, None);
+                tracing::warn!(component="adaptive_loop", event="route_decide_failed", error=%e, "router.decide failed");
+                None
             },
-        };
+        }
+    }
 
-        let binder = match &self.runtime_binder {
-            Some(b) => b,
-            None => return (Some(route), None),
-        };
-
+    /// Policy 已通过 Validator 后才允许 Binder 执行。
+    fn execute_runtime_binding(
+        &self,
+        route: Option<&aicore_contracts::runtime::route::RuntimeRoute>,
+        state: &aicore_core::domain::computer_state::ComputerState,
+        context: &aicore_contracts::context::snapshot::ContextSnapshot,
+    ) -> Option<BindingResult> {
+        let route = route?;
+        let binder = self.runtime_binder.as_ref()?;
         let inference = if matches!(
             route.source,
             aicore_contracts::runtime::route::RuntimeRouteSource::AiRuntime
@@ -339,21 +331,13 @@ impl AdaptiveLoop {
             context: context.clone(),
             inference,
         };
-
-        let binding = match binder.bind_and_execute(&req) {
-            Ok(b) => Some(b),
+        match binder.bind_and_execute(&req) {
+            Ok(binding) => Some(binding),
             Err(e) => {
-                tracing::warn!(
-                    component = "adaptive_loop",
-                    event = "binding_failed",
-                    error = %e,
-                    "binder.bind_and_execute failed"
-                );
+                tracing::warn!(component="adaptive_loop", event="binding_failed", error=%e, "binder.bind_and_execute failed after validation");
                 None
             },
-        };
-
-        (Some(route), binding)
+        }
     }
 }
 
@@ -461,11 +445,12 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                 .flatten()
                 .and_then(|src| src.current_task().ok().flatten())
         });
-        const MAX_TASKS_PER_TICK: usize = 8;
+        // 一个 tick 只执行一个 task，避免一个 policy 被错误地用于多个任务后又全部标记完成。
+        const MAX_TASKS_PER_TICK: usize = 1;
         let active_tasks = self.dequeue_tasks(MAX_TASKS_PER_TICK);
         let active_task = active_tasks.first();
-        if let Some(contract) = tier_task {
-            context = apply_task_contract(context, &contract);
+        if let Some(contract) = tier_task.as_ref() {
+            context = apply_task_contract(context, contract);
         }
         if let Some(task) = active_task {
             context = apply_task_hints(context, task);
@@ -491,7 +476,8 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             ));
         }
 
-        let (runtime_route, runtime_binding) = self.run_runtime_routing(&state, &context);
+        let runtime_route = self.decide_runtime_route(&state, &context);
+        let mut runtime_binding: Option<BindingResult> = None;
         tracing::debug!(
             component = "adaptive_loop",
             event = "runtime_routing",
@@ -532,7 +518,15 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             }
         }
 
-        // V3.2 Phase 5：收集 Dashboard 数据面字段
+        // TaskContract 是显式应用约束，必须在任何 Tier policy override 之后重新施加。
+        if let Some(contract) = tier_task
+            .as_ref()
+            .or_else(|| active_task.map(|task| &task.contract))
+        {
+            apply_task_contract_to_policy(&mut policy, contract);
+        }
+
+        // V4：收集 Dashboard 数据面字段
         let snap_fields =
             self.collect_snapshot_fields(&state, &context, &policy, runtime_route.as_ref());
 
@@ -561,6 +555,22 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         let validation = self.validator.validate(&policy);
         if !validation.accepted {
             self.metrics.record_policy_rejected();
+            if let Some(queue) = &self.task_queue {
+                for task in &active_tasks {
+                    if let Err(error) = queue.fail(
+                        &task.task_id,
+                        format!("policy rejected: {:?}", validation.issues),
+                    ) {
+                        tracing::warn!(
+                            component = "adaptive_loop",
+                            event = "task_finish_failed",
+                            task_id = %task.task_id,
+                            error = %error,
+                            "failed to mark rejected task failed"
+                        );
+                    }
+                }
+            }
             let mode_after = self.safe_mode.record_failure();
             let duration_ms = start.elapsed().as_millis() as u64;
             self.metrics.record_tick(false, duration_ms);
@@ -607,27 +617,35 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             };
         }
 
+        // Policy 已通过 Validator；此后才允许 Runtime Binder 产生推理/硬件副作用。
+        runtime_binding = self.execute_runtime_binding(runtime_route.as_ref(), &state, &context);
+
+        // Platform mode 可从本 tick 的真实 telemetry 推导 process targets；显式 targets 始终优先。
+        let effective_targets = derive_execution_targets(targets, &state.snapshot);
+
         // 5. Execute（透明执行器优先）
         let prior = self.last_applied_policy.lock().ok().and_then(|g| g.clone());
 
         let (exec_result, control_trace) = if let Some(tx) = &self.transparent {
-            let trace = tx.execute_transparent(&policy, targets, prior.as_ref());
-            // 若发生 rollback，返回的 final_status 仍是 apply 时的状态；
-            // 我们把它转化为与 V2 一致的 ExecutionResult 供 SafeMode 使用。
-            let mut result = aicore_contracts::execution::result::ExecutionResult {
-                policy_id: policy.policy_id.clone(),
-                overall_status: trace.final_status,
-                started_at_unix_ms: 0,
-                finished_at_unix_ms: 0,
-                outcomes: Vec::new(),
-            };
+            let trace = tx.execute_transparent(&policy, &effective_targets, prior.as_ref());
+            // 保留 Apply 的明细，并使用 Verify / Rollback 后的最终状态。
+            let mut result = tx.last_execution_result().unwrap_or_else(|| {
+                aicore_contracts::execution::result::ExecutionResult {
+                    policy_id: policy.policy_id.clone(),
+                    overall_status: trace.final_status,
+                    started_at_unix_ms: Self::now_unix_ms(),
+                    finished_at_unix_ms: Self::now_unix_ms(),
+                    outcomes: Vec::new(),
+                }
+            });
+            result.overall_status = trace.final_status;
             // 若 rollback 触发且成功，则视为 NoOp，避免 SafeMode 误判
             if trace.rollback.triggered && trace.rollback.succeeded == Some(true) {
                 result.overall_status = ExecutionOverallStatus::NoOp;
             }
             (result, Some(trace))
         } else {
-            (self.executor.execute(&policy, targets), None)
+            (self.executor.execute(&policy, &effective_targets), None)
         };
 
         if let Some(trace) = &control_trace {
@@ -745,7 +763,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         if let Some(memory) = &self.memory {
             if Self::should_record_history(memory) {
                 let record = HistoricalRecord {
-                    record_id: format!("tick-{}", tick_id),
+                    record_id: format!("tick-{}-{}", Self::now_unix_ms(), tick_id),
                     timestamp_unix_ms: Self::now_unix_ms(),
                     workload_type: context.workload_type,
                     interaction_level: context.interaction_level,
@@ -895,6 +913,89 @@ fn apply_task_hints(
         };
     }
     context
+}
+
+fn derive_execution_targets(
+    supplied: &ExecutionTargets,
+    snapshot: &aicore_contracts::telemetry::snapshot::ComputerSnapshot,
+) -> ExecutionTargets {
+    if !supplied.foreground_pids.is_empty() || !supplied.background_pids.is_empty() {
+        return supplied.clone();
+    }
+    let mut foreground_pids = Vec::new();
+    let mut background_pids = Vec::new();
+    for app in &snapshot.applications {
+        if app.pid == 0 {
+            continue;
+        }
+        if app.is_foreground {
+            foreground_pids.push(app.pid);
+        } else {
+            background_pids.push(app.pid);
+        }
+    }
+    for process in &snapshot.top_processes {
+        if process.pid == 0 {
+            continue;
+        }
+        if process.is_foreground {
+            foreground_pids.push(process.pid);
+        } else {
+            background_pids.push(process.pid);
+        }
+    }
+    foreground_pids.sort_unstable();
+    foreground_pids.dedup();
+    background_pids.retain(|pid| !foreground_pids.contains(pid));
+    background_pids.sort_unstable();
+    background_pids.dedup();
+    ExecutionTargets {
+        foreground_pids,
+        background_pids,
+    }
+}
+
+fn apply_task_contract_to_policy(
+    policy: &mut ResourcePolicy,
+    contract: &aicore_contracts::task::contract::TaskContract,
+) {
+    use aicore_contracts::policy::resource_policy::PowerMode;
+    use aicore_contracts::task::preferences::{HardwareRequirement, PowerPreference};
+
+    policy.task_id = contract.task_id.clone();
+    if let Some(priority) = contract.priority {
+        policy.priority = priority;
+        policy.cpu.priority = priority;
+        policy.gpu.priority = priority;
+        policy.npu.priority = priority;
+        policy.memory.priority = priority;
+    }
+    if let Some(power) = contract.power {
+        policy.power.mode = match power {
+            PowerPreference::PowerSave => PowerMode::PowerSave,
+            PowerPreference::Balanced => PowerMode::Balanced,
+            PowerPreference::Performance => PowerMode::Performance,
+        };
+    }
+    if let Some(requirement) = contract.gpu_requirement {
+        policy.gpu.workload_preference = match requirement {
+            HardwareRequirement::NotNeeded => None,
+            HardwareRequirement::Optional => Some("auto".to_string()),
+            HardwareRequirement::Preferred | HardwareRequirement::Required => {
+                Some("compute".to_string())
+            },
+        };
+    }
+    if let Some(requirement) = contract.npu_requirement {
+        policy.npu.preferred = matches!(
+            requirement,
+            HardwareRequirement::Preferred | HardwareRequirement::Required
+        );
+    }
+    if contract.privacy == Some(aicore_contracts::task::preferences::PrivacyRequirement::LocalOnly)
+    {
+        policy.reason.push_str(" privacy=local_only");
+    }
 }
 
 /// Dashboard 数据面字段集合。

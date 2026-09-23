@@ -14,16 +14,17 @@ fn daemon_bin() -> PathBuf {
     if path.ends_with("deps") {
         path.pop();
     }
-    path.join("aicored")
+    path.join(format!("aicored{}", std::env::consts::EXE_SUFFIX))
 }
 
 #[test]
 fn daemon_once_writes_state_file() {
     let bin = daemon_bin();
-    if !bin.exists() {
-        eprintln!("skip: {} not built", bin.display());
-        return;
-    }
+    assert!(
+        bin.exists(),
+        "build aicored before this test: {}",
+        bin.display()
+    );
 
     let tmp = std::env::temp_dir().join(format!("aicore-test-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
@@ -31,7 +32,23 @@ fn daemon_once_writes_state_file() {
     let _ = std::fs::remove_file(&state_path);
 
     let status = Command::new(&bin)
+        .env("AICORE_EXECUTION_MODE", "model")
+        .env("TMPDIR", &tmp)
+        .env("TMP", &tmp)
+        .env("TEMP", &tmp)
         .arg("--once")
+        .arg("--config")
+        .arg(tmp.join("config.json"))
+        .arg("--memory-path")
+        .arg(tmp.join("memory.db"))
+        .arg("--plugins-dir")
+        .arg(tmp.join("plugins"))
+        .arg("--ipc-path")
+        .arg(if cfg!(windows) {
+            PathBuf::from(format!(r"\\.\pipe\aicore-test-{}", std::process::id()))
+        } else {
+            tmp.join("aicored.sock")
+        })
         .arg("--state-path")
         .arg(&state_path)
         .status()
@@ -48,6 +65,7 @@ fn daemon_once_writes_state_file() {
     assert!(value["pid"].is_u64());
     assert_eq!(value["tick_count"], 1);
     assert!(value["last_tick"].is_object());
+    assert_eq!(value["last_tick"]["success"], true);
 
     let _ = std::fs::remove_file(&state_path);
     let _ = std::fs::remove_dir(&tmp);

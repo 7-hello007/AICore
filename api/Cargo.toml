@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 aicore-contracts = { path = "../contracts" }
+aicore-task-runtime = { path = "../task-runtime" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

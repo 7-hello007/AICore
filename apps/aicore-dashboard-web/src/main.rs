@@ -247,12 +247,27 @@ async fn async_main(args: Args) -> ExitCode {
 }
 
 async fn handle_connection(mut stream: TcpStream, state: Arc<AppState>) -> std::io::Result<()> {
-    let mut buf = vec![0u8; 8192];
-    let n = stream.read(&mut buf).await?;
-    if n == 0 {
-        return Ok(());
+    const MAX_HEADER_BYTES: usize = 32 * 1024;
+    let mut buf = Vec::with_capacity(4096);
+    let mut chunk = [0u8; 4096];
+    loop {
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
+            if buf.is_empty() {
+                return Ok(());
+            }
+            break;
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if buf.len() > MAX_HEADER_BYTES {
+            write_simple(&mut stream, 431, "text/plain", "request headers too large").await?;
+            return Ok(());
+        }
+        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
     }
-    let request = String::from_utf8_lossy(&buf[..n]);
+    let request = String::from_utf8_lossy(&buf);
     let first_line = request.lines().next().unwrap_or("");
     let mut parts = first_line.split_whitespace();
     let method = parts.next().unwrap_or("");
@@ -276,6 +291,7 @@ pub async fn write_simple(
         200 => "OK",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         _ => "Unknown",
     };

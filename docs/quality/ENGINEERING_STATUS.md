@@ -2,23 +2,19 @@
 
 ## Package baseline
 
-AICore `0.3.2` is the V3.2 engineering-close implementation candidate. The product source package includes one global `docs/` architecture; versioned planning material is intentionally excluded from the runtime package.
+AICore `0.4.0` is the **V4 defect-correction implementation candidate**. V4 corrects defects in the existing V3.2 architecture without introducing a new business layer.
 
-## What is now treated as a code requirement
+## Correctness invariants restored
 
-- Contract boundary is stable and versioned.
-- L0/L1/L2 are independent providers registered through capability registries.
-- AdaptiveLoop consumes workload fusion, task metadata, runtime routing, memory, transparent execution and event publication.
-- Local model execution uses the checked-in JSON feature-weight model by default; placeholder ONNX assets are not part of the release path.
-- Platform hardware control is capability-gated; unsupported vendor-specific controls must return an explicit unsupported result.
-- Terminal and Web dashboards consume the same daemon snapshot data.
-- Plugins run in a separate process host with bounded request timeouts and crash tracking.
+- No runtime hardware binding is executed before policy validation.
+- A dequeued task is not silently completed by another task's policy.
+- Expired tasks remain auditable as `Expired`.
+- GPU and NPU capability sets carry device kind and are bound separately.
+- Transparent execution preserves the real apply result for observability.
+- Trusted plugins require a pinned Ed25519 public key.
+- Memory lock failures are surfaced rather than silently treated as success.
+- Dashboard and IPC transport paths have bounded/safe handling improvements.
 
 ## External verification gate
 
-This environment has no Rust toolchain. The repository is therefore not marked release-ready until external CI/target hosts execute format, build, clippy, tests, service installation, dashboard, real workload and long-run checks.
-
-
-### Verification limitation
-
-The repository was statically repaired in this environment, but no Rust compiler/toolchain is installed here. Therefore build, clippy, Windows service, Linux service, and real GPU/NPU tests must be executed in CI or on target hosts before release promotion.
+The 2026-09-23 verification used Rust 1.75 on WSL/Linux. See `V4_DEFECT_CORRECTION_REPORT.md` for executed commands and exclusions. Safe tests and model execution are distinct from the unfiltered suite and hardware certification. V4 engineering closure is not declared; `V4_RELEASE_READINESS.md` records the remaining gates.

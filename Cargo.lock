@@ -25,12 +25,10 @@ dependencies = [
 
 [[package]]
 name = "aicore-adapter-linux"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "libc",
- "rayon",
- "rayon-core",
  "serde",
  "sysinfo",
  "tracing",
@@ -38,11 +36,9 @@ dependencies = [
 
 [[package]]
 name = "aicore-adapter-windows"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
- "rayon",
- "rayon-core",
  "serde",
  "sysinfo",
  "tracing",
@@ -51,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-ai"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -62,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-ai-runtime"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -73,9 +69,10 @@ dependencies = [
 
 [[package]]
 name = "aicore-api"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
+ "aicore-task-runtime",
  "serde",
  "serde_json",
  "thiserror",
@@ -84,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-bench"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-adapter-linux",
  "aicore-adapter-windows",
@@ -98,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-cli"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-ipc",
@@ -109,7 +106,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-contracts"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "base64ct",
  "serde",
@@ -120,7 +117,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-core"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -130,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-daemon"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-adapter-linux",
  "aicore-adapter-windows",
@@ -157,7 +154,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-dashboard"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-ipc",
@@ -169,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-dashboard-web"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-dashboard",
@@ -183,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-ipc"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "async-trait",
@@ -196,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-l0-realworld"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-core",
@@ -206,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-memory"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "rusqlite",
@@ -218,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-plugin"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "ed25519-dalek",
@@ -234,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-runtime"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-core",
@@ -249,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-runtime-router"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -259,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-service-host"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -269,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-task-runtime"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -279,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-tests"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-adapter-linux",
  "aicore-adapter-windows",
@@ -309,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-tier"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "serde",
@@ -320,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-tier-l0"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-core",
@@ -332,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-tier-l1"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-tier",
@@ -343,7 +340,7 @@ dependencies = [
 
 [[package]]
 name = "aicore-tier-l2"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-tier",

@@ -129,18 +129,20 @@ impl ModelEnvironment {
     }
 
     pub fn snapshot(&self) -> ModelSystemState {
-        self.state
-            .lock()
-            .expect("model environment lock poisoned")
-            .clone()
+        match self.state.lock() {
+            Ok(state) => state.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     fn update<F>(&self, update: F)
     where
         F: FnOnce(&mut ModelSystemState),
     {
-        let mut state = self.state.lock().expect("model environment lock poisoned");
-
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         update(&mut state);
     }
 
@@ -497,6 +499,31 @@ impl IPostConditionChecker for ModelPostConditionChecker {
 
         if state.memory_max_usage_percent != policy.memory.max_usage_percent {
             return PostConditionResult::Failed("model memory policy mismatch".to_string());
+        }
+
+        for process in state.processes.values() {
+            if process.name.contains("foreground") && process.priority != policy.cpu.priority {
+                return PostConditionResult::Failed(format!(
+                    "model foreground priority mismatch: expected={:?} actual={:?}",
+                    policy.cpu.priority, process.priority
+                ));
+            }
+            if let Some(cores) = &policy.cpu.affinity_cores {
+                if process.affinity_cores != *cores {
+                    return PostConditionResult::Failed(
+                        "model process affinity mismatch".to_string(),
+                    );
+                }
+            }
+            if process.name.contains("background")
+                && policy.background.throttle
+                && (!process.throttled
+                    || process.max_cpu_percent != policy.background.max_cpu_percent)
+            {
+                return PostConditionResult::Failed(
+                    "model background throttle mismatch".to_string(),
+                );
+            }
         }
 
         PostConditionResult::Passed

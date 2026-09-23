@@ -148,6 +148,9 @@ async fn handle_connection(
             r#"{"version":"1.0","request_id":"unknown","success":false,"error":{"code":"ERR_INTERNAL","message":"serialize failed"}}"#.to_string()
         });
         stream.write_message(&json).await?;
+        if seen.len() > 4096 {
+            seen.clear();
+        }
     }
     Ok(())
 }

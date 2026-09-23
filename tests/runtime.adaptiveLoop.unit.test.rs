@@ -249,3 +249,64 @@ fn failed_tick_still_has_trace_id() {
     assert!(!outcome.trace_id.is_empty());
     assert!(outcome.trace_id.starts_with("trace-"));
 }
+
+#[test]
+fn rejected_policy_finishes_dequeued_task_as_failed() {
+    use aicore_contracts::{
+        application::id::ApplicationId,
+        task::{contract::TaskContract, lifecycle::TaskState, queued::QueuedTask},
+        traits::{
+            policy_validator::{IPolicyValidator, ValidationIssue, ValidationResult},
+            task_queue::ITaskQueue,
+        },
+    };
+    struct RejectValidator;
+    impl IPolicyValidator for RejectValidator {
+        fn validate(&self, _: &ResourcePolicy) -> ValidationResult {
+            ValidationResult {
+                accepted: false,
+                issues: vec![ValidationIssue {
+                    code: "ERR_POLICY_INVALID".into(),
+                    message: "regression rejection".into(),
+                }],
+            }
+        }
+        fn name(&self) -> &'static str {
+            "reject_validator"
+        }
+    }
+    struct NeverExecute;
+    impl IPolicyExecutor for NeverExecute {
+        fn execute(&self, _: &ResourcePolicy, _: &ExecutionTargets) -> ExecutionResult {
+            panic!("rejected policy must never execute")
+        }
+        fn name(&self) -> &'static str {
+            "never_execute"
+        }
+    }
+    let queue = Arc::new(aicore_task_runtime::InMemoryTaskQueue::new());
+    queue
+        .enqueue(QueuedTask::new(
+            "rejected-task".into(),
+            TaskContract::minimal(ApplicationId::new("test.app")),
+            0,
+        ))
+        .unwrap();
+    let engine = Arc::new(RuleBasedPolicyEngine::new());
+    let loop_ = AdaptiveLoop::new(
+        Arc::new(MockTelemetry::ok()),
+        Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new()))),
+        engine.clone(),
+        engine,
+        Arc::new(RejectValidator),
+        Arc::new(NeverExecute),
+        AdaptiveLoopConfig::default(),
+    )
+    .with_task_queue(queue.clone());
+    let outcome = loop_.tick(&ExecutionTargets::default());
+    assert!(!outcome.validation_accepted);
+    let task = queue.get("rejected-task").unwrap().unwrap();
+    assert_eq!(task.state, TaskState::Failed);
+    assert!(task.finished_at_unix_ms.is_some());
+    assert!(task.result_message.unwrap().contains("policy rejected"));
+}

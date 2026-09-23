@@ -1,5 +1,7 @@
 # AICore V3.2 Engineering Completion Report
 
+> Historical V3.2 record. Current baseline is V4; see `V4_DEFECT_CORRECTION_REPORT.md` and `V4_RELEASE_READINESS.md`.
+
 ## 1. Package identity
 
 - Workspace version: `0.3.2`

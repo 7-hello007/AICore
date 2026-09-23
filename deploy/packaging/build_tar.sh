@@ -22,9 +22,15 @@ TARGET_DIR="${REPO_ROOT}/target/release"
 
 rm -rf "${STAGE}"
 mkdir -p "${STAGE}/bin"
+mkdir -p "${STAGE}/bin/models"
 
 install -m 0755 "${TARGET_DIR}/aicored" "${STAGE}/bin/"
 install -m 0755 "${TARGET_DIR}/aicore" "${STAGE}/bin/"
+install -m 0644 "${REPO_ROOT}/models/policy_classifier_v1.json" \
+    "${STAGE}/bin/models/policy_classifier_v1.json"
+install -m 0644 "${REPO_ROOT}/LICENSE" "${STAGE}/LICENSE"
+install -m 0644 "${REPO_ROOT}/NOTICE" "${STAGE}/NOTICE"
+install -m 0644 "${REPO_ROOT}/README.md" "${STAGE}/README.md"
 [ -x "${TARGET_DIR}/aicore-dashboard" ] && \
     install -m 0755 "${TARGET_DIR}/aicore-dashboard" "${STAGE}/bin/" || true
 

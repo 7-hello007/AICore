@@ -15,4 +15,4 @@ V4 is defect repair and engineering closure. Promotion requires evidence for the
 | L0 | Zero-integration scenarios pass | L0 real-world executable |
 | Long run | Stable over the defined duration | Nightly evidence |
 
-Current evidence is in `V4_DEFECT_CORRECTION_REPORT.md`. The table retains broader platform-release requirements; real service/hardware rows are prohibited in the present model-only task and are NOT RUN. The unfiltered test gate remains open because nine tests perform real host control. No test is removed or marked ignored to bypass this gate.
+Current evidence is in `V4_DEFECT_CORRECTION_REPORT.md`. The unfiltered Linux test gate is closed (666/666 nextest; no filters); isolated Model Mode is separately verified. The table also contains broader deployment and platform certification gates: Windows runtime, service installation and package installation were not run in this task and are not evidence for code engineering closure.

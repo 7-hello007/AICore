@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-当前源码版本为 **AICore V4 defect-correction implementation candidate (`0.4.0`)**。V4 的边界是修复 V3.2 已有实现中的缺陷，不增加新的产品业务，不删除既有产品逻辑。
+当前源码版本为 **AICore V4 defect-correction engineering closure (`0.4.0`)**。V4 的边界是修复 V3.2 已有实现中的缺陷，不增加新的产品业务，不删除既有产品逻辑。
 
 本轮重点修复：
 
@@ -12,7 +12,7 @@
 - Platform Runtime Binder 注入实际探测到的 GPU/NPU capability，并区分 GPU/NPU 设备类型。
 - TransparentExecutor 保留真实 Apply ExecutionResult；rollback/verify 后 final status 不再伪装为 Apply 成功。
 - Model verify 覆盖 process priority / affinity / background throttle。
-- Historical record id 加入时间戳，避免 daemon 重启后重复。
+- Historical record id 包含时间戳、进程 ID 和进程内序号，避免同毫秒多 loop 的重复。
 - Trusted plugin 强制 pinned Ed25519 public key；补齐既有 permission model 中缺失权限。
 - IPC 增加消息上限，修复 Windows named-pipe 首实例生命周期竞态，并限制 connection 内 dedup 集合增长。
 - Memory lock poison 不再静默成功；JSON profile 改为临时文件 + rename。
@@ -21,7 +21,7 @@
 
 ## 验证边界
 
-2026-09-23 已使用 WSL/Linux Rust/Cargo 1.75 验证当前源码。编译、Clippy、模型闭环和经过安全筛选的测试已执行；详见 `quality/V4_DEFECT_CORRECTION_REPORT.md`。未筛选全套测试包含真实硬件控制，按本轮约束未运行，V4 closure 尚未宣布。
+2026-09-23 已使用 WSL/Linux Rust/Cargo 1.75 验证当前源码。编译、Clippy、未筛选完整测试（nextest 666/666）、隔离模型闭环及 package 构建已通过；详见 `quality/V4_DEFECT_CORRECTION_REPORT.md`。本轮允许并运行了既有本机控制测试，V4 代码工程闭环已完成；安装与跨硬件/Windows 运行认证仍独立进行。
 
 V4 release gate 必须在目标环境运行：
 
@@ -32,4 +32,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --locked --no-run
 ```
 
-本轮只执行安全筛选测试和 Model Mode；服务安装、真实硬件控制不属于本轮可执行验证。当前 AdaptiveLoop 每 tick 消费一个任务，不能宣称已经支持 8 个独立任务/tick。
+当前 AdaptiveLoop 每 tick 消费一个任务；每个 tick 只形成一个 policy / validation / execution 结果，不能宣称支持 8 个独立任务/tick。完整本机测试与隔离 Model Mode 是两种不同证据；本轮没有安装服务或安装包。

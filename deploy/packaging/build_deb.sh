@@ -36,6 +36,8 @@ fi
 rm -rf "${STAGE}"
 mkdir -p "${STAGE}/DEBIAN"
 mkdir -p "${STAGE}/usr/local/bin"
+mkdir -p "${STAGE}/usr/local/bin/models"
+mkdir -p "${STAGE}/usr/local/share/doc/aicore"
 mkdir -p "${STAGE}/etc/systemd/system"
 mkdir -p "${STAGE}/etc/aicore"
 mkdir -p "${STAGE}/usr/local/share/aicore/plugins"
@@ -43,6 +45,11 @@ mkdir -p "${STAGE}/usr/local/share/aicore/plugins"
 # 二进制
 install -m 0755 "${TARGET_DIR}/aicored" "${STAGE}/usr/local/bin/aicored"
 install -m 0755 "${TARGET_DIR}/aicore" "${STAGE}/usr/local/bin/aicore"
+install -m 0644 "${REPO_ROOT}/models/policy_classifier_v1.json" \
+    "${STAGE}/usr/local/bin/models/policy_classifier_v1.json"
+install -m 0644 "${REPO_ROOT}/LICENSE" "${STAGE}/usr/local/share/doc/aicore/LICENSE"
+install -m 0644 "${REPO_ROOT}/NOTICE" "${STAGE}/usr/local/share/doc/aicore/NOTICE"
+install -m 0644 "${REPO_ROOT}/README.md" "${STAGE}/usr/local/share/doc/aicore/README.md"
 [ -x "${TARGET_DIR}/aicore-dashboard" ] && \
     install -m 0755 "${TARGET_DIR}/aicore-dashboard" "${STAGE}/usr/local/bin/aicore-dashboard" || true
 

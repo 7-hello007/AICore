@@ -1,10 +1,10 @@
 # Verification Runbook
 
-## V4 model-only safety boundary
+## V4 verification modes
 
-Do not run the unfiltered suite or platform installation steps below in a model-only verification session. Nine host-control tests are enumerated in `V4_DEFECT_CORRECTION_REPORT.md`; use its exact safe filters and report excluded tests separately. Build `aicore-daemon` and `plugin-echo` before process tests. Set `AICORE_EXECUTION_MODE=model` and use a fresh temporary directory for config, status, IPC, plugins and memory (including `TMPDIR` for legacy migration defaults).
+The full local suite contains nine host-control tests and was run unfiltered for V4 code closure. Build `aicore-daemon` and `plugin-echo` before process tests. Run Model Mode separately with `AICORE_EXECUTION_MODE=model` and a fresh temporary directory for config, status, IPC, plugins and memory (including `TMPDIR` for legacy migration defaults). Do not set the model variable globally over the full test suite.
 
-The Linux/Windows installation instructions below describe separate target-host certification, NOT commands authorized by this V4 task.
+The Linux/Windows installation instructions below describe separate target-host certification, not commands executed for V4 code closure. Package building and inspection were done without installation.
 
 ```text
 cargo fmt --all -- --check

@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Candidate, not certified release.**
+**Code engineering closure passed; deployment and broad platform certification remain open.**
 
 ## Required promotion evidence
 
@@ -17,4 +17,4 @@
 - real GPU/NPU capability tests only where hardware/vendor API exists
 - long-run daemon stability test
 
-Passing these gates is the condition for marking V4 release-ready and beginning the next product-development stage.
+The V4 code engineering gate is evidenced in `V4_DEFECT_CORRECTION_REPORT.md`. Passing the additional target-host service and hardware gates is required for a certified production release; they do not reverse the code-level closure or rename the project V5.

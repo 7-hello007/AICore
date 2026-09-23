@@ -16,6 +16,8 @@ pub struct JsonFileStore {
     profile_path: PathBuf,
     cache: RwLock<Vec<HistoricalRecord>>,
     profile: RwLock<UserProfile>,
+    history_load_error: Option<String>,
+    profile_load_error: Option<String>,
 }
 
 impl JsonFileStore {
@@ -23,18 +25,45 @@ impl JsonFileStore {
         let history_path = history_path.into();
         let profile_path = profile_path.into();
 
-        let records = load_records_from(&history_path);
-        let profile = load_profile_from(&profile_path);
+        let (records, history_load_error) = match load_records_from(&history_path) {
+            Ok(records) => (records, None),
+            Err(error) => (Vec::new(), Some(error)),
+        };
+        let (profile, profile_load_error) = match load_profile_from(&profile_path) {
+            Ok(profile) => (profile, None),
+            Err(error) => (UserProfile::default(), Some(error)),
+        };
 
         Self {
             history_path,
             profile_path,
             cache: RwLock::new(records),
             profile: RwLock::new(profile),
+            history_load_error,
+            profile_load_error,
         }
     }
 
+    fn check_history_loaded(&self) -> ContractResult<()> {
+        if let Some(error) = &self.history_load_error {
+            return Err(ContractError::AdapterUnavailable(error.clone()));
+        }
+        Ok(())
+    }
+
+    fn check_profile_loaded(&self) -> ContractResult<()> {
+        if let Some(error) = &self.profile_load_error {
+            return Err(ContractError::AdapterUnavailable(error.clone()));
+        }
+        Ok(())
+    }
+
     fn persist_history(&self, records: &[HistoricalRecord]) -> ContractResult<()> {
+        if let Some(parent) = self.history_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                ContractError::AdapterUnavailable(format!("create history dir: {e}"))
+            })?;
+        }
         let tmp = self.history_path.with_extension("json.tmp");
         let mut content = String::new();
         for record in records {
@@ -68,49 +97,50 @@ impl JsonFileStore {
     }
 }
 
-fn load_records_from(path: &PathBuf) -> Vec<HistoricalRecord> {
-    let Ok(s) = fs::read_to_string(path) else {
-        return Vec::new();
+fn load_records_from(path: &PathBuf) -> Result<Vec<HistoricalRecord>, String> {
+    let s = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("read history {}: {e}", path.display())),
     };
     if let Ok(records) = serde_json::from_str::<Vec<HistoricalRecord>>(&s) {
-        return records;
+        return Ok(records);
     }
     s.lines()
-        .filter_map(|line| serde_json::from_str::<HistoricalRecord>(line).ok())
+        .enumerate()
+        .map(|(index, line)| {
+            serde_json::from_str::<HistoricalRecord>(line)
+                .map_err(|e| format!("parse history {} line {}: {e}", path.display(), index + 1))
+        })
         .collect()
 }
 
-fn load_profile_from(path: &PathBuf) -> UserProfile {
+fn load_profile_from(path: &PathBuf) -> Result<UserProfile, String> {
     match fs::read_to_string(path) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
-        Err(_) => UserProfile::default(),
+        Ok(s) => {
+            serde_json::from_str(&s).map_err(|e| format!("parse profile {}: {e}", path.display()))
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(UserProfile::default()),
+        Err(e) => Err(format!("read profile {}: {e}", path.display())),
     }
 }
 
 impl IMemoryStore for JsonFileStore {
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()> {
+        self.check_history_loaded()?;
         let mut cache = self
             .cache
             .write()
             .map_err(|_| ContractError::AdapterUnavailable("history lock poisoned".into()))?;
-        if let Some(parent) = self.history_path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let line = serde_json::to_string(record)
-            .map_err(|e| ContractError::AdapterUnavailable(format!("serialize record: {}", e)))?;
-        use std::io::Write;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.history_path)
-            .map_err(|e| ContractError::AdapterUnavailable(format!("open history: {}", e)))?;
-        writeln!(file, "{}", line)
-            .map_err(|e| ContractError::AdapterUnavailable(format!("append history: {}", e)))?;
-        cache.push(record.clone());
+        let mut updated = cache.clone();
+        updated.push(record.clone());
+        self.persist_history(&updated)?;
+        *cache = updated;
         Ok(())
     }
 
     fn load_records(&self, limit: usize) -> ContractResult<Vec<HistoricalRecord>> {
+        self.check_history_loaded()?;
         let cache = self
             .cache
             .read()
@@ -120,6 +150,7 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn clear_history(&self) -> ContractResult<()> {
+        self.check_history_loaded()?;
         let mut cache = self
             .cache
             .write()
@@ -130,6 +161,7 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn record_count(&self) -> ContractResult<usize> {
+        self.check_history_loaded()?;
         let cache = self
             .cache
             .read()
@@ -138,6 +170,7 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn load_profile(&self) -> ContractResult<UserProfile> {
+        self.check_profile_loaded()?;
         let p = self
             .profile
             .read()
@@ -146,6 +179,7 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn save_profile(&self, profile: &UserProfile) -> ContractResult<()> {
+        self.check_profile_loaded()?;
         let mut p = self
             .profile
             .write()
@@ -156,6 +190,7 @@ impl IMemoryStore for JsonFileStore {
     }
 
     fn delete_records_before(&self, cutoff_unix_ms: u64) -> ContractResult<usize> {
+        self.check_history_loaded()?;
         let snapshot = {
             let mut cache = self
                 .cache

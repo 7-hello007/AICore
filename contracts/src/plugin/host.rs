@@ -30,7 +30,8 @@ pub struct PluginProcessSpec {
     pub artifact_path: String,
     /// 最大执行时间（毫秒）。超时后 host 终止进程。
     pub timeout_ms: u64,
-    /// 最大内存（MB）。
+    /// 预留的内存预算（MB），当前仅校验非零；SubprocessPluginHost
+    /// 尚未在 Linux/Windows 强制执行 OS 级内存上限。
     pub memory_limit_mb: u64,
 }
 

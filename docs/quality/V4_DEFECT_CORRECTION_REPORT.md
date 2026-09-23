@@ -1,124 +1,155 @@
-# AICore V4 Final Verification Report
+# AICore V4 Final Engineering Closure Report
 
-验证日期：2026-09-23。环境：WSL Ubuntu / x86_64-unknown-linux-gnu，rustc / cargo 1.75.0，nextest 0.9.85。版本仍为 0.4.0；没有改变 MSRV、业务目标、公开接口或引入依赖。
+验证日期：2026-09-23。版本 0.4.0；WSL Ubuntu，Rust/Cargo 1.75.0，nextest 0.9.85。本报告记录代码工程闭环，不能替代生产部署、Windows 实机运行或跨硬件认证。
 
-## 1. 最终结果
+## 1. Final Status
 
 | 项目 | 结果 |
 |---|---|
-| V4 status | NOT CLOSED — 不宣称完整工程闭环 |
-| Build | PASS：Linux workspace 全 targets check/build |
-| Clippy | PASS：全 targets、全 features、-D warnings |
-| Tests | 安全筛选集 PASS；未筛选完整测试 NOT RUN |
-| Model Mode | PASS：隔离 daemon --once 和组合模型闭环测试 |
-| Docs | 本轮发现的状态/范围/验证文档已同步；不宣称所有设计要求均已实现 |
-| Residual files | PASS：7 个指定文件 SHA-256 未变；修改前文件无删除 |
-| Windows | Service Host / Adapter / IPC 定向 target check PASS；完整 workspace NOT VERIFIED |
+| V4 Engineering Closure | PASS（代码层） |
+| Build | PASS：workspace all-targets check/build |
+| Clippy | PASS：workspace all-targets all-features -D warnings |
+| Full cargo test | PASS：666 passed，0 failed / ignored / filtered |
+| Full nextest | PASS：666 run，666 passed，0 skipped，31.223s |
+| Model Mode | PASS：隔离 daemon --once、组合模型测试和归档内二进制 smoke |
+| Linux local tests | PASS：包含此前未运行的 9 项本机控制测试 |
+| Windows compile verification | 定向 service-host/adapter/IPC PASS；完整 workspace NOT VERIFIED，WSL 缺 MSVC lib.exe |
+| Packaging build verification | tar.gz / deb PASS，内容与 checksum 已检查；未安装 |
+| Docs | PASS：状态、运行手册、插件边界及 release gate 同步 |
+| Residual files | PASS：7 个指定文件 SHA-256 未变，无原文件删除 |
+| Can enter next stage | YES，限于代码工程条件；不代表生产发布认证 |
 
-仓库开始时已有 66 个 tracked 文件修改及 3 个 untracked 文件。本报告只把本轮复现和修改归为本轮成果；原有修改保留。旧报告不能作为测试证据。
+## 2. Previous V4 Blockers
 
-## 2. 原来存在并已经修复的问题
-
-以下均为既有实现的缺陷修复，不增加业务能力。
-
-| 问题与根因 | 文件 / 最小修复 | 验证 |
+| 上轮问题 | 当前源码核查、处置与证据 | 最终状态 |
 |---|---|---|
-| Model checker 嵌套 if 触发 Clippy | `core/src/model.rs`：合并等价条件 | check、Clippy、模型测试 |
-| 文件 SHA-256 快路径漏校验签名格式 | `plugin/src/signature.rs`：先校验 expected 格式，再流式 hash | 原 `verify_malformed_expected` 先失败后通过，签名 8 测试通过 |
-| 被拒绝策略提前 return，已出队任务留在 Running | `runtime/src/adaptive_loop.rs`：拒绝时 fail 已消费任务，记录失败原因 | 新 regression 先得到 Running，修后 Failed；拒绝策略不会调用 executor |
-| JSON 写失败仍更新缓存；append 与 retention 写盘可交错 | `memory/src/store/json_file.rs`：持锁覆盖磁盘与缓存提交，先持久化后修改缓存 | 注入临时文件路径冲突，clear/retention/profile 失败后缓存与重开数据不变 |
-| 非有限输入/点积溢出产生 NaN softmax 结果 | `ai-runtime/src/pure_rust/model.rs`：检查 weights/features/logits/分母 finite | 3 个回归先失败后通过，正常 softmax 归一化及维度检查通过 |
-| GPU 测试 fixture 类型为 Unknown，未进入预期分支 | `tests/runtime.binding.unit.test.rs`：使用明确 `gpu:test` 设备 ID | 保留“无 executor”断言，10 测试通过 |
-| daemon 测试未强制模型模式，路径可访问共享 memory，二进制缺失时假通过 | `tests/daemon.lifecycle.integration.test.rs`：模型环境、独立 config/memory/IPC/plugins/temp、缺二进制明确失败、Windows exe 后缀、断言 tick success | 构建二进制后真实启动独立模型进程，测试通过 |
-| EventBus 持 registry 读锁调用 subscriber，回调退订会死锁 | `core/src/event_bus/bus.rs`：克隆 Arc 列表后释放锁再回调 | 自退订测试先超时，修后通过 |
-| Windows cfg 内把 AicoreError 直接传入 Into<String> | `service-host/src/windows/controller.rs`：显式 to_string | Windows target E0277 复现后，定向 check 通过 |
-| CI lint job 缩进使 lint=null、name/steps 成为错误 job | `.github/workflows/ci.yml`：修层级；用 locked metadata 检查锁文件；Clippy 包含 all-features | YAML job 结构断言及本地命令通过；未运行远程 CI |
-| 静态脚本依赖不存在的 python 别名 | `scripts/audit_v4_static.sh`：调用 python3 | 110 个 Rust 测试 manifest 完整性、Cargo/JSON 静态审计通过 |
-| IPC 上限在整行分配后才检查，未换行流可无界增长 | `ipc/src/transport/{mod,linux,windows}.rs`：共享 bounded reader，最多读取上限+1 字节 | 保持 writer 打开、发送无换行超限数据，读端及时报 InvalidData |
-| Unix socket bind 无条件删除已有路径 | `ipc/src/transport/linux.rs`：拒绝普通文件/符号链接/活动 socket，仅清理失效 socket | 普通文件内容保留、活动 listener 不被替换测试通过 |
-| 当前状态文档仍称无工具链，路线图把 V4 描述为新增能力阶段 | README、CURRENT_BASELINE、quality、PRODUCT_EVOLUTION 等：更新为真实结果和缺陷修复范围 | 命令证据、状态交叉核对 |
+| 完整测试未运行 | 本轮不设置全局 Model Mode，cargo test 与 nextest 均执行未筛选全集；nextest 666/666 | CLOSED |
+| 1 与 8 task/tick | AdaptiveLoop 每 tick 形成一套 policy、validation、execution，当前只 dequeue 1；contracts 没有 8 的吞吐承诺。仅改常量会把不同任务错归一个执行结果。保留 1，强化逐 tick 状态断言并同步文档 | CLOSED：确认为 1 task/tick |
+| Plugin stdout/stderr 无界行读取 | 未换行超限输出回归先复现失败；改为最多读取 64 KiB+1，超限 stdout 杀进程并记录 crash，stderr 分块排流 | CLOSED |
+| memory_limit_mb 被误称强制限制 | 没有 cgroup/Job Object/RLIMIT 实现；字段只校验正值。contract 注释和安全文档明确为预算参数，不宣称 OS 隔离 | CLOSED：OS enforcement 为 Post-V4 |
+| Windows 完整 workspace | 定向 Rust target check 通过。额外修复 Linux adapter 在 Windows target 编译时缺 cfg；随后完整 workspace 仅被 bundled SQLite 的 MSVC lib.exe 缺失阻断 | 环境限制，不是代码层 V4 blocker |
+| 边界审查 | 历史 ID、JSON 损坏/数组、SQLite 中断、Windows 参数引用、IPC 上限及 request cache 已分别检查；真实缺陷见下节 | CLOSED |
 
-`runtime/src/lib.rs` 去掉误导性的“要删除 model_binder”注释。模型组合回归加入现有测试文件，覆盖共享 runtime、Tier、Prediction 调用、Policy/Validation、CPU 路由、Binder 推理、模型 Apply/Verify、Memory、Task、Event 和 Dashboard 数据字段。原有断言没有删除、弱化或 ignore。
+## 3. Newly Discovered Defects
 
-## 3. 检查后确认已解决/无需重复修改
+| 问题、根因 | 最小修复及文件 | 回归与 V4 归属 |
+|---|---|---|
+| JSON 损坏行被静默跳过，后续写入可覆盖用户历史；旧 JSON 数组直接追加使格式损坏 | memory/src/store/json_file.rs：加载失败保留错误并阻止读写，append 先原子持久化完整记录再更新缓存 | tests/memory.loadHistory.unit.test.rs 新增损坏文件保留及旧数组重开测试；既有持久化功能修复 |
+| SQLite v1→v2 DDL/时间转换未整体事务化 | memory/src/store/sqlite.rs：迁移与 schema marker 同一事务 | 注入拒绝 UPDATE 的 trigger，失败后旧列/值/版本不变，去除故障后迁移成功 |
+| 两个 loop 同毫秒同 tick 产生相同历史主键 | runtime/src/adaptive_loop.rs：ID 加进程 ID 与进程内序号，并共用一次 timestamp | 同时间同 tick 的不同 loop ID 测试；修正已有历史写入可靠性 |
+| Windows 参数中的空串、内嵌引号和尾反斜杠引用错误 | service-host/src/windows/controller.rs：使用 Windows 命令行转义规则，exe 路径同样处理 | Linux 上纯函数单测和 Windows 定向 target check；未安装服务 |
+| Linux adapter 在 Windows workspace target 下引用 Linux libc 符号 | adapters/linux/src/lib.rs：crate-level Linux cfg | Windows 全 workspace 的 Linux libc 错误消失；剩余 MSVC C 工具环境缺失 |
+| 归档/deb 漏带生产 JSON 模型，安装后只能退回规则路径 | deploy/packaging/build_{tar,deb}.sh、deploy/linux/{install,upgrade,rollback,uninstall}.sh：打包模型，安装/升级/回滚/卸载同步该文件，打包 README/LICENSE/NOTICE | 两种包构建、清单、checksum；从 tar stage 直接在独立目录运行 Model Mode，单次 model_loaded；从未安装 |
+| benchmark 零 tick 产生无意义平均值，报告版本仍为 V3.2 | apps/aicore-bench/src/main.rs：拒绝 0、用 Cargo package version | --ticks 0 返回错误；未将 NoOp/NotSupported 伪装成功 |
 
-- `runtime/src/model_binder.rs` 是唯一 ModelRuntimeBinder 实现；runtime/lib 导出，daemon 从 aicore_runtime 导入。
-- daemon 中一个 `Arc<PureRustRuntime>` 加载一次，Provider/Binder 共享。没有用 Mock AI 替换默认路径。
-- policy JSON 是 4 维，实际 RuntimeBackedProvider 与 AdaptiveLoop binder 输入均为 CPU/GPU/NPU/memory 四维；其他 ML FEATURE_DIM 不构成此消费者的维度错误。
-- `AICORE_EXECUTION_MODE=model` 为实际模式变量，默认 model；模型 executor 使用虚拟 targets。GPU/NPU 的 binder 结果带 simulated 说明，不是硬件认证。
-- Runtime Binding 位于 policy validation 之后；路由决策本身不执行硬件操作。
-- TransparentExecutor 保留 Apply 明细；Verify 失败、Rollback 成功的 final_status 是 NoOp；SafeMode 对 NoOp 中性。
-- Task deadline 仍是显式 `deadline_unix_secs`；queue 用秒比较 deadline，生命周期时间用 ms。没有机械更改公开字段。
-- SQLite WAL、schema v2、ms retention 已存在；InMemory poison 返回错误。通过现有测试不等于所有损坏/掉电恢复场景已认证。
-- 签名文件 hash 已使用 64 KiB 流式读取，Trusted 已要求 pinned Ed25519 key。
-- Dashboard 默认 loopback，远程绑定需显式 opt-in；SSE current-state/多行 data 与现有测试保留。
-- Windows 已保存 ServiceConfig、可按已保存路径 upgrade/rollback；本轮只做源码/编译/mock 检查。
+此前已修复且本轮复核未回退：唯一 ModelRuntimeBinder 来源、共享 PureRustRuntime、模型 4 维消费者、Policy validation 后绑定、NoOp 中性 SafeMode、任务拒绝不滞留 Running、IPC bounded frame/安全 Unix socket、Ed25519 trust、Dashboard loopback/SSE。未重复改动。
 
-## 4. 修改文件
+## 4. Modified Files
 
-下方“本轮文件清单”由修改前 SHA-256 快照比较生成，区分实质修复与 `cargo fmt`。不把进入任务前的修改算成本轮新增成果。
+以下为进入本轮时 clean checkout 与最终 git diff 的完整项目文件清单。每项只修现有缺陷或同步文档；Business logic changed: NO（task/policy/runtime 产品语义保持不变）。
 
-## 5. 新增文件
+| 文件 | Before → After；原因 |
+|---|---|
+| adapters/linux/src/lib.rs | Linux API 在 Windows target 编译 → Linux cfg 隔离；跨平台编译缺陷 |
+| apps/aicore-bench/src/main.rs | 0 tick 与旧版本标签 → 拒绝 0、输出 0.4.0；结果有效性 |
+| contracts/src/plugin/host.rs | 内存字段含糊 → 注释明确预算非 OS enforcement；契约真实性 |
+| deploy/linux/install.sh | 仅安装二进制 → 同步安装模型；默认模型可定位 |
+| deploy/linux/upgrade.sh | 仅升级/回滚二进制 → 模型随升级备份/恢复；版本一致 |
+| deploy/linux/rollback.sh | 仅回滚二进制 → 同步恢复模型；版本一致 |
+| deploy/linux/uninstall.sh | 遗留已安装模型 → 仅清理该模型；生命周期一致 |
+| deploy/packaging/build_deb.sh | 漏模型/说明和许可文件 → stage 包含模型、README、LICENSE、NOTICE；包完整 |
+| deploy/packaging/build_tar.sh | 漏模型/说明和许可文件 → stage 包含模型、README、LICENSE、NOTICE；包完整 |
+| docs/plugin/PLUGIN_SECURITY.md | 内存限制表述不清 → 明确无 OS enforcement 和 64 KiB 行上限 |
+| memory/src/store/json_file.rs | 损坏文件静默跳过、数组追加损坏 → fail-closed 与原子替换；数据保全 |
+| memory/src/store/sqlite.rs | 迁移分步提交 → 单事务；失败回滚 |
+| plugin/src/host/process.rs | 无界 stdout/stderr 读取 → 有界读取和 crash 处置 |
+| runtime/src/adaptive_loop.rs | 历史 ID 可碰撞 → 加进程序号；保留每 tick 一个任务 |
+| service-host/src/windows/controller.rs | 参数转义不完整 → 正确 Windows 引号/反斜杠规则 |
+| tests/memory.loadHistory.unit.test.rs | 无损坏/数组回归 → 增两项数据保全测试 |
+| tests/pipeline.taskPipeline.integration.test.rs | 仅检查最终状态 → 每 tick 检查单任务完成/队列及无 Running |
+| tests/plugin.processIsolation.integration.test.rs | 无超限无换行回归 → 增确定性错误/进程 crash 测试 |
+| README.md | 旧安全筛选/候选状态 → 当前完整测试和代码闭环状态 |
+| docs/CURRENT_BASELINE.md | 旧验证限制与历史 ID 描述 → 当前结果 |
+| docs/quality/ENGINEERING_STATUS.md | 候选状态 → 区分代码闭环与外部认证 |
+| docs/quality/RELEASE_GATE.md | 旧完整测试未运行 → 实际全套结果及外部门禁 |
+| docs/quality/VERIFICATION_RUNBOOK.md | 旧 model-only 约束 → 分开描述完整本机测试与隔离模型测试 |
+| docs/quality/V4_RELEASE_READINESS.md | 代码闭环与部署认证混同 → 分开判断 |
+| docs/quality/V4_DEFECT_CORRECTION_REPORT.md | 上轮 NOT CLOSED 报告 → 本轮真实证据与剩余限制 |
 
-无新增项目源文件或文档。更新现有 V4 报告，不创建重复报告。构建产物位于 target；验证日志、runner、文件清单保存在 `/tmp/aicore-v4-*`，模型 smoke 位于独立 `/tmp/aicore-v4-model-*`。
+## 5. New Files
 
-## 6. 删除文件
+None（项目源文件）。dist/ 与 target/ 是本轮生成的构建产物；验证脚本及日志位于 /tmp。
 
-None。7 个指定残留文件与修改前 SHA-256 一致；未移动、重命名或修改内容。测试源文件仍为 110 个，manifest 完整。
+## 6. Deleted Files
 
-## 7. 测试结果和命令
+None。指定残留文件原位保留且 SHA-256 一致；tests/ 仍为 110 个 Rust 源文件及 110 个 manifest test 条目。
 
-完整命令/退出码清单见下方自动记录。关键结果：安全集 651 passed，0 failed；nextest 明确 9 skipped，cargo test 对应 9 filtered out。这里的 skipped 只表示本次命令筛选，没有添加 `#[ignore]`。
+## 7. Complete Test Evidence
 
-编译覆盖全部测试：`cargo build --workspace --all-targets --locked`。未筛选的 `cargo test --workspace --all-targets --locked` 和 nextest 全集未运行，因为以下测试会执行真实宿主控制，不能用全局 model 环境变量阻止其直接创建的真实 adapter：
+| 执行命令 | 退出码与关键结果 |
+|---|---|
+| cargo check --workspace --all-targets --locked | 0，workspace check PASS |
+| cargo build --workspace --all-targets --locked | 0，workspace build PASS |
+| cargo clippy --workspace --all-targets --all-features --locked -- -D warnings | 0，无 warning |
+| cargo test --workspace --all-targets --locked | 0，137 个 test binary 合计 666 passed、0 failed/ignored/filtered；cargo 无总时长，最长单 binary 30.0s |
+| cargo nextest run --workspace --all-targets --locked | 0，666 run/666 passed/0 skipped，31.223s |
+| cargo fmt --all -- --check | 0 |
+| Model Mode：隔离 aicored --once 与 model_execution_unit | 0；5/5 模型单测；daemon 单 tick success，model_loaded 一次，schema v2；tar stage 二进制同样通过 |
+| 所有 .sh 的 bash -n | 0 |
+| scripts/audit_v4_static.sh / scripts/audit_v32_static.sh | 0 / 0，110 test manifest 完整 |
+| Windows MSVC 定向 service-host/adapter/IPC cargo check | 0 |
+| Windows MSVC 全 workspace cargo check | 1，WSL 无 lib.exe；不写成 PASS |
 
-1. `set_affinity_for_self_succeeds`
-2. `executor_runs_and_reports_outcomes`
-3. `full_loop_runs_and_records_metrics`
-4. `history_disabled_by_default_means_no_records`
-5. `history_enabled_records_tick`
-6. `smoke_runs_without_panic`
-7. `smoke_trace_ids_unique`
-8. `smoke_mode_is_valid_enum_value`
-9. `release_does_not_panic`
+完整输出留于 /tmp/aicore-v4-final-*.log；所有最终 Rust 命令在最后一次 Rust 源码修改后重新执行。随后安装脚本的模型缺失回滚修正已通过 shell 语法及重新打包验证。Model Mode 独立设置 AICORE_EXECUTION_MODE=model，没有全局覆盖完整测试。
 
-daemon 与 plugin-echo 先构建，再执行进程集成测试；避免将缺二进制的旧测试早退视为有效进程验证。稳定性测试实际默认约 30 秒，不是 1h/24h 稳定性认证。
+## 8. Local Hardware Tests
 
-完整 Windows workspace check 尝试退出 101：bundled SQLite 的 cc-rs 找不到 MSVC `lib.exe`。没有为此安装工具链或改项目 baseline。定向 Rust Windows check 不需要该 C 工具，已通过。
+此前筛掉的九项此次均由未筛选 nextest 实际运行并 PASS：set_affinity_for_self_succeeds、executor_runs_and_reports_outcomes、full_loop_runs_and_records_metrics、history_disabled_by_default_means_no_records、history_enabled_records_tick、smoke_runs_without_panic、smoke_trace_ids_unique、smoke_mode_is_valid_enum_value、release_does_not_panic。本机 WSL 结果不外推为其他 CPU/GPU/NPU 平台认证。
 
-13 个 `.sh` 均通过 `bash -n`；V4/V3.2 static audit 均通过。`local_ci.sh`、`verify_project.sh` 已读取但不直接运行，因为其内部无筛选测试会违反本轮禁控要求。包装脚本只静态检查，没有构建/安装安装包，也没有执行脚本中的清理。
+## 9. Packaging
 
-## 8. 未运行项目
+| 项目 | 结果 |
+|---|---|
+| Linux tar.gz archive build | PASS；含 bin、models/policy_classifier_v1.json、README、LICENSE、NOTICE、服务脚本；安装脚本按既有逻辑生成默认 config |
+| Debian .deb build | PASS；含相同模型/二进制、systemd unit、maintainer scripts、README、LICENSE、NOTICE；daemon 对缺失 config 文件使用已验证的内置默认值 |
+| RPM build | NOT AVAILABLE：仓库没有对应构建脚本 |
+| Windows package build | NOT RUN：本机 WSL 无 Windows 打包环境 |
+| checksum / 内容检查 | PASS；SHA-256 记录于本轮命令输出，stage 二进制模型 smoke 通过 |
 
-- Real CPU/GPU/NPU/power/priority/affinity control：NOT RUN，任务禁止。
-- Windows SCM / Windows Service installation：NOT RUN，任务禁止。
-- systemd install/enable/start：NOT RUN，任务禁止。
-- deb/rpm/msi installation：NOT RUN，任务禁止。
-- 完整 Windows runtime tests、真实 NPU：NOT VERIFIED。
-- 打包安装验收：NOT RUN；Shell 语法通过不是安装认证。
+最终构建 SHA-256：tar.gz = 831034c2321a24cdb662ee9fadbc920961232bc84861c17e2a76d160f86f80c5；deb = 47c34edec05f5ab46304728787a85e6485d2f3b831528ed6d7bb34cef946ccd4。
 
-## 9. 剩余问题与限制
+No generated installer/package was installed. 未运行 maintainer、install、upgrade、rollback 或 uninstall 脚本。
 
-### V4 blocker / 验证门禁
+## 10. Not Executed
 
-- 未筛选全套测试不能在本轮安全约束下运行，故不满足用户定义的“完整 tests 通过”门禁。必须保留真实控制测试，并在另行允许的隔离硬件环境验证，或另行明确模型测试门禁的验收定义；不能伪造 PASS。
-- 当前 tick 上限为 1，区别于任务提示描述的 8。当前实现避免单个 policy 错误完成多个 task；恢复批量必须逐任务保持正确策略/状态，不能只把常量改为 8。本轮未改这一调度行为。
-- 本轮发现的附加待修审查项：Plugin Host stdout/stderr 仍用无界行读取；`memory_limit_mb` 只校验、不提供 OS 强制隔离。前者是现有协议边界缺陷，后者需确认既有平台范围，不能从“参数校验”推断为内存限制已生效。
+deb/rpm/MSI/EXE 安装、Windows SCM 注册、systemd 安装/启用/启动、生产部署均为 NOT RUN — intentionally prohibited。完整 Windows runtime、所有 GPU/NPU 厂商硬件和 24h 稳定性为 NOT VERIFIED；benchmark 实机长跑未执行，避免把空 targets 的真实 adapter 结果误作 Model Mode 或硬件认证。
 
-### Non-blocking / 尚未全面验证
+## 11. Remaining Issues
 
-- 毫秒+tick 的历史 ID 降低重启冲突，但不能据此宣称多实例同毫秒绝无碰撞；未增加公开 ID 契约。
-- JSON legacy 损坏/混合格式恢复、SQLite 迁移中断、插件全部异常输出、Windows 参数尾反斜杠/空参数语义仍需专门审查回归。
-- 项目范围很大，本轮定向源码审查与测试不能被描述为所有旧清单项目逐行、全平台认证。
+### V4 Blocker
+
+None confirmed in current code and authorized Linux verification scope.
+
+### Non-blocking
+
+JSON store 每次 append 覆写完整文件，主要生产存储仍为 SQLite；大历史数据性能可另行测量。IPC request ID cache 有 4096 条窗口上限，旧 ID 过窗后可重用，这是缓存窗口语义，非无限期去重。完整 Windows workspace cross-check 被缺少 MSVC lib.exe 阻断，不能宣称跨平台完整编译。
 
 ### Post-V4
 
-新 ONNX 引擎、大型架构重设计、新业务模块、Agent/Intent/Planner、通用 NPU 控制等没有实现；这些属于未来工作。
+PluginProcessSpec.memory_limit_mb 仅作正值预算校验；OS 级进程内存隔离需要单独平台实现。新 ONNX 引擎、并行多策略 task batch 和新业务层不属于 V4。
 
-### Hardware / Platform verification required
+### Hardware Certification
 
-真实资源控制、服务生命周期、安装包、完整 Windows 构建/运行、长时间硬件稳定性，需要单独环境和授权。
+其他 CPU/GPU/NPU 及厂商驱动的真实控制需要独立硬件；本机测试不代表全面认证。
 
-## 10. 下一阶段判断
+### Platform Certification
 
-**Can enter next stage: NO。** 当前编译、Clippy、安全测试、模型模式证据可复核，但完整测试门禁、task batch 差异和剩余边界审查尚未闭合。保持 AICore V4，不宣布 V5，不将模型执行描述为真实硬件执行。
+Windows 原生运行、SCM 生命周期、MSVC bundled SQLite 构建需要目标机验证。
+
+### Deployment Certification
+
+deb/rpm/MSI 安装及服务生命周期、生产环境稳定性需要独立授权与环境。
+
+## 12. Final Decision
+
+**V4 Engineering Closure: PASS。Can enter next stage: YES。** 现有 V4 代码在授权的 Linux/WSL 工程范围内完成编译、Clippy、完整测试、隔离 Model Mode、静态与打包构建闭环。项目仍为 V4 0.4.0；生产部署、Windows 运行和跨硬件认证并未因此获得 PASS。

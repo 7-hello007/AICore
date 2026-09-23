@@ -68,6 +68,11 @@ fn main() -> ExitCode {
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
 
+    if tick_count == 0 {
+        eprintln!("[bench] --ticks must be greater than zero");
+        return ExitCode::from(2);
+    }
+
     let output_path: Option<PathBuf> = args
         .iter()
         .position(|a| a == "--output")
@@ -107,7 +112,7 @@ fn main() -> ExitCode {
     let metrics = runtime.metrics();
 
     let report = BenchReport {
-        version: "V3.2".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         started_at_unix_ms: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)

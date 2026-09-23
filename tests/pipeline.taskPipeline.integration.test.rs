@@ -140,8 +140,24 @@ fn multiple_ticks_consume_multiple_tasks() {
     }
 
     let loop_ = build_loop(queue.clone());
-    for _ in 0..3 {
-        let _ = loop_.tick(&ExecutionTargets::default());
+    for completed in 1..=3 {
+        assert!(loop_.tick(&ExecutionTargets::default()).success);
+        let tasks = queue.snapshot().unwrap();
+        assert_eq!(
+            tasks
+                .iter()
+                .filter(|task| task.state == TaskState::Completed)
+                .count(),
+            completed
+        );
+        assert_eq!(
+            tasks
+                .iter()
+                .filter(|task| task.state == TaskState::Queued)
+                .count(),
+            3 - completed
+        );
+        assert!(tasks.iter().all(|task| task.state != TaskState::Running));
     }
 
     assert_eq!(queue.queued_count().unwrap(), 0);

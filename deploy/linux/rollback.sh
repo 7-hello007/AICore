@@ -38,6 +38,13 @@ for bin in aicored aicore aicore-dashboard; do
         echo "restored ${bin}"
     fi
 done
+if [ -f "${BACKUP_DIR}/models/policy_classifier_v1.json" ]; then
+    install -d -m 0755 "${BIN_DIR}/models"
+    cp -a "${BACKUP_DIR}/models/policy_classifier_v1.json" \
+        "${BIN_DIR}/models/policy_classifier_v1.json"
+else
+    rm -f "${BIN_DIR}/models/policy_classifier_v1.json"
+fi
 
 systemctl restart aicored.service
 sleep 2

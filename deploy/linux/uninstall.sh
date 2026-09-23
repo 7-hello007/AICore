@@ -43,6 +43,8 @@ systemctl daemon-reload 2>/dev/null || true
 for bin in aicored aicore aicore-dashboard; do
     rm -f "${BIN_DIR}/${bin}"
 done
+rm -f "${BIN_DIR}/models/policy_classifier_v1.json"
+rmdir "${BIN_DIR}/models" 2>/dev/null || true
 
 # 4. 移除 plugins 与 share
 rm -rf "${SHARE_DIR}"

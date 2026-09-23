@@ -162,3 +162,64 @@ fn json_write_failure_preserves_cached_records_and_profile() {
     );
     assert_eq!(reopened.load_profile().unwrap(), original_profile);
 }
+
+#[test]
+fn malformed_json_history_and_profile_are_never_overwritten() {
+    let tmp = std::env::temp_dir().join(format!(
+        "aicore-json-corrupt-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let history = tmp.join("history.json");
+    let profile = tmp.join("profile.json");
+    let valid = serde_json::to_string(&rec(
+        "valid",
+        WorkloadType::Development,
+        PowerMode::Balanced,
+    ))
+    .unwrap();
+    let original_history = format!("{valid}\n{{not-json}}\n");
+    let original_profile = "{invalid-profile}";
+    std::fs::write(&history, &original_history).unwrap();
+    std::fs::write(&profile, original_profile).unwrap();
+
+    let store = JsonFileStore::new(&history, &profile);
+    assert!(store.load_records(10).is_err());
+    assert!(store.record_count().is_err());
+    assert!(store
+        .append_record(&rec("new", WorkloadType::Development, PowerMode::Balanced))
+        .is_err());
+    assert!(store.delete_records_before(u64::MAX).is_err());
+    assert!(store.clear_history().is_err());
+    assert!(store.load_profile().is_err());
+    assert!(store.save_profile(&Default::default()).is_err());
+    assert_eq!(std::fs::read_to_string(&history).unwrap(), original_history);
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), original_profile);
+    std::fs::remove_file(history).unwrap();
+    std::fs::remove_file(profile).unwrap();
+    std::fs::remove_dir(tmp).unwrap();
+}
+
+#[test]
+fn legacy_json_array_remains_readable_after_append() {
+    let tmp = std::env::temp_dir().join(format!("aicore-json-array-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let history = tmp.join("history.json");
+    let profile = tmp.join("profile.json");
+    let first = rec("first", WorkloadType::Development, PowerMode::Balanced);
+    std::fs::write(&history, serde_json::to_string(&vec![first]).unwrap()).unwrap();
+    let store = JsonFileStore::new(&history, &profile);
+    store
+        .append_record(&rec(
+            "second",
+            WorkloadType::Development,
+            PowerMode::Balanced,
+        ))
+        .unwrap();
+    let reopened = JsonFileStore::new(&history, &profile);
+    assert_eq!(reopened.record_count().unwrap(), 2);
+    assert_eq!(reopened.load_records(2).unwrap()[1].record_id, "second");
+    std::fs::remove_file(history).unwrap();
+    std::fs::remove_dir(tmp).unwrap();
+}

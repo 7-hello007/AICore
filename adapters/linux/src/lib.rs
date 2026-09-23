@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 pub mod capability;
 pub mod gpu;
 pub mod hardware;

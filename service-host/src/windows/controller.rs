@@ -59,12 +59,28 @@ fn run_sc(args: &[&str]) -> std::io::Result<std::process::Output> {
     Command::new("sc.exe").args(args).output()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 fn quote_windows_arg(arg: &str) -> String {
-    if !arg.chars().any(|c| c.is_whitespace() || c == '"') {
-        return arg.to_string();
+    let mut quoted = String::from("\"");
+    let mut slashes = 0;
+    for ch in arg.chars() {
+        match ch {
+            '\\' => slashes += 1,
+            '"' => {
+                quoted.push_str(&"\\".repeat(slashes * 2 + 1));
+                quoted.push('"');
+                slashes = 0;
+            },
+            _ => {
+                quoted.push_str(&"\\".repeat(slashes));
+                quoted.push(ch);
+                slashes = 0;
+            },
+        }
     }
-    format!("\"{}\"", arg.replace('"', "\\\""))
+    quoted.push_str(&"\\".repeat(slashes * 2));
+    quoted.push('"');
+    quoted
 }
 
 #[cfg(target_os = "windows")]
@@ -115,7 +131,7 @@ impl IServiceController for WindowsServiceController {
             }
 
             let bin_path = if config.args.is_empty() {
-                format!("\"{}\"", config.binary_path)
+                quote_windows_arg(&config.binary_path)
             } else {
                 let args = config
                     .args
@@ -123,7 +139,7 @@ impl IServiceController for WindowsServiceController {
                     .map(|arg| quote_windows_arg(arg))
                     .collect::<Vec<_>>()
                     .join(" ");
-                format!("\"{}\" {}", config.binary_path, args)
+                format!("{} {}", quote_windows_arg(&config.binary_path), args)
             };
 
             let start = if config.auto_start { "auto" } else { "demand" };
@@ -291,5 +307,22 @@ impl IServiceController for WindowsServiceController {
 
     fn controller_name(&self) -> &'static str {
         "windows_service_controller"
+    }
+}
+
+#[cfg(test)]
+mod quoting_tests {
+    use super::quote_windows_arg;
+
+    #[test]
+    fn quotes_empty_spaces_quotes_and_trailing_backslashes() {
+        assert_eq!(quote_windows_arg(""), "\"\"");
+        assert_eq!(
+            quote_windows_arg("C:\\Program Files\\aicored.exe"),
+            "\"C:\\Program Files\\aicored.exe\""
+        );
+        assert_eq!(quote_windows_arg("a\"b"), "\"a\\\"b\"");
+        assert_eq!(quote_windows_arg("path\\"), "\"path\\\\\"");
+        assert_eq!(quote_windows_arg("path\\\"q"), "\"path\\\\\\\"q\"");
     }
 }

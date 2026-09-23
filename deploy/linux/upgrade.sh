@@ -17,11 +17,19 @@ BACKUP_ROOT="/var/backups/aicore"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_BIN_DIR="${SOURCE_BIN_DIR:-${SCRIPT_DIR}/bin}"
+MODEL_REL="models/policy_classifier_v1.json"
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "error: must run as root" >&2
     exit 1
 fi
+for source in "${SOURCE_BIN_DIR}/aicored" "${SOURCE_BIN_DIR}/aicore" \
+    "${SOURCE_BIN_DIR}/aicore-dashboard" "${SOURCE_BIN_DIR}/${MODEL_REL}"; do
+    if [ ! -f "${source}" ]; then
+        echo "error: missing ${source}" >&2
+        exit 1
+    fi
+done
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
@@ -34,6 +42,10 @@ for bin in aicored aicore aicore-dashboard; do
         echo "backed up ${bin} → ${BACKUP_DIR}/${bin}"
     fi
 done
+if [ -f "${BIN_DIR}/${MODEL_REL}" ]; then
+    mkdir -p "${BACKUP_DIR}/models"
+    cp -a "${BIN_DIR}/${MODEL_REL}" "${BACKUP_DIR}/${MODEL_REL}"
+fi
 
 # 2. 安装新二进制
 for bin in aicored aicore aicore-dashboard; do
@@ -44,6 +56,8 @@ for bin in aicored aicore aicore-dashboard; do
     fi
     install -m 0755 "${SOURCE_BIN_DIR}/${bin}" "${BIN_DIR}/${bin}"
 done
+install -d -m 0755 "${BIN_DIR}/models"
+install -m 0644 "${SOURCE_BIN_DIR}/${MODEL_REL}" "${BIN_DIR}/${MODEL_REL}"
 
 # 3. 重启服务
 systemctl daemon-reload
@@ -66,6 +80,11 @@ if [ "$HEALTHY" = false ]; then
             cp -a "${BACKUP_DIR}/${bin}" "${BIN_DIR}/${bin}"
         fi
     done
+    if [ -f "${BACKUP_DIR}/${MODEL_REL}" ]; then
+        cp -a "${BACKUP_DIR}/${MODEL_REL}" "${BIN_DIR}/${MODEL_REL}"
+    else
+        rm -f "${BIN_DIR}/${MODEL_REL}"
+    fi
     systemctl restart aicored.service
     echo "rolled back to ${BACKUP_DIR}" >&2
     exit 1

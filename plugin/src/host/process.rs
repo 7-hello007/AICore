@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex};
@@ -108,12 +108,11 @@ impl SubprocessPluginHost {
             .ok_or_else(|| AicoreError::PluginFailed("plugin stdout unavailable".to_string()))?;
         let (tx, rx) = mpsc::channel::<(BufReader<ChildStdout>, AicoreResult<String>)>();
         std::thread::spawn(move || {
-            let mut line = String::new();
-            let result = match reader.read_line(&mut line) {
-                Ok(0) => Err(AicoreError::PluginFailed(
+            let result = match read_bounded_line(&mut reader) {
+                Ok(None) => Err(AicoreError::PluginFailed(
                     "plugin process exited".to_string(),
                 )),
-                Ok(_) => Ok(line),
+                Ok(Some(line)) => Ok(line),
                 Err(e) => Err(AicoreError::PluginFailed(format!("read failed: {}", e))),
             };
             let _ = tx.send((reader, result));
@@ -122,7 +121,20 @@ impl SubprocessPluginHost {
         match rx.recv_timeout(timeout) {
             Ok((reader, result)) => {
                 entry.stdout = Some(reader);
-                let line = result?;
+                let line = match result {
+                    Ok(line) => line,
+                    Err(error) => {
+                        let _ = entry.child.kill();
+                        let _ = entry.child.wait();
+                        self.record_crash(
+                            &entry.spec.plugin_id,
+                            &handle.handle_id,
+                            None,
+                            &error.to_string(),
+                        );
+                        return Err(error);
+                    },
+                };
                 serde_json::from_str::<HostResponse>(line.trim())
                     .map_err(|e| AicoreError::PluginFailed(format!("invalid response: {}", e)))
             },
@@ -307,17 +319,40 @@ fn now_unix_ms() -> u64 {
         .unwrap_or(0)
 }
 
+fn read_bounded_line<R: BufRead>(reader: &mut R) -> io::Result<Option<String>> {
+    let mut bytes = Vec::new();
+    let count = reader
+        .take((MAX_LINE_BYTES + 1) as u64)
+        .read_until(b'\n', &mut bytes)?;
+    if count == 0 {
+        return Ok(None);
+    }
+    if count > MAX_LINE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "plugin response exceeds MAX_LINE_BYTES",
+        ));
+    }
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
 fn spawn_stderr_drain(plugin_id: String, stderr: ChildStderr) {
     std::thread::Builder::new()
         .name(format!("aicore-plugin-stderr-{}", plugin_id))
         .spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                match line {
-                    Ok(line) if !line.trim().is_empty() => {
+            let mut reader = BufReader::new(stderr);
+            loop {
+                match read_bounded_line(&mut reader) {
+                    Ok(Some(line)) if !line.trim().is_empty() => {
                         tracing::warn!(component="subprocess_plugin_host", plugin_id=%plugin_id, event="plugin_stderr", message=%line, "plugin stderr");
                     }
-                    Ok(_) => {}
+                    Ok(Some(_)) => {},
+                    Ok(None) => break,
+                    Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+                        tracing::warn!(component="subprocess_plugin_host", plugin_id=%plugin_id, event="plugin_stderr_oversize", error=%e, "plugin stderr line rejected");
+                    },
                     Err(e) => {
                         tracing::debug!(component="subprocess_plugin_host", plugin_id=%plugin_id, event="plugin_stderr_read_failed", error=%e, "plugin stderr drain stopped");
                         break;

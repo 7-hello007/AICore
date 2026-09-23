@@ -39,6 +39,10 @@ for bin in aicored aicore aicore-dashboard; do
         exit 1
     fi
 done
+if [ ! -f "${SOURCE_BIN_DIR}/models/policy_classifier_v1.json" ]; then
+    echo "error: missing ${SOURCE_BIN_DIR}/models/policy_classifier_v1.json" >&2
+    exit 1
+fi
 
 # 3. 创建用户与组（若不存在）
 if ! getent group aicore >/dev/null; then
@@ -57,6 +61,7 @@ fi
 
 # 4. 目录
 install -d -m 0755 "${BIN_DIR}"
+install -d -m 0755 "${BIN_DIR}/models"
 install -d -m 0755 "${UNIT_DIR}"
 install -d -m 0750 -o aicore -g aicore "${STATE_DIR}"
 install -d -m 0755 "${CONFIG_DIR}"
@@ -68,6 +73,8 @@ for bin in aicored aicore aicore-dashboard; do
     install -m 0755 "${SOURCE_BIN_DIR}/${bin}" "${BIN_DIR}/${bin}"
     echo "installed ${BIN_DIR}/${bin}"
 done
+install -m 0644 "${SOURCE_BIN_DIR}/models/policy_classifier_v1.json" \
+    "${BIN_DIR}/models/policy_classifier_v1.json"
 
 # 6. systemd unit
 sed \

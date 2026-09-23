@@ -98,31 +98,35 @@ impl SqliteMemoryStore {
 
     fn apply_migrations(&self) -> ContractResult<()> {
         self.with_conn(|conn| {
+            // Keep DDL, timestamp conversion and the schema marker together.
+            // A failed or interrupted migration must leave the previous schema intact.
+            let transaction = conn.unchecked_transaction().map_err(map_sqlite)?;
             // 保证 kv 表存在，才可读取 schema_version
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS kv (
+            transaction
+                .execute_batch(
+                    "CREATE TABLE IF NOT EXISTS kv (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );",
-            )
-            .map_err(map_sqlite)?;
+                )
+                .map_err(map_sqlite)?;
 
-            let current = read_schema_version(conn)?;
+            let current = read_schema_version(&transaction)?;
 
             for (version, sql) in MIGRATIONS {
                 if *version > current {
-                    conn.execute_batch(sql).map_err(map_sqlite)?;
-                    write_schema_version(conn, *version)?;
+                    transaction.execute_batch(sql).map_err(map_sqlite)?;
+                    write_schema_version(&transaction, *version)?;
                 }
             }
 
             // v1 of the product stored record timestamps in a column named
             // `timestamp_unix_secs`, while the payload itself already used
             // millisecond precision. Upgrade that legacy schema in-place.
-            let version_after_base = read_schema_version(conn)?;
+            let version_after_base = read_schema_version(&transaction)?;
             if version_after_base < 2 {
                 let mut has_legacy_column = false;
-                let mut stmt = conn
+                let mut stmt = transaction
                     .prepare("PRAGMA table_info(records)")
                     .map_err(map_sqlite)?;
                 let rows = stmt
@@ -135,23 +139,24 @@ impl SqliteMemoryStore {
                     }
                 }
                 if has_legacy_column {
-                    conn.execute_batch(
-                        "DROP INDEX IF EXISTS idx_records_ts;
+                    transaction
+                        .execute_batch(
+                            "DROP INDEX IF EXISTS idx_records_ts;
                          ALTER TABLE records RENAME COLUMN timestamp_unix_secs TO timestamp_unix_ms;
                          UPDATE records SET timestamp_unix_ms = timestamp_unix_ms * 1000;
                          CREATE INDEX IF NOT EXISTS idx_records_ts ON records(timestamp_unix_ms);",
-                    )
-                    .map_err(map_sqlite)?;
+                        )
+                        .map_err(map_sqlite)?;
                 } else {
-                    conn.execute_batch(
+                    transaction.execute_batch(
                         "CREATE INDEX IF NOT EXISTS idx_records_ts ON records(timestamp_unix_ms);",
                     )
                     .map_err(map_sqlite)?;
                 }
-                write_schema_version(conn, 2)?;
+                write_schema_version(&transaction, 2)?;
             }
 
-            Ok(())
+            transaction.commit().map_err(map_sqlite)
         })
     }
 }
@@ -304,5 +309,66 @@ impl IMemoryStore for SqliteMemoryStore {
 
     fn store_name(&self) -> &'static str {
         "sqlite"
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    #[test]
+    fn failed_legacy_conversion_rolls_back_schema_and_data() {
+        let path = std::env::temp_dir().join(format!(
+            "aicore-v4-migration-{}-{:?}.db",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO kv VALUES ('schema_version', '1');
+                 CREATE TABLE records (record_id TEXT PRIMARY KEY,
+                     timestamp_unix_secs INTEGER NOT NULL, payload_json TEXT NOT NULL);
+                 INSERT INTO records VALUES ('existing', 123, '{}');
+                 CREATE INDEX idx_records_ts ON records(timestamp_unix_secs);
+                 CREATE TRIGGER reject_conversion BEFORE UPDATE ON records
+                     BEGIN SELECT RAISE(ABORT, 'blocked conversion'); END;",
+            )
+            .unwrap();
+        }
+
+        assert!(SqliteMemoryStore::open(&path).is_err());
+        {
+            let conn = Connection::open(&path).unwrap();
+            let version: String = conn
+                .query_row(
+                    "SELECT value FROM kv WHERE key='schema_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(version, "1");
+            let timestamp: i64 = conn
+                .query_row("SELECT timestamp_unix_secs FROM records", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(timestamp, 123);
+            conn.execute_batch("DROP TRIGGER reject_conversion;")
+                .unwrap();
+        }
+        let store = SqliteMemoryStore::open(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), 2);
+        let conn = Connection::open(&path).unwrap();
+        let timestamp: i64 = conn
+            .query_row("SELECT timestamp_unix_ms FROM records", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(timestamp, 123_000);
+        drop(conn);
+        drop(store);
+        std::fs::remove_file(path).unwrap();
     }
 }

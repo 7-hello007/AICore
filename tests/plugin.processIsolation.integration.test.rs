@@ -168,3 +168,31 @@ fn unknown_handle_returns_stopped() {
     assert!(h.call(&fake, &HostRequest::Ping).is_err());
     assert!(h.stop(&fake).is_err());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn oversized_unterminated_plugin_output_is_bounded() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{Duration, Instant};
+
+    let path = std::env::temp_dir().join(format!(
+        "aicore-v4-plugin-oversize-{}.sh",
+        std::process::id()
+    ));
+    std::fs::write(
+        &path,
+        "#!/bin/sh\nprintf '%065537d' 0 >&2\nprintf '%065537d' 0\nsleep 2\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let host = SubprocessPluginHost::new();
+    let handle = host.spawn(&make_spec(&path)).unwrap();
+    let start = Instant::now();
+    let error = host.call(&handle, &HostRequest::Ping).unwrap_err();
+    assert!(error.to_string().contains("response exceeds"), "{error}");
+    assert!(start.elapsed() < Duration::from_secs(2));
+    assert_eq!(host.state(&handle), PluginHostState::Crashed);
+    assert_eq!(host.recent_crashes().len(), 1);
+    host.stop(&handle).unwrap();
+    std::fs::remove_file(path).unwrap();
+}

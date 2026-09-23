@@ -39,6 +39,19 @@ use aicore_core::{
 use crate::metrics::MetricsCollector;
 use crate::safe_mode::SafeModeController;
 
+static RECORD_ID_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn historical_record_id(timestamp_unix_ms: u64, tick_id: u64) -> String {
+    let sequence = RECORD_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "tick-{}-{}-{}-{}",
+        timestamp_unix_ms,
+        std::process::id(),
+        tick_id,
+        sequence
+    )
+}
+
 /// 顶层自适应循环。
 ///
 /// 每次 tick 完成一次完整闭环：
@@ -762,9 +775,10 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         let mut recorded = false;
         if let Some(memory) = &self.memory {
             if Self::should_record_history(memory) {
+                let timestamp_unix_ms = Self::now_unix_ms();
                 let record = HistoricalRecord {
-                    record_id: format!("tick-{}-{}", Self::now_unix_ms(), tick_id),
-                    timestamp_unix_ms: Self::now_unix_ms(),
+                    record_id: historical_record_id(timestamp_unix_ms, tick_id),
+                    timestamp_unix_ms,
                     workload_type: context.workload_type,
                     interaction_level: context.interaction_level,
                     policy_id: policy.policy_id.clone(),
@@ -1009,4 +1023,17 @@ struct SnapshotFields {
     current_policy_json: Option<String>,
     runtime_route_json: Option<String>,
     ai_runtime_health_json: Option<String>,
+}
+
+#[cfg(test)]
+mod record_id_tests {
+    use super::historical_record_id;
+
+    #[test]
+    fn independent_loops_with_same_timestamp_and_tick_get_distinct_ids() {
+        assert_ne!(
+            historical_record_id(1_700_000_000_000, 1),
+            historical_record_id(1_700_000_000_000, 1)
+        );
+    }
 }

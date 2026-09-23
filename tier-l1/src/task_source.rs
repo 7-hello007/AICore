@@ -1,6 +1,7 @@
 use std::sync::RwLock;
 
 use aicore_contracts::{
+    application::id::ApplicationId,
     errors::{ContractError, ContractResult},
     task::contract::TaskContract,
     traits::task_source::ITaskSource,
@@ -45,9 +46,22 @@ impl L1TaskSource {
         Ok(())
     }
 
+    /// Clear only a declaration owned by this application.
+    pub fn clear_for(&self, application_id: &ApplicationId) -> ContractResult<bool> {
+        let mut slot = self.current.write().map_err(|_| {
+            ContractError::AdapterUnavailable("l1 task source lock poisoned".into())
+        })?;
+        if slot.as_ref().map(|task| &task.application_id) == Some(application_id) {
+            *slot = None;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// 当前是否有声明。
     pub fn has_current(&self) -> bool {
-        self.current.read().map(|s| s.is_some()).unwrap_or(false)
+        self.current_task().ok().flatten().is_some()
     }
 }
 
@@ -59,9 +73,20 @@ impl Default for L1TaskSource {
 
 impl ITaskSource for L1TaskSource {
     fn current_task(&self) -> ContractResult<Option<TaskContract>> {
-        let slot = self.current.read().map_err(|_| {
+        let mut slot = self.current.write().map_err(|_| {
             ContractError::AdapterUnavailable("l1 task source lock poisoned".into())
         })?;
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        if slot
+            .as_ref()
+            .and_then(|task| task.deadline_unix_secs)
+            .is_some_and(|deadline| deadline <= now_secs)
+        {
+            *slot = None;
+        }
         Ok(slot.clone())
     }
 
@@ -72,5 +97,20 @@ impl ITaskSource for L1TaskSource {
     fn priority(&self) -> u32 {
         // L1 显式声明优先级高于 L0 推断。
         500
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expired_l1_declaration_is_not_reused() {
+        let source = L1TaskSource::new();
+        let mut contract = TaskContract::minimal(ApplicationId::new("app.test"));
+        contract.deadline_unix_secs = Some(1);
+        source.set_current(contract).unwrap();
+        assert_eq!(source.current_task().unwrap(), None);
+        assert!(!source.has_current());
     }
 }

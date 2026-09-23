@@ -5,14 +5,27 @@ use std::sync::Arc;
 use aicore_contracts::ipc::protocol::{
     Envelope, IpcError, Request, ResponseData, ResponseEnvelope, IPC_PROTOCOL_VERSION,
 };
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
+
+const CONNECTION_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 use crate::transport::{server_listen, IpcListener, IpcStream, IpcTransport};
+use crate::ClientIdentity;
 
 /// 请求处理器。daemon 实现此 trait，把 IPC 请求映射到内部服务。
 pub trait IpcHandler: Send + Sync + 'static {
     /// 处理一条请求并返回响应数据；错误通过 `Err` 返回。
     fn handle(&self, request: Request) -> Result<ResponseData, IpcError>;
+
+    /// Transport-authenticated peer path. Existing in-process handlers may
+    /// keep using `handle`; security-sensitive handlers override this method.
+    fn handle_with_identity(
+        &self,
+        request: Request,
+        _identity: ClientIdentity,
+    ) -> Result<ResponseData, IpcError> {
+        self.handle(request)
+    }
 
     /// Handler 名称，用于日志。
     fn name(&self) -> &'static str;
@@ -23,7 +36,7 @@ pub struct IpcServer {
     listener: IpcListener,
     handler: Arc<dyn IpcHandler>,
     shutdown_rx: mpsc::Receiver<()>,
-    max_in_flight: Arc<Semaphore>,
+    max_connections: Arc<Semaphore>,
 }
 
 impl IpcServer {
@@ -35,7 +48,7 @@ impl IpcServer {
             listener,
             handler,
             shutdown_rx: rx,
-            max_in_flight: Arc::new(Semaphore::new(32)),
+            max_connections: Arc::new(Semaphore::new(32)),
         })
     }
 
@@ -76,9 +89,16 @@ impl IpcServer {
                     match result {
                         Ok(stream) => {
                             let handler = self.handler.clone();
-                            let permits = self.max_in_flight.clone();
+                            let permits = self.max_connections.clone();
+                            let permit = match permits.try_acquire_owned() {
+                                Ok(permit) => permit,
+                                Err(_) => {
+                                    tracing::warn!(component = "ipc_server", event = "connection_rejected", "connection limit reached");
+                                    continue;
+                                },
+                            };
                             tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, handler, permits).await {
+                                if let Err(e) = handle_connection(stream, handler, permit).await {
                                     tracing::warn!(
                                         component = "ipc_server",
                                         event = "connection_error",
@@ -107,15 +127,20 @@ impl IpcServer {
 async fn handle_connection(
     mut stream: IpcStream,
     handler: Arc<dyn IpcHandler>,
-    permits: Arc<Semaphore>,
+    _permit: OwnedSemaphorePermit,
 ) -> std::io::Result<()> {
+    let identity = stream.peer_identity();
     let mut seen = HashSet::<String>::new();
+    let mut acknowledgements = false;
     loop {
-        let line = match stream.read_message().await? {
-            Some(l) => l,
-            None => break,
+        let line = match tokio::time::timeout(CONNECTION_IDLE_TIMEOUT, stream.read_message()).await
+        {
+            Ok(Ok(Some(line))) => line,
+            Ok(Ok(None)) | Err(_) => break,
+            Ok(Err(error)) => return Err(error),
         };
 
+        let mut send_ack = false;
         let response = match serde_json::from_str::<Envelope>(&line) {
             Ok(envelope) => {
                 if envelope.request_id.trim().is_empty() {
@@ -128,14 +153,17 @@ async fn handle_connection(
                         envelope.request_id,
                         IpcError::invalid_request("duplicate request_id"),
                     )
+                } else if matches!(envelope.payload, Request::Handshake { .. }) {
+                    let response = process_envelope(&handler, envelope, identity);
+                    acknowledgements = matches!(
+                        &response.data,
+                        Some(ResponseData::HandshakeAck { capabilities })
+                            if capabilities.iter().any(|capability| capability == "request_ack")
+                    );
+                    response
                 } else {
-                    match permits.clone().try_acquire_owned() {
-                        Ok(_permit) => process_envelope(&handler, envelope),
-                        Err(_) => ResponseEnvelope::err(
-                            envelope.request_id,
-                            IpcError::new("ERR_BACKPRESSURE", "too many in-flight requests"),
-                        ),
-                    }
+                    send_ack = acknowledgements && envelope.version == IPC_PROTOCOL_VERSION;
+                    process_envelope(&handler, envelope, identity)
                 }
             },
             Err(e) => ResponseEnvelope::err(
@@ -144,18 +172,33 @@ async fn handle_connection(
             ),
         };
 
-        let json = serde_json::to_string(&response).unwrap_or_else(|_| {
-            r#"{"version":"1.0","request_id":"unknown","success":false,"error":{"code":"ERR_INTERNAL","message":"serialize failed"}}"#.to_string()
-        });
-        stream.write_message(&json).await?;
-        if seen.len() > 4096 {
-            seen.clear();
+        if send_ack {
+            let ack = ResponseEnvelope::ok(response.request_id.clone(), ResponseData::Ack);
+            write_response(&mut stream, &ack).await?;
+        }
+        write_response(&mut stream, &response).await?;
+        if seen.len() >= 4096 {
+            break;
         }
     }
     Ok(())
 }
 
-fn process_envelope(handler: &Arc<dyn IpcHandler>, envelope: Envelope) -> ResponseEnvelope {
+async fn write_response(
+    stream: &mut IpcStream,
+    response: &ResponseEnvelope,
+) -> std::io::Result<()> {
+    let json = serde_json::to_string(response).unwrap_or_else(|_| {
+            r#"{"version":"1.0","request_id":"unknown","success":false,"error":{"code":"ERR_INTERNAL","message":"serialize failed"}}"#.to_string()
+        });
+    stream.write_message(&json).await
+}
+
+fn process_envelope(
+    handler: &Arc<dyn IpcHandler>,
+    envelope: Envelope,
+    identity: ClientIdentity,
+) -> ResponseEnvelope {
     if envelope.version != IPC_PROTOCOL_VERSION {
         return ResponseEnvelope::err(
             envelope.request_id,
@@ -164,8 +207,158 @@ fn process_envelope(handler: &Arc<dyn IpcHandler>, envelope: Envelope) -> Respon
     }
 
     let request_id = envelope.request_id.clone();
-    match handler.handle(envelope.payload) {
-        Ok(data) => ResponseEnvelope::ok(request_id, data),
-        Err(e) => ResponseEnvelope::err(request_id, e),
+    match envelope.payload {
+        Request::Handshake { capabilities } => {
+            let accepted = capabilities
+                .into_iter()
+                .filter(|capability| capability == "request_ack")
+                .collect();
+            ResponseEnvelope::ok(
+                request_id,
+                ResponseData::HandshakeAck {
+                    capabilities: accepted,
+                },
+            )
+        },
+        request => match handler.handle_with_identity(request, identity) {
+            Ok(data) => ResponseEnvelope::ok(request_id, data),
+            Err(e) => ResponseEnvelope::err(request_id, e),
+        },
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::transport::client_connect;
+
+    struct StatusHandler;
+
+    impl IpcHandler for StatusHandler {
+        fn handle(&self, request: Request) -> Result<ResponseData, IpcError> {
+            match request {
+                Request::GetStatus => Ok(ResponseData::Status {
+                    status: aicore_contracts::runtime::daemon_status::DaemonStatus::new(1),
+                }),
+                _ => Err(IpcError::not_supported("unsupported test request")),
+            }
+        }
+
+        fn name(&self) -> &'static str {
+            "test"
+        }
+    }
+
+    #[tokio::test]
+    async fn negotiated_connection_acks_before_response() {
+        let path = std::env::temp_dir().join(format!(
+            "aicore-ipc-handshake-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (shutdown, rx) = mpsc::channel(1);
+        let server = IpcServer::bind(&path, Arc::new(StatusHandler))
+            .unwrap()
+            .with_shutdown(rx);
+        let task = tokio::spawn(server.run());
+        let mut stream = client_connect(&path).await.unwrap();
+
+        let handshake = Envelope::new(
+            "handshake",
+            Request::Handshake {
+                capabilities: vec!["request_ack".to_string()],
+            },
+        );
+        stream
+            .write_message(&serde_json::to_string(&handshake).unwrap())
+            .await
+            .unwrap();
+        let response: ResponseEnvelope =
+            serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
+        assert!(matches!(
+            response.data,
+            Some(ResponseData::HandshakeAck { capabilities }) if capabilities == ["request_ack"]
+        ));
+
+        stream
+            .write_message(
+                &serde_json::to_string(&Envelope::new("status", Request::GetStatus)).unwrap(),
+            )
+            .await
+            .unwrap();
+        let ack: ResponseEnvelope =
+            serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
+        assert_eq!(ack.request_id, "status");
+        assert!(matches!(ack.data, Some(ResponseData::Ack)));
+        let final_response: ResponseEnvelope =
+            serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
+        assert_eq!(final_response.request_id, "status");
+        assert!(matches!(
+            final_response.data,
+            Some(ResponseData::Status { .. })
+        ));
+
+        stream
+            .write_message(
+                &serde_json::to_string(&Envelope::new("status", Request::GetStatus)).unwrap(),
+            )
+            .await
+            .unwrap();
+        let duplicate_error: ResponseEnvelope =
+            serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
+        assert!(!duplicate_error.success);
+        assert_eq!(duplicate_error.request_id, "status");
+
+        shutdown.send(()).await.unwrap();
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn client_without_handshake_gets_one_response() {
+        let path = std::env::temp_dir().join(format!(
+            "aicore-ipc-legacy-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (shutdown, rx) = mpsc::channel(1);
+        let server = IpcServer::bind(&path, Arc::new(StatusHandler))
+            .unwrap()
+            .with_shutdown(rx);
+        let task = tokio::spawn(server.run());
+        let mut stream = client_connect(&path).await.unwrap();
+        stream
+            .write_message(
+                &serde_json::to_string(&Envelope::new("legacy", Request::GetStatus)).unwrap(),
+            )
+            .await
+            .unwrap();
+        let response: ResponseEnvelope =
+            serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
+        assert!(matches!(response.data, Some(ResponseData::Status { .. })));
+        assert_eq!(response.request_id, "legacy");
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), stream.read_message())
+                .await
+                .is_err()
+        );
+        shutdown.send(()).await.unwrap();
+        task.await.unwrap();
+    }
+
+    #[test]
+    fn incompatible_protocol_version_is_rejected_before_handler() {
+        let handler: Arc<dyn IpcHandler> = Arc::new(StatusHandler);
+        let mut envelope = Envelope::new("old-version", Request::GetStatus);
+        envelope.version = aicore_contracts::schema::SchemaVersion::new(2, 0);
+        let result = process_envelope(&handler, envelope, ClientIdentity::Internal);
+        assert!(!result.success);
+        assert_eq!(result.request_id, "old-version");
+        assert_eq!(result.error.unwrap().code, "ERR_PROTOCOL_MISMATCH");
     }
 }

@@ -4,6 +4,11 @@
 
 AICore `0.4.0` has **V4 code engineering closure**. V4 corrects defects in the existing V3.2 architecture without introducing a new business layer.
 
+Work against the broader root `destination.md` is tracked separately in
+`DESTINATION_REQUIREMENTS.md` and `DESTINATION_VERIFICATION_REPORT.md`. Those
+goals are not implied by V4 code closure; the current destination assessment
+remains incomplete.
+
 ## Correctness invariants restored
 
 - No runtime hardware binding is executed before policy validation.

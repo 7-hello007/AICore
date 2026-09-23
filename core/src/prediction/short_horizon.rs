@@ -10,8 +10,9 @@ use aicore_contracts::{
 /// 策略（按优先级）：
 /// 1. **一致性优先**：若 Memory 中最近 `min_samples` 条记录都是同一 workload，
 ///    预测下一个还是它。
-/// 2. **多数优先**：若 Memory 样本数够，用 `dominant_workload`。
-/// 3. 都不可用时返回 Err，让上层回退到当前观测。
+/// 2. **时间模式**：相同 UTC 小时有足量且高置信的个人样本时使用它。
+/// 3. **多数优先**：若 Memory 样本数够，用 `dominant_workload`。
+/// 4. 都不可用时返回 Err，让上层回退到当前观测。
 ///
 /// 置信度：
 /// - 一致性场景：样本数越多越自信，上限 0.95。
@@ -117,6 +118,26 @@ impl IPredictor for ShortHorizonPredictor {
         // 1. 一致性
         if let Some(pred) = self.try_consistent(&memory.recent_workloads, memory.sample_count) {
             return Ok(pred);
+        }
+
+        if let Some(timestamp_unix_ms) = input.snapshot.collected_at_unix_ms {
+            let hour = ((timestamp_unix_ms / 3_600_000) % 24) as u8;
+            if let Some(pattern) = memory.hourly_patterns.iter().find(|pattern| {
+                pattern.hour_utc == hour
+                    && pattern.sample_count >= self.min_samples
+                    && pattern.confidence >= self.min_confidence.max(0.65)
+            }) {
+                return Ok(Prediction {
+                    predicted_workload: pattern.dominant_workload,
+                    confidence: pattern.confidence,
+                    horizon_ms: self.horizon_ms,
+                    reason: format!(
+                        "UTC hour {} pattern from {} samples",
+                        hour, pattern.sample_count
+                    ),
+                    predictor_name: self.name().to_string(),
+                });
+            }
         }
 
         // 2. 多数

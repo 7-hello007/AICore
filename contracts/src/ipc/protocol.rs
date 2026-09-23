@@ -7,6 +7,7 @@ use crate::policy::resource_policy::ResourcePolicy;
 use crate::runtime::daemon_status::DaemonStatus;
 use crate::schema::SchemaVersion;
 use crate::task::contract::TaskContract;
+use crate::task::lifecycle::TaskState;
 
 /// IPC 协议版本。不兼容变更需递增 major。
 pub const IPC_PROTOCOL_VERSION: SchemaVersion = SchemaVersion::CURRENT;
@@ -35,6 +36,10 @@ impl Envelope {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
+    /// 协商当前连接的 IPC 能力；旧客户端可以继续使用单响应流程。
+    Handshake {
+        capabilities: Vec<String>,
+    },
     /// 注册应用。
     Register {
         application_id: ApplicationId,
@@ -43,9 +48,32 @@ pub enum Request {
         capabilities: Vec<String>,
     },
     /// 注销应用。
-    Unregister { application_id: ApplicationId },
+    Unregister {
+        application_id: ApplicationId,
+    },
     /// 提交 Task Contract。
-    SubmitTask { contract: TaskContract },
+    SubmitTask {
+        contract: TaskContract,
+    },
+    /// L1 aware application declares its current task without queueing execution.
+    DeclareCurrentTask {
+        contract: TaskContract,
+    },
+    /// Clear only this application's current L1 declaration.
+    ClearCurrentTask {
+        application_id: ApplicationId,
+    },
+    SubmitNativeTask {
+        contract: TaskContract,
+    },
+    GetNativeTask {
+        application_id: ApplicationId,
+        handle_id: String,
+    },
+    CancelNativeTask {
+        application_id: ApplicationId,
+        handle_id: String,
+    },
     /// 查询 daemon 状态。
     GetStatus,
     /// 查询能力列表。
@@ -55,7 +83,9 @@ pub enum Request {
     /// 查询当前策略。
     GetPolicy,
     /// 查询最近 N 条 tick 摘要。
-    GetRecentTicks { limit: usize },
+    GetRecentTicks {
+        limit: usize,
+    },
     /// 查询所有插件。
     ListPlugins,
     /// V3.2：一次拉取完整 Dashboard 快照。
@@ -104,6 +134,10 @@ impl ResponseEnvelope {
 // 因此不把 Status 也 box 掉。若后续按值分发，需重新评估。
 #[allow(clippy::large_enum_variant)]
 pub enum ResponseData {
+    HandshakeAck {
+        capabilities: Vec<String>,
+    },
+    Ack,
     Registered {
         application_id: String,
     },
@@ -115,6 +149,17 @@ pub enum ResponseData {
         task_id: Option<String>,
         message: String,
     },
+    CurrentTaskDeclared,
+    CurrentTaskCleared {
+        cleared: bool,
+    },
+    NativeTaskSubmitted {
+        handle_id: String,
+    },
+    NativeTaskStatus {
+        state: TaskState,
+    },
+    NativeTaskCancelled,
     Status {
         status: DaemonStatus,
     },

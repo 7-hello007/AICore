@@ -3,7 +3,7 @@
 use aicore_contracts::{
     context::{snapshot::ContextSnapshot, workload::WorkloadType},
     errors::ContractError,
-    memory::context::MemoryContext,
+    memory::context::{HourlyWorkloadPattern, MemoryContext},
     prediction::input::PredictionInput,
     telemetry::snapshot::ComputerSnapshot,
     traits::predictor::IPredictor,
@@ -25,6 +25,7 @@ fn consistent_memory(workload: WorkloadType, samples: usize) -> MemoryContext {
         dominant_workload: Some(workload),
         preferred_power_mode: None,
         sample_count: samples,
+        hourly_patterns: Vec::new(),
     }
 }
 
@@ -43,6 +44,7 @@ fn predict_with_insufficient_samples_fails() {
         dominant_workload: Some(WorkloadType::Development),
         preferred_power_mode: None,
         sample_count: 2,
+        hourly_patterns: Vec::new(),
     };
     let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
     let msg = format!("{}", err);
@@ -88,6 +90,7 @@ fn predict_with_mixed_recent_falls_back_to_dominant() {
         dominant_workload: Some(WorkloadType::Development),
         preferred_power_mode: None,
         sample_count: 10,
+        hourly_patterns: Vec::new(),
     };
     let pred = p.predict(&input_with_memory(Some(mem))).unwrap();
     assert_eq!(pred.predicted_workload, WorkloadType::Development);
@@ -103,6 +106,7 @@ fn predict_with_unknown_dominant_fails() {
         dominant_workload: Some(WorkloadType::Unknown),
         preferred_power_mode: None,
         sample_count: 5,
+        hourly_patterns: Vec::new(),
     };
     // Unknown 且样本足够 → 一致性检查跳过，多数检查也跳过 → Err
     let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
@@ -127,6 +131,28 @@ fn name_and_horizon() {
     assert_eq!(p.horizon_ms(), 10_000);
     assert_eq!(p.min_samples(), 3);
     assert!((p.min_confidence() - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn time_pattern_predicts_when_recent_sequence_is_mixed() {
+    let predictor = ShortHorizonPredictor::with_defaults();
+    let mut memory = consistent_memory(WorkloadType::Development, 8);
+    memory.recent_workloads = vec![
+        WorkloadType::Development,
+        WorkloadType::Gaming,
+        WorkloadType::Development,
+    ];
+    memory.hourly_patterns = vec![HourlyWorkloadPattern {
+        hour_utc: 14,
+        dominant_workload: WorkloadType::Gaming,
+        sample_count: 8,
+        confidence: 0.75,
+    }];
+    let mut input = input_with_memory(Some(memory));
+    input.snapshot.collected_at_unix_ms = Some(14 * 3_600_000);
+    let prediction = predictor.predict(&input).unwrap();
+    assert_eq!(prediction.predicted_workload, WorkloadType::Gaming);
+    assert_eq!(prediction.confidence, 0.75);
 }
 
 #[test]

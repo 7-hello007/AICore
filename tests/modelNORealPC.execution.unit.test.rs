@@ -23,7 +23,7 @@ fn model_target_provider_returns_virtual_targets() {
 }
 
 #[test]
-fn model_executor_produces_real_success_without_host_execution() {
+fn model_executor_reports_model_success_without_host_execution() {
     let environment = ModelEnvironment::new();
 
     let executor = ModelPolicyExecutor::new(environment.clone());

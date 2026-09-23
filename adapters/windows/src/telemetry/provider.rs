@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use aicore_contracts::{
     errors::{ContractError, ContractResult},
@@ -23,6 +23,7 @@ pub struct WindowsTelemetryProvider {
     system: Mutex<System>,
     disks: Mutex<Disks>,
     networks: Mutex<Networks>,
+    last_network_sample: Mutex<Option<Instant>>,
     foreground: ForegroundCache,
     hardware: WindowsHardwareTelemetryProvider,
 }
@@ -36,6 +37,7 @@ impl WindowsTelemetryProvider {
             system: Mutex::new(system),
             disks: Mutex::new(Disks::new_with_refreshed_list()),
             networks: Mutex::new(Networks::new_with_refreshed_list()),
+            last_network_sample: Mutex::new(None),
             foreground: ForegroundCache::new(500),
             hardware: WindowsHardwareTelemetryProvider::new(),
         }
@@ -71,6 +73,15 @@ impl ITelemetryProvider for WindowsTelemetryProvider {
 
         let mut networks = self.networks.lock().map_err(|_| lock_err("networks"))?;
         networks.refresh();
+        let mut last_network_sample = self
+            .last_network_sample
+            .lock()
+            .map_err(|_| lock_err("network sample"))?;
+        let now = Instant::now();
+        let elapsed_ms = last_network_sample
+            .replace(now)
+            .map(|previous| now.duration_since(previous).as_millis() as u64)
+            .unwrap_or(0);
 
         let collected_at = now_unix_ms();
 
@@ -127,8 +138,8 @@ impl ITelemetryProvider for WindowsTelemetryProvider {
                 interface: name.clone(),
                 received_bytes: data.total_received(),
                 transmitted_bytes: data.total_transmitted(),
-                received_bytes_per_sec: 0,
-                transmitted_bytes_per_sec: 0,
+                received_bytes_per_sec: rate_per_second(data.received(), elapsed_ms),
+                transmitted_bytes_per_sec: rate_per_second(data.transmitted(), elapsed_ms),
             })
             .collect();
 
@@ -238,5 +249,22 @@ impl ITelemetryProvider for WindowsTelemetryProvider {
 
     fn sampling_constraints(&self) -> SamplingConstraints {
         SamplingConstraints::new(100)
+    }
+}
+
+fn rate_per_second(bytes_since_refresh: u64, elapsed_ms: u64) -> u64 {
+    if elapsed_ms == 0 {
+        0
+    } else {
+        bytes_since_refresh.saturating_mul(1_000) / elapsed_ms
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn network_rate_uses_refresh_delta_and_elapsed_time() {
+        assert_eq!(super::rate_per_second(500, 250), 2_000);
+        assert_eq!(super::rate_per_second(500, 0), 0);
     }
 }

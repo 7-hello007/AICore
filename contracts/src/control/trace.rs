@@ -20,12 +20,15 @@ pub struct ControlTrace {
 }
 
 impl ControlTrace {
-    /// 是否所有阶段成功（不包括 Rollback）。
+    /// 是否实际执行成功且没有失败阶段（不包括 Rollback）。
+    /// NoOp 与成功回滚均不表示本次策略生效。
     pub fn is_success(&self) -> bool {
-        self.stages
-            .iter()
-            .filter(|s| s.stage != super::stage::ControlStage::Rollback)
-            .all(|s| s.status.is_success())
+        self.final_status.is_success()
+            && self
+                .stages
+                .iter()
+                .filter(|s| s.stage != super::stage::ControlStage::Rollback)
+                .all(|s| s.status.is_success())
     }
 
     /// 查找某阶段结果。

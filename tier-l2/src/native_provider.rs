@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -7,7 +8,9 @@ use aicore_contracts::{
     errors::{ContractError, ContractResult},
     task::contract::TaskContract,
     task::lifecycle::TaskState,
+    task::queued::QueuedTask,
     traits::native_task_provider::{INativeTaskProvider, NativeTaskHandle},
+    traits::task_queue::ITaskQueue,
 };
 
 /// 内部记录。
@@ -23,7 +26,7 @@ struct NativeTaskRecord {
 /// - 应用通过 `submit(contract)` 提交原生任务；返回 handle。
 /// - 通过 `query(handle)` 查询状态。
 /// - 通过 `cancel(handle)` 请求取消。
-/// - `transition(handle, state)` 由 Core 或应用驱动状态机。
+/// - 独立模式的 `transition(handle, state)` 由 Core 驱动状态机；绑定共享队列后由队列驱动。
 ///
 /// **约束**：
 /// - L2 不直接执行 OS 操作；只管理任务元数据。
@@ -31,6 +34,7 @@ struct NativeTaskRecord {
 pub struct L2NativeTaskProvider {
     tasks: Mutex<HashMap<String, NativeTaskRecord>>,
     next_seq: AtomicU64,
+    queue: Option<Arc<dyn ITaskQueue>>,
 }
 
 impl L2NativeTaskProvider {
@@ -38,13 +42,25 @@ impl L2NativeTaskProvider {
         Self {
             tasks: Mutex::new(HashMap::new()),
             next_seq: AtomicU64::new(1),
+            queue: None,
         }
+    }
+
+    /// Bind native handles to the daemon's existing task queue.
+    pub fn with_task_queue(mut self, queue: Arc<dyn ITaskQueue>) -> Self {
+        self.queue = Some(queue);
+        self
     }
 
     /// 状态转换。允许：
     /// - Pending → Running / Cancelled / Failed
     /// - Running → Completed / Failed / Cancelled
     pub fn transition(&self, handle: &NativeTaskHandle, next: TaskState) -> ContractResult<()> {
+        if self.queue.is_some() {
+            return Err(ContractError::InvalidRequest(
+                "queue-backed native tasks are driven by the shared task queue".into(),
+            ));
+        }
         let mut tasks = self
             .tasks
             .lock()
@@ -89,10 +105,20 @@ impl L2NativeTaskProvider {
                 handle.handle_id
             ))
         })?;
+        let state = if let Some(queue) = &self.queue {
+            queue
+                .get(&handle.handle_id)?
+                .ok_or_else(|| {
+                    ContractError::ResourceUnavailable("queued native task missing".into())
+                })?
+                .state
+        } else {
+            record.state
+        };
         Ok((
             record.contract.clone(),
             record.submitted_at_unix_secs,
-            record.state,
+            state,
         ))
     }
 }
@@ -112,6 +138,14 @@ impl INativeTaskProvider for L2NativeTaskProvider {
             .tasks
             .lock()
             .map_err(|_| ContractError::AdapterUnavailable("l2 task lock poisoned".into()))?;
+
+        if let Some(queue) = &self.queue {
+            queue.enqueue(QueuedTask::new(
+                handle_id.clone(),
+                contract.clone(),
+                now_unix_ms(),
+            ))?;
+        }
 
         tasks.insert(
             handle_id.clone(),
@@ -137,18 +171,40 @@ impl INativeTaskProvider for L2NativeTaskProvider {
             .tasks
             .lock()
             .map_err(|_| ContractError::AdapterUnavailable("l2 task lock poisoned".into()))?;
-        tasks
-            .get(&handle.handle_id)
-            .map(|r| r.state)
-            .ok_or_else(|| {
-                ContractError::ResourceUnavailable(format!(
-                    "native task not found: {}",
-                    handle.handle_id
-                ))
-            })
+        let record = tasks.get(&handle.handle_id).ok_or_else(|| {
+            ContractError::ResourceUnavailable(format!(
+                "native task not found: {}",
+                handle.handle_id
+            ))
+        })?;
+        if let Some(queue) = &self.queue {
+            return queue
+                .get(&handle.handle_id)?
+                .map(|task| task.state)
+                .ok_or_else(|| {
+                    ContractError::ResourceUnavailable(format!(
+                        "native task not found: {}",
+                        handle.handle_id
+                    ))
+                });
+        }
+        Ok(record.state)
     }
 
     fn cancel(&self, handle: &NativeTaskHandle) -> ContractResult<()> {
+        if let Some(queue) = &self.queue {
+            let tasks = self
+                .tasks
+                .lock()
+                .map_err(|_| ContractError::AdapterUnavailable("l2 task lock poisoned".into()))?;
+            if !tasks.contains_key(&handle.handle_id) {
+                return Err(ContractError::ResourceUnavailable(format!(
+                    "native task not found: {}",
+                    handle.handle_id
+                )));
+            }
+            return queue.cancel(&handle.handle_id);
+        }
         // 只有 Pending / Running 可取消
         let current = self.query(handle)?;
         match current {
@@ -169,5 +225,12 @@ fn now_unix_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }

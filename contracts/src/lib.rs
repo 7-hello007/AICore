@@ -5,6 +5,7 @@ pub mod config;
 pub mod context;
 pub mod control;
 pub mod dashboard;
+pub mod effect;
 pub mod errors;
 pub mod events;
 pub mod execution;

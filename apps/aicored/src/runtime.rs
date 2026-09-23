@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
-use aicore_ai::workload::MlWorkloadSource;
+use aicore_ai::{workload::MlWorkloadSource, BoundedAiProvider};
 use aicore_ai_runtime::{PureRustRuntime, RuntimeBackedProvider};
 
 use aicore_contracts::{
@@ -11,15 +12,16 @@ use aicore_contracts::{
     runtime::config::AdaptiveLoopConfig,
     traits::{
         ai_runtime::IAiRuntime, policy_engine::IPolicyEngine, policy_executor::IPolicyExecutor,
-        runtime_binder::IRuntimeBinder, task_queue::ITaskQueue,
-        telemetry_provider::ITelemetryProvider,
+        post_condition_checker::IPostConditionChecker, power_controller::IPowerController,
+        process_controller::IProcessController, runtime_binder::IRuntimeBinder,
+        task_queue::ITaskQueue, telemetry_provider::ITelemetryProvider,
     },
 };
 
 use aicore_core::{
     context::{ContextEngine, RuleBasedClassifier},
     event_bus::EventBus,
-    executor::{DefaultPolicyExecutor, TransparentExecutor},
+    executor::{DefaultPolicyExecutor, PlatformPostConditionChecker, TransparentExecutor},
     model::{
         ModelEnvironment, ModelPolicyExecutor, ModelPostConditionChecker, ModelTargetProvider,
     },
@@ -36,14 +38,18 @@ use aicore_runtime_router::{DefaultRuntimeBinder, SafeRuntimeRouter};
 use aicore_tier::TierHub;
 use aicore_tier_l0::register_l0_with_fusion;
 use aicore_tier_l1::register_l1;
-use aicore_tier_l2::register_l2;
+use aicore_tier_l1::L1TaskSource;
+use aicore_tier_l2::{register_l2, register_l2_with_queue, L2NativeTaskProvider};
 
 /// 组装好的 daemon 运行时。
 pub struct DaemonRuntime {
     pub loop_: AdaptiveLoop,
+    pub model_mode: bool,
     pub platform_name: &'static str,
     pub capabilities: Vec<CapabilityEntry>,
     pub retention: Option<Arc<RetentionScheduler>>,
+    pub l1_source: Option<Arc<L1TaskSource>>,
+    pub l2_provider: Option<Arc<L2NativeTaskProvider>>,
 
     /// 当前执行模式使用的 target。
     ///
@@ -68,7 +74,8 @@ pub fn build_runtime_full(
      * ============================================================
      */
 
-    let (telemetry, platform_executor, platform_name) = build_platform_components();
+    let (telemetry, platform_executor, platform_checker, platform_name) =
+        build_platform_components();
 
     /*
      * ============================================================
@@ -133,8 +140,25 @@ pub fn build_runtime_full(
 
     let _ = register_l0_with_fusion(&tier_hub, ml_source.into_iter().collect());
 
-    let _ = register_l1(&tier_hub);
-    let _ = register_l2(&tier_hub);
+    let l1_source = match register_l1(&tier_hub) {
+        Ok((_, source)) => Some(source),
+        Err(error) => {
+            tracing::warn!(component = "aicored", event = "l1_register_failed", error = %error);
+            None
+        },
+    };
+    let l2_registration = if let Some(queue) = task_queue.clone() {
+        register_l2_with_queue(&tier_hub, queue)
+    } else {
+        register_l2(&tier_hub)
+    };
+    let l2_provider = match l2_registration {
+        Ok((_, provider)) => Some(provider),
+        Err(error) => {
+            tracing::warn!(component = "aicored", event = "l2_register_failed", error = %error);
+            None
+        },
+    };
 
     let tier_hub = Arc::new(tier_hub);
 
@@ -180,7 +204,7 @@ pub fn build_runtime_full(
         }
     };
 
-    let ai: Option<Arc<dyn aicore_contracts::traits::ai_provider::IAiProvider>> =
+    let ai_provider: Option<Arc<dyn aicore_contracts::traits::ai_provider::IAiProvider>> =
         shared_ai_runtime.as_ref().and_then(|runtime| {
             let spec = aicore_contracts::ai::runtime::ModelSpec {
                 name: "policy_classifier_v1".to_string(),
@@ -201,6 +225,17 @@ pub fn build_runtime_full(
                         as Arc<dyn aicore_contracts::traits::ai_provider::IAiProvider>
                 })
         });
+
+    let ai = ai_provider.and_then(|provider| {
+        match BoundedAiProvider::new(provider, Duration::from_millis(10)) {
+            Ok(bounded) => Some(Arc::new(bounded)
+                as Arc<dyn aicore_contracts::traits::ai_provider::IAiProvider>),
+            Err(error) => {
+                tracing::warn!(component = "aicored", event = "ai_worker_init_failed", error = %error, "rule-based policy remains available");
+                None
+            },
+        }
+    });
 
     /*
      * ============================================================
@@ -232,7 +267,7 @@ pub fn build_runtime_full(
                 .with_checker(Arc::new(ModelPostConditionChecker::new(environment))),
         )
     } else {
-        Arc::new(TransparentExecutor::new(executor.clone()))
+        Arc::new(TransparentExecutor::new(executor.clone()).with_checker(platform_checker))
     };
 
     /*
@@ -505,9 +540,12 @@ pub fn build_runtime_full(
 
     DaemonRuntime {
         loop_,
+        model_mode,
         platform_name,
         capabilities,
         retention,
+        l1_source,
+        l2_provider,
         execution_targets,
     }
 }
@@ -541,44 +579,55 @@ fn model_path() -> PathBuf {
     Path::new("models/policy_classifier_v1.json").to_path_buf()
 }
 
-#[cfg(target_os = "linux")]
-fn build_platform_components() -> (
+type PlatformComponents = (
     Arc<dyn ITelemetryProvider>,
     Arc<dyn IPolicyExecutor>,
+    Arc<dyn IPostConditionChecker>,
     &'static str,
-) {
+);
+
+#[cfg(target_os = "linux")]
+fn build_platform_components() -> PlatformComponents {
     use aicore_adapter_linux::{
         LinuxPowerController, LinuxProcessController, LinuxTelemetryProvider,
     };
 
     let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(LinuxTelemetryProvider::new());
 
+    let process: Arc<dyn IProcessController> = Arc::new(LinuxProcessController::new());
+    let power: Arc<dyn IPowerController> = Arc::new(LinuxPowerController::new());
     let executor: Arc<dyn IPolicyExecutor> = Arc::new(DefaultPolicyExecutor::new(
-        Some(Arc::new(LinuxProcessController::new())),
-        Some(Arc::new(LinuxPowerController::new())),
+        Some(process.clone()),
+        Some(power.clone()),
+    ));
+    let checker: Arc<dyn IPostConditionChecker> = Arc::new(PlatformPostConditionChecker::new(
+        Some(process),
+        Some(power),
     ));
 
-    (telemetry, executor, "linux")
+    (telemetry, executor, checker, "linux")
 }
 
 #[cfg(target_os = "windows")]
-fn build_platform_components() -> (
-    Arc<dyn ITelemetryProvider>,
-    Arc<dyn IPolicyExecutor>,
-    &'static str,
-) {
+fn build_platform_components() -> PlatformComponents {
     use aicore_adapter_windows::{
         WindowsPowerController, WindowsProcessController, WindowsTelemetryProvider,
     };
 
     let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(WindowsTelemetryProvider::new());
 
+    let process: Arc<dyn IProcessController> = Arc::new(WindowsProcessController::new());
+    let power: Arc<dyn IPowerController> = Arc::new(WindowsPowerController::new());
     let executor: Arc<dyn IPolicyExecutor> = Arc::new(DefaultPolicyExecutor::new(
-        Some(Arc::new(WindowsProcessController::new())),
-        Some(Arc::new(WindowsPowerController::new())),
+        Some(process.clone()),
+        Some(power.clone()),
+    ));
+    let checker: Arc<dyn IPostConditionChecker> = Arc::new(PlatformPostConditionChecker::new(
+        Some(process),
+        Some(power),
     ));
 
-    (telemetry, executor, "windows")
+    (telemetry, executor, checker, "windows")
 }
 
 #[cfg(target_os = "linux")]

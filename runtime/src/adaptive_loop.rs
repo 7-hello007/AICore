@@ -75,6 +75,7 @@ pub struct AdaptiveLoop {
     memory: Option<Arc<dyn IMemoryStore>>,
     safe_mode: Arc<SafeModeController>,
     metrics: Arc<MetricsCollector>,
+    thermal_guard: Option<Arc<aicore_core::policy::ThermalPowerGuard>>,
     tick_counter: AtomicU64,
 }
 
@@ -107,6 +108,7 @@ impl AdaptiveLoop {
             memory: None,
             safe_mode: Arc::new(SafeModeController::new(config)),
             metrics: Arc::new(MetricsCollector::new()),
+            thermal_guard: None,
             tick_counter: AtomicU64::new(0),
         }
     }
@@ -120,6 +122,14 @@ impl AdaptiveLoop {
     /// 可选：启用短期预测器。
     pub fn with_predictor(mut self, predictor: Arc<dyn IPredictor>) -> Self {
         self.predictor = Some(predictor);
+        self
+    }
+
+    pub fn with_thermal_guard(
+        mut self,
+        guard: Arc<aicore_core::policy::ThermalPowerGuard>,
+    ) -> Self {
+        self.thermal_guard = Some(guard);
         self
     }
 
@@ -189,17 +199,9 @@ impl AdaptiveLoop {
     fn build_memory_context(&self) -> Option<aicore_contracts::memory::context::MemoryContext> {
         let memory = self.memory.as_ref()?;
 
-        let profile = memory.load_profile().ok()?;
-        if !profile.can_record() && !profile.can_personalize() {
-            return None;
-        }
-
-        let records = memory.load_records(100).ok()?;
-        if records.is_empty() {
-            return None;
-        }
-
-        Some(aicore_contracts::memory::context::MemoryContext::from_records(&records))
+        aicore_memory::personalized_context(memory.as_ref(), 100)
+            .ok()
+            .flatten()
     }
 
     /// 应用短期预测。
@@ -539,6 +541,10 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             apply_task_contract_to_policy(&mut policy, contract);
         }
 
+        if let Some(guard) = &self.thermal_guard {
+            guard.constrain(&state.snapshot, &mut policy);
+        }
+
         // V4：收集 Dashboard 数据面字段
         let snap_fields =
             self.collect_snapshot_fields(&state, &context, &policy, runtime_route.as_ref());
@@ -757,7 +763,8 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                 } else if exec_failure {
                     queue.fail(&task.task_id, format!("{:?}", overall))
                 } else {
-                    queue.complete(&task.task_id, Some("NoOp".to_string()))
+                    // 任务没有实际执行，不能把 NoOp 记为 Completed。
+                    queue.fail(&task.task_id, "NoOp: no action executed".to_string())
                 };
                 if let Err(e) = result {
                     tracing::warn!(

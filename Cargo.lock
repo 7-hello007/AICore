@@ -189,6 +189,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "windows-sys",
 ]
 
 [[package]]
@@ -235,6 +236,7 @@ version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "aicore-core",
+ "aicore-memory",
  "aicore-tier",
  "memchr",
  "serde",

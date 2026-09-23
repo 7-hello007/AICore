@@ -14,6 +14,17 @@ pub struct MemoryContext {
     pub dominant_workload: Option<WorkloadType>,
     pub preferred_power_mode: Option<PowerMode>,
     pub sample_count: usize,
+    /// Opt-in aggregate by UTC hour; contains no application names or raw events.
+    #[serde(default)]
+    pub hourly_patterns: Vec<HourlyWorkloadPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HourlyWorkloadPattern {
+    pub hour_utc: u8,
+    pub dominant_workload: WorkloadType,
+    pub sample_count: usize,
+    pub confidence: f32,
 }
 
 impl MemoryContext {
@@ -53,11 +64,89 @@ impl MemoryContext {
         }
         let preferred_power = power_counts.iter().max_by_key(|(_, c)| *c).map(|(m, _)| *m);
 
+        let mut per_hour: [Vec<(WorkloadType, usize)>; 24] = std::array::from_fn(|_| Vec::new());
+        for record in records {
+            if record.workload_type == WorkloadType::Unknown {
+                continue;
+            }
+            let hour = ((record.timestamp_unix_ms / 3_600_000) % 24) as usize;
+            if let Some((_, count)) = per_hour[hour]
+                .iter_mut()
+                .find(|(workload, _)| *workload == record.workload_type)
+            {
+                *count += 1;
+            } else {
+                per_hour[hour].push((record.workload_type, 1));
+            }
+        }
+        let hourly_patterns = per_hour
+            .iter()
+            .enumerate()
+            .filter_map(|(hour, counts)| {
+                let total: usize = counts.iter().map(|(_, count)| count).sum();
+                if total < 3 {
+                    return None;
+                }
+                let (dominant_workload, dominant_count) =
+                    counts.iter().max_by_key(|(_, count)| *count)?;
+                Some(HourlyWorkloadPattern {
+                    hour_utc: hour as u8,
+                    dominant_workload: *dominant_workload,
+                    sample_count: total,
+                    confidence: *dominant_count as f32 / total as f32,
+                })
+            })
+            .collect();
+
         Self {
             recent_workloads: recent,
             dominant_workload: dominant,
             preferred_power_mode: preferred_power,
             sample_count: records.len(),
+            hourly_patterns,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        context::workload::InteractionLevel, execution::status::ExecutionOverallStatus,
+        policy::priority::PolicySource,
+    };
+
+    fn record(day: u64, workload_type: WorkloadType) -> HistoricalRecord {
+        HistoricalRecord {
+            record_id: format!("day-{}", day),
+            timestamp_unix_ms: (day * 24 + 14) * 3_600_000,
+            workload_type,
+            interaction_level: InteractionLevel::Interactive,
+            policy_id: "policy".into(),
+            policy_source: PolicySource::RuleBased,
+            overall_status: ExecutionOverallStatus::AllSucceeded,
+            cpu_usage_percent: 20.0,
+            gpu_usage_percent: None,
+            npu_usage_percent: None,
+            memory_usage_percent: 30.0,
+            power_mode: PowerMode::Balanced,
+        }
+    }
+
+    #[test]
+    fn aggregates_utc_hour_without_raw_application_data() {
+        let records = vec![
+            record(0, WorkloadType::Development),
+            record(1, WorkloadType::Development),
+            record(2, WorkloadType::Development),
+            record(3, WorkloadType::Gaming),
+        ];
+        let context = MemoryContext::from_records(&records);
+        assert_eq!(context.hourly_patterns.len(), 1);
+        let pattern = &context.hourly_patterns[0];
+        assert_eq!(pattern.hour_utc, 14);
+        assert_eq!(pattern.dominant_workload, WorkloadType::Development);
+        assert_eq!(pattern.sample_count, 4);
+        assert!((pattern.confidence - 0.75).abs() < f32::EPSILON);
     }
 }

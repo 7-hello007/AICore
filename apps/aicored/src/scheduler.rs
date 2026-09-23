@@ -8,7 +8,10 @@ use aicore_contracts::{
     traits::runtime_orchestrator::IRuntimeOrchestrator,
 };
 use aicore_ipc::{IpcHandler, IpcServer};
-use aicore_plugin::{discover_from_dir, register_discovered, PluginRegistry};
+use aicore_plugin::{
+    discover_from_dir, register_discovered, PluginActivationManager, PluginActivationPolicy,
+    PluginRegistry, SubprocessPluginHost,
+};
 use tokio::sync::mpsc;
 
 use crate::ipc_handler::DaemonIpcHandler;
@@ -22,6 +25,7 @@ pub struct SchedulerConfig {
     pub state_path: PathBuf,
     pub ipc_path: PathBuf,
     pub plugins_dir: PathBuf,
+    pub plugin_policy: Option<PathBuf>,
     pub task_queue: Arc<dyn aicore_contracts::traits::task_queue::ITaskQueue>,
     pub once: bool,
     pub shutdown_rx: mpsc::Receiver<()>,
@@ -35,6 +39,7 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         state_path,
         ipc_path,
         plugins_dir,
+        plugin_policy,
         task_queue,
         once,
         mut shutdown_rx,
@@ -62,6 +67,49 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
             error = %e,
             "plugin registration failed"
         ),
+    }
+
+    let activation =
+        PluginActivationManager::new(plugins.clone(), Arc::new(SubprocessPluginHost::new()));
+    let policy = if runtime.model_mode {
+        if plugin_policy.is_some() {
+            tracing::warn!(
+                component = "aicored",
+                event = "model_plugin_activation_disabled",
+                "Model Mode never starts external plugin processes"
+            );
+        }
+        None
+    } else {
+        plugin_policy
+            .as_ref()
+            .and_then(|path| match read_activation_policy(path, &plugins_dir) {
+                Ok(policy) => Some(policy),
+                Err(error) => {
+                    tracing::warn!(component="aicored", event="plugin_policy_rejected", error=%error);
+                    None
+                },
+            })
+    };
+    for discovered in &report.discovered {
+        let pins: Vec<_> = policy
+            .as_ref()
+            .map(|policy| {
+                policy
+                    .pins
+                    .iter()
+                    .filter(|pin| pin.plugin_id == discovered.manifest.name)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let result = if pins.len() == 1 {
+            activation.activate(discovered, pins[0])
+        } else {
+            activation.reject_unpinned(discovered)
+        };
+        if let Err(error) = result {
+            tracing::warn!(component="aicored", event="plugin_activation_rejected", plugin=%discovered.manifest.name, error=%error);
+        }
     }
 
     let last_policy_json: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -95,6 +143,8 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         history.clone(),
         plugins.clone(),
         task_queue.clone(),
+        runtime.l1_source.clone(),
+        runtime.l2_provider.clone(),
         runtime.capabilities.clone(),
         format!("{}-daemon", runtime.platform_name),
         last_policy_json.clone(),
@@ -149,6 +199,7 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
             }
 
             _ = interval.tick() => {
+                activation.refresh_health();
                 let outcome = runtime.loop_.tick(&targets);
                 let count = {
                     let mut guard = status.lock().expect("status lock");
@@ -218,6 +269,42 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     let guard = status.lock().expect("status lock");
     let _ = write_status_atomic(&state_path, &guard);
     Ok(())
+}
+
+fn read_activation_policy(
+    path: &std::path::Path,
+    plugins_dir: &std::path::Path,
+) -> std::io::Result<PluginActivationPolicy> {
+    let policy = std::fs::canonicalize(path)?;
+    if let Ok(discovery_dir) = std::fs::canonicalize(plugins_dir) {
+        if policy.starts_with(discovery_dir) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "plugin policy must be outside discovery directory",
+            ));
+        }
+    }
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "plugin policy must be a regular file",
+        ));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let daemon_uid = std::fs::metadata("/proc/self")?.uid();
+        if metadata.uid() != daemon_uid || metadata.mode() & 0o022 != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "plugin policy must be owned by daemon UID and not group/world writable",
+            ));
+        }
+    }
+    let bytes = std::fs::read(policy)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
 fn log_tick(outcome: &TickOutcome) {

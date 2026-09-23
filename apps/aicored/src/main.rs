@@ -149,6 +149,7 @@ fn main() -> ExitCode {
             state_path,
             ipc_path,
             plugins_dir,
+            plugin_policy: args.plugin_policy.clone(),
             task_queue: shared_task_queue.clone(),
             once,
             shutdown_rx: rx,

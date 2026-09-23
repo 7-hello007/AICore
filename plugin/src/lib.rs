@@ -1,3 +1,4 @@
+pub mod activation;
 pub mod discovery;
 pub mod host;
 pub mod isolation;
@@ -7,6 +8,10 @@ pub mod sandbox;
 pub mod signature;
 pub mod trust;
 
+pub use activation::{
+    ActivationError, IManagedPluginHost, PluginActivationManager, PluginActivationPin,
+    PluginActivationPolicy,
+};
 pub use discovery::{
     discover_from_dir, register_discovered, DiscoveredPlugin, DiscoveryReport, RejectedPlugin,
 };

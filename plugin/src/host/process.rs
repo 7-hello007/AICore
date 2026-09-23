@@ -32,6 +32,7 @@ struct ManagedChild {
     stdin: ChildStdin,
     stdout: Option<BufReader<ChildStdout>>,
     spec: PluginProcessSpec,
+    exit_observed: bool,
 }
 
 impl SubprocessPluginHost {
@@ -94,6 +95,7 @@ impl SubprocessPluginHost {
                 exit_code,
                 &format!("write to plugin failed: {}", e),
             );
+            entry.exit_observed = true;
             return Err(AicoreError::PluginFailed(format!(
                 "plugin process exited (write failed: {})",
                 e
@@ -132,6 +134,7 @@ impl SubprocessPluginHost {
                             None,
                             &error.to_string(),
                         );
+                        entry.exit_observed = true;
                         return Err(error);
                     },
                 };
@@ -151,6 +154,7 @@ impl SubprocessPluginHost {
                         start.elapsed().as_millis()
                     ),
                 );
+                entry.exit_observed = true;
                 Err(AicoreError::Timeout(format!(
                     "plugin call timeout after {} ms",
                     start.elapsed().as_millis()
@@ -185,9 +189,25 @@ impl Default for SubprocessPluginHost {
     }
 }
 
+impl Drop for SubprocessPluginHost {
+    fn drop(&mut self) {
+        if let Ok(mut processes) = self.processes.lock() {
+            for (_, mut managed) in processes.drain() {
+                let _ = managed.child.kill();
+                let _ = managed.child.wait();
+            }
+        }
+    }
+}
+
 impl IPluginHost for SubprocessPluginHost {
     fn spawn(&self, spec: &PluginProcessSpec) -> AicoreResult<PluginProcessHandle> {
         spec.validate()?;
+
+        let mut procs = self
+            .processes
+            .lock()
+            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?;
 
         let mut child = Command::new(&spec.artifact_path)
             .stdin(Stdio::piped())
@@ -223,12 +243,8 @@ impl IPluginHost for SubprocessPluginHost {
             stdin,
             stdout: Some(BufReader::new(stdout)),
             spec: spec.clone(),
+            exit_observed: false,
         };
-
-        let mut procs = self
-            .processes
-            .lock()
-            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?;
         procs.insert(handle_id, managed);
 
         tracing::info!(
@@ -270,7 +286,11 @@ impl IPluginHost for SubprocessPluginHost {
                     }
                     std::thread::sleep(Duration::from_millis(50));
                 },
-                Err(e) => return Err(AicoreError::PluginFailed(format!("wait failed: {}", e))),
+                Err(e) => {
+                    let _ = entry.child.kill();
+                    let _ = entry.child.wait();
+                    return Err(AicoreError::PluginFailed(format!("wait failed: {}", e)));
+                },
             }
         }
     }
@@ -289,6 +309,15 @@ impl IPluginHost for SubprocessPluginHost {
                 if status.success() {
                     PluginHostState::Stopped
                 } else {
+                    if !entry.exit_observed {
+                        self.record_crash(
+                            &entry.spec.plugin_id,
+                            &handle.handle_id,
+                            status.code(),
+                            "plugin process exited unsuccessfully",
+                        );
+                        entry.exit_observed = true;
+                    }
                     PluginHostState::Crashed
                 }
             },

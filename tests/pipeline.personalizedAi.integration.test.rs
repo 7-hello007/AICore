@@ -97,6 +97,7 @@ fn memory_context_is_passed_to_ai_provider() {
             dominant_workload: Some(WorkloadType::Development),
             preferred_power_mode: Some(PowerMode::Balanced),
             sample_count: 5,
+            hourly_patterns: Vec::new(),
         }),
     };
 
@@ -139,6 +140,7 @@ fn ai_assisted_engine_uses_memory_context() {
         dominant_workload: Some(WorkloadType::AiInference),
         preferred_power_mode: Some(PowerMode::Balanced),
         sample_count: 4,
+        hourly_patterns: Vec::new(),
     });
 
     // generate_with_memory 走 AI + memory 路径

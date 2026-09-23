@@ -76,8 +76,8 @@ fn trace_is_success_ignores_rollback_stage() {
         rollback: RollbackRecord::not_triggered(),
         total_duration_ms: 0,
     };
-    // Rollback 失败不参与 is_success 判定
-    assert!(trace.is_success());
+    // Rollback 阶段不参与判断，但最终 AllFailed 不能声称策略成功。
+    assert!(!trace.is_success());
 }
 
 #[test]

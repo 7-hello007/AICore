@@ -1,4 +1,5 @@
 pub mod adaptive_loop;
+pub mod dual_loop;
 pub mod logging;
 pub mod metrics;
 pub mod safe_mode;

@@ -1,8 +1,11 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use aicore_api::ApplicationRegistry;
 use aicore_contracts::dashboard::snapshot::DashboardSnapshot;
+use aicore_contracts::task::contract::TaskContract;
 use aicore_contracts::task::queued::QueuedTask;
+use aicore_contracts::traits::native_task_provider::{INativeTaskProvider, NativeTaskHandle};
 use aicore_contracts::traits::task_queue::ITaskQueue;
 use aicore_contracts::{
     application::id::ApplicationId,
@@ -10,18 +13,23 @@ use aicore_contracts::{
     ipc::protocol::{IpcError, PluginEntryDto, Request, ResponseData},
     runtime::daemon_status::DaemonStatus,
 };
-use aicore_ipc::IpcHandler;
+use aicore_ipc::{ClientIdentity, IpcHandler};
 use aicore_plugin::PluginRegistry;
+use aicore_tier_l1::L1TaskSource;
+use aicore_tier_l2::L2NativeTaskProvider;
 
 use crate::tick_history::TickHistory;
 
 /// Daemon 的 IPC 请求处理器。
 pub struct DaemonIpcHandler {
     registry: Arc<ApplicationRegistry>,
+    app_owners: Mutex<HashMap<ApplicationId, ClientIdentity>>,
     status: Arc<Mutex<DaemonStatus>>,
     history: Arc<TickHistory>,
     plugins: Arc<PluginRegistry>,
     task_queue: Arc<dyn ITaskQueue>,
+    l1_source: Option<Arc<L1TaskSource>>,
+    l2_provider: Option<Arc<L2NativeTaskProvider>>,
     capabilities: Vec<CapabilityEntry>,
     component: String,
     last_policy_json: Arc<Mutex<Option<String>>>,
@@ -36,6 +44,8 @@ impl DaemonIpcHandler {
         history: Arc<TickHistory>,
         plugins: Arc<PluginRegistry>,
         task_queue: Arc<dyn ITaskQueue>,
+        l1_source: Option<Arc<L1TaskSource>>,
+        l2_provider: Option<Arc<L2NativeTaskProvider>>,
         capabilities: Vec<CapabilityEntry>,
         component: String,
         last_policy_json: Arc<Mutex<Option<String>>>,
@@ -43,70 +53,230 @@ impl DaemonIpcHandler {
     ) -> Self {
         Self {
             registry,
+            app_owners: Mutex::new(HashMap::new()),
             status,
             history,
             plugins,
             task_queue,
+            l1_source,
+            l2_provider,
             capabilities,
             component,
             last_policy_json,
             last_context_json,
         }
     }
-}
 
-impl IpcHandler for DaemonIpcHandler {
-    fn handle(&self, request: Request) -> Result<ResponseData, IpcError> {
+    fn authorize_app(
+        &self,
+        application_id: &ApplicationId,
+        identity: ClientIdentity,
+    ) -> Result<(), IpcError> {
+        let owners = self
+            .app_owners
+            .lock()
+            .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
+        if owners.get(application_id) == Some(&identity) {
+            Ok(())
+        } else {
+            Err(IpcError::new(
+                "ERR_PERMISSION_DENIED",
+                "application is not bound to this IPC peer",
+            ))
+        }
+    }
+
+    fn register_bound(
+        &self,
+        application_id: ApplicationId,
+        name: String,
+        version: String,
+        capabilities: Vec<String>,
+        identity: ClientIdentity,
+    ) -> Result<ResponseData, IpcError> {
+        if identity == ClientIdentity::Unauthenticated {
+            return Err(IpcError::new(
+                "ERR_PERMISSION_DENIED",
+                "IPC peer identity unavailable",
+            ));
+        }
+        let mut owners = self
+            .app_owners
+            .lock()
+            .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
+        if owners
+            .get(&application_id)
+            .is_some_and(|owner| *owner != identity)
+            || (!owners.contains_key(&application_id)
+                && self
+                    .registry
+                    .is_registered(&application_id)
+                    .map_err(|e| IpcError::internal(format!("app registry: {}", e)))?)
+        {
+            return Err(IpcError::new(
+                "ERR_PERMISSION_DENIED",
+                "application already registered by another peer",
+            ));
+        }
+        self.registry
+            .register(application_id.clone(), name, version, capabilities)
+            .map_err(|e| IpcError::invalid_request(format!("{}", e)))?;
+        owners.insert(application_id.clone(), identity);
+        Ok(ResponseData::Registered {
+            application_id: application_id.0,
+        })
+    }
+
+    fn validate_registered_contract(
+        &self,
+        contract: &TaskContract,
+        identity: ClientIdentity,
+    ) -> Result<(), IpcError> {
+        self.authorize_app(&contract.application_id, identity)?;
+        if !self
+            .registry
+            .is_registered(&contract.application_id)
+            .map_err(|e| IpcError::internal(format!("app registry: {}", e)))?
+        {
+            return Err(IpcError::new(
+                "ERR_APP_NOT_REGISTERED",
+                format!("application not registered: {}", contract.application_id),
+            ));
+        }
+        if contract
+            .task_id
+            .as_ref()
+            .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
+        {
+            return Err(IpcError::invalid_request(
+                "task_id must be non-empty and <= 256 chars",
+            ));
+        }
+        if contract.deadline_unix_secs == Some(0) {
+            return Err(IpcError::invalid_request("deadline_unix_secs must be > 0"));
+        }
+        Ok(())
+    }
+    fn dispatch(
+        &self,
+        request: Request,
+        identity: ClientIdentity,
+    ) -> Result<ResponseData, IpcError> {
         match request {
+            Request::Handshake { .. } => Err(IpcError::invalid_request(
+                "handshake is handled by the IPC transport",
+            )),
             Request::Register {
                 application_id,
                 name,
                 version,
                 capabilities,
-            } => {
-                let id = ApplicationId::new(application_id.0.clone());
-                match self
-                    .registry
-                    .register(id.clone(), name, version, capabilities)
-                {
-                    Ok(_) => Ok(ResponseData::Registered {
-                        application_id: id.0,
-                    }),
-                    Err(e) => Err(IpcError::invalid_request(format!("{}", e))),
-                }
-            },
+            } => self.register_bound(application_id, name, version, capabilities, identity),
 
             Request::Unregister { application_id } => {
                 let id = ApplicationId::new(application_id.0.clone());
+                self.authorize_app(&id, identity)?;
+                if let Some(source) = &self.l1_source {
+                    source
+                        .clear_for(&id)
+                        .map_err(|e| IpcError::internal(format!("l1 clear: {}", e)))?;
+                }
                 match self.registry.unregister(&id) {
-                    Ok(removed) => Ok(ResponseData::Unregistered { removed }),
+                    Ok(removed) => {
+                        self.app_owners
+                            .lock()
+                            .map_err(|_| IpcError::internal("application owner lock poisoned"))?
+                            .remove(&id);
+                        Ok(ResponseData::Unregistered { removed })
+                    },
                     Err(e) => Err(IpcError::internal(format!("{}", e))),
                 }
             },
 
-            Request::SubmitTask { contract } => {
-                let registered = self
-                    .registry
-                    .is_registered(&contract.application_id)
-                    .unwrap_or(false);
-                if !registered {
+            Request::DeclareCurrentTask { contract } => {
+                self.validate_registered_contract(&contract, identity)?;
+                let source = self
+                    .l1_source
+                    .as_ref()
+                    .ok_or_else(|| IpcError::not_supported("L1 task source unavailable"))?;
+                source
+                    .set_current(contract)
+                    .map_err(|e| IpcError::internal(format!("l1 declare: {}", e)))?;
+                Ok(ResponseData::CurrentTaskDeclared)
+            },
+
+            Request::ClearCurrentTask { application_id } => {
+                self.authorize_app(&application_id, identity)?;
+                let source = self
+                    .l1_source
+                    .as_ref()
+                    .ok_or_else(|| IpcError::not_supported("L1 task source unavailable"))?;
+                let cleared = source
+                    .clear_for(&application_id)
+                    .map_err(|e| IpcError::internal(format!("l1 clear: {}", e)))?;
+                Ok(ResponseData::CurrentTaskCleared { cleared })
+            },
+
+            Request::SubmitNativeTask { contract } => {
+                self.validate_registered_contract(&contract, identity)?;
+                let provider = self.l2_provider.as_ref().ok_or_else(|| {
+                    IpcError::not_supported("L2 native task provider unavailable")
+                })?;
+                let handle = provider
+                    .submit(&contract)
+                    .map_err(|e| IpcError::internal(format!("l2 submit: {}", e)))?;
+                Ok(ResponseData::NativeTaskSubmitted {
+                    handle_id: handle.handle_id,
+                })
+            },
+
+            Request::GetNativeTask {
+                application_id,
+                handle_id,
+            } => {
+                self.authorize_app(&application_id, identity)?;
+                let provider = self.l2_provider.as_ref().ok_or_else(|| {
+                    IpcError::not_supported("L2 native task provider unavailable")
+                })?;
+                let handle = NativeTaskHandle { handle_id };
+                let (contract, _, state) = provider
+                    .task_info(&handle)
+                    .map_err(|e| IpcError::invalid_request(format!("l2 query: {}", e)))?;
+                if contract.application_id != application_id {
                     return Err(IpcError::new(
-                        "ERR_APP_NOT_REGISTERED",
-                        format!("application not registered: {}", contract.application_id),
+                        "ERR_PERMISSION_DENIED",
+                        "task owner mismatch",
                     ));
                 }
-                if let Some(tid) = &contract.task_id {
-                    if tid.trim().is_empty() || tid.len() > 256 {
-                        return Err(IpcError::invalid_request(
-                            "task_id must be non-empty and <= 256 chars",
-                        ));
-                    }
+                Ok(ResponseData::NativeTaskStatus { state })
+            },
+
+            Request::CancelNativeTask {
+                application_id,
+                handle_id,
+            } => {
+                self.authorize_app(&application_id, identity)?;
+                let provider = self.l2_provider.as_ref().ok_or_else(|| {
+                    IpcError::not_supported("L2 native task provider unavailable")
+                })?;
+                let handle = NativeTaskHandle { handle_id };
+                let (contract, _, _) = provider
+                    .task_info(&handle)
+                    .map_err(|e| IpcError::invalid_request(format!("l2 query: {}", e)))?;
+                if contract.application_id != application_id {
+                    return Err(IpcError::new(
+                        "ERR_PERMISSION_DENIED",
+                        "task owner mismatch",
+                    ));
                 }
-                if let Some(d) = contract.deadline_unix_secs {
-                    if d == 0 {
-                        return Err(IpcError::invalid_request("deadline_unix_secs must be > 0"));
-                    }
-                }
+                provider
+                    .cancel(&handle)
+                    .map_err(|e| IpcError::invalid_request(format!("l2 cancel: {}", e)))?;
+                Ok(ResponseData::NativeTaskCancelled)
+            },
+
+            Request::SubmitTask { contract } => {
+                self.validate_registered_contract(&contract, identity)?;
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
@@ -183,6 +353,20 @@ impl IpcHandler for DaemonIpcHandler {
                 })
             },
         }
+    }
+}
+
+impl IpcHandler for DaemonIpcHandler {
+    fn handle(&self, request: Request) -> Result<ResponseData, IpcError> {
+        self.dispatch(request, ClientIdentity::Internal)
+    }
+
+    fn handle_with_identity(
+        &self,
+        request: Request,
+        identity: ClientIdentity,
+    ) -> Result<ResponseData, IpcError> {
+        self.dispatch(request, identity)
     }
 
     fn name(&self) -> &'static str {
@@ -270,5 +454,341 @@ impl DaemonIpcHandler {
         snap.recent_ticks = self.history.snapshot(10);
 
         snap
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aicore_contracts::traits::task_source::ITaskSource;
+    use aicore_task_runtime::InMemoryTaskQueue;
+
+    #[test]
+    fn registered_application_can_declare_and_clear_l1_task() {
+        let source = Arc::new(L1TaskSource::new());
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            Arc::new(InMemoryTaskQueue::new()),
+            Some(source.clone()),
+            None,
+            Vec::new(),
+            "mock".to_string(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        );
+        let app = ApplicationId::new("app.l1");
+        let contract = aicore_contracts::task::contract::TaskContract::minimal(app.clone());
+        assert!(handler
+            .handle(Request::DeclareCurrentTask {
+                contract: contract.clone()
+            })
+            .is_err());
+        handler
+            .handle(Request::Register {
+                application_id: app.clone(),
+                name: "L1 test".to_string(),
+                version: "1.0".to_string(),
+                capabilities: Vec::new(),
+            })
+            .unwrap();
+        assert!(matches!(
+            handler
+                .handle(Request::DeclareCurrentTask { contract })
+                .unwrap(),
+            ResponseData::CurrentTaskDeclared
+        ));
+        assert!(source.current_task().unwrap().is_some());
+        assert!(handler
+            .handle(Request::ClearCurrentTask {
+                application_id: ApplicationId::new("other")
+            })
+            .is_err());
+        assert!(matches!(
+            handler
+                .handle(Request::ClearCurrentTask {
+                    application_id: app
+                })
+                .unwrap(),
+            ResponseData::CurrentTaskCleared { cleared: true }
+        ));
+        assert!(source.current_task().unwrap().is_none());
+    }
+
+    #[test]
+    fn l2_handle_tracks_the_shared_queue_and_checks_owner() {
+        let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+        let provider = Arc::new(L2NativeTaskProvider::new().with_task_queue(queue.clone()));
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            queue.clone(),
+            None,
+            Some(provider),
+            Vec::new(),
+            "mock".to_string(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        );
+        let app = ApplicationId::new("app.l2");
+        handler
+            .handle(Request::Register {
+                application_id: app.clone(),
+                name: "L2 test".to_string(),
+                version: "1.0".to_string(),
+                capabilities: Vec::new(),
+            })
+            .unwrap();
+        let contract = aicore_contracts::task::contract::TaskContract::minimal(app.clone());
+        let handle_id = match handler
+            .handle(Request::SubmitNativeTask { contract })
+            .unwrap()
+        {
+            ResponseData::NativeTaskSubmitted { handle_id } => handle_id,
+            other => panic!("unexpected response: {:?}", other),
+        };
+        assert!(handler
+            .handle(Request::GetNativeTask {
+                application_id: ApplicationId::new("other"),
+                handle_id: handle_id.clone(),
+            })
+            .is_err());
+        let running = queue.dequeue().unwrap().unwrap();
+        assert_eq!(running.task_id, handle_id);
+        queue.complete(&handle_id, None).unwrap();
+        assert!(matches!(
+            handler
+                .handle(Request::GetNativeTask {
+                    application_id: app,
+                    handle_id,
+                })
+                .unwrap(),
+            ResponseData::NativeTaskStatus {
+                state: aicore_contracts::task::lifecycle::TaskState::Completed
+            }
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn app_task_lifecycle_roundtrips_over_isolated_ipc() {
+        use aicore_ipc::{unwrap_response, IpcClient, IpcServer};
+        use std::time::Duration;
+        use tokio::sync::mpsc;
+
+        let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+        let source = Arc::new(L1TaskSource::new());
+        let provider = Arc::new(L2NativeTaskProvider::new().with_task_queue(queue.clone()));
+        let handler: Arc<dyn IpcHandler> = Arc::new(DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            queue.clone(),
+            Some(source.clone()),
+            Some(provider),
+            Vec::new(),
+            "mock".to_string(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        ));
+        let path = std::env::temp_dir().join(format!(
+            "aicore-l2-ipc-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (shutdown, rx) = mpsc::channel(1);
+        let server = IpcServer::bind(&path, handler).unwrap().with_shutdown(rx);
+        let task = tokio::spawn(server.run());
+        let mut client = IpcClient::connect(&path).await.unwrap();
+        let app = ApplicationId::new("app.ipc");
+        let timeout = Duration::from_secs(2);
+
+        let registered = client
+            .call(
+                "register",
+                Request::Register {
+                    application_id: app.clone(),
+                    name: "IPC test".to_string(),
+                    version: "1.0".to_string(),
+                    capabilities: Vec::new(),
+                },
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            unwrap_response(registered).unwrap(),
+            ResponseData::Registered { .. }
+        ));
+
+        let contract = TaskContract::minimal(app.clone());
+        let declared = client
+            .call(
+                "declare",
+                Request::DeclareCurrentTask {
+                    contract: contract.clone(),
+                },
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            unwrap_response(declared).unwrap(),
+            ResponseData::CurrentTaskDeclared
+        ));
+        assert!(source.current_task().unwrap().is_some());
+
+        let submitted = client
+            .call(
+                "submit-native",
+                Request::SubmitNativeTask { contract },
+                timeout,
+            )
+            .await
+            .unwrap();
+        let handle_id = match unwrap_response(submitted).unwrap() {
+            ResponseData::NativeTaskSubmitted { handle_id } => handle_id,
+            other => panic!("unexpected response: {:?}", other),
+        };
+        assert_eq!(
+            queue.get(&handle_id).unwrap().unwrap().state,
+            aicore_contracts::task::lifecycle::TaskState::Queued
+        );
+
+        let cancelled = client
+            .call(
+                "cancel-native",
+                Request::CancelNativeTask {
+                    application_id: app.clone(),
+                    handle_id: handle_id.clone(),
+                },
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            unwrap_response(cancelled).unwrap(),
+            ResponseData::NativeTaskCancelled
+        ));
+        let queried = client
+            .call(
+                "query-native",
+                Request::GetNativeTask {
+                    application_id: app.clone(),
+                    handle_id,
+                },
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            unwrap_response(queried).unwrap(),
+            ResponseData::NativeTaskStatus {
+                state: aicore_contracts::task::lifecycle::TaskState::Cancelled
+            }
+        ));
+
+        let cleared = client
+            .call(
+                "clear",
+                Request::ClearCurrentTask {
+                    application_id: app,
+                },
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            unwrap_response(cleared).unwrap(),
+            ResponseData::CurrentTaskCleared { cleared: true }
+        ));
+        assert!(source.current_task().unwrap().is_none());
+
+        shutdown.send(()).await.unwrap();
+        task.await.unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_second_peer_cannot_claim_or_act_for_registered_application() {
+        let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+        let source = Arc::new(L1TaskSource::new());
+        let provider = Arc::new(L2NativeTaskProvider::new().with_task_queue(queue.clone()));
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            queue,
+            Some(source),
+            Some(provider),
+            Vec::new(),
+            "mock".to_string(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        );
+        let owner = ClientIdentity::Linux {
+            uid: 1000,
+            pid: 21,
+            start_time_ticks: 100,
+        };
+        let impostor = ClientIdentity::Linux {
+            uid: 1000,
+            pid: 21,
+            start_time_ticks: 101,
+        };
+        let app = ApplicationId::new("app.bound");
+        let register = || Request::Register {
+            application_id: app.clone(),
+            name: "bound".to_string(),
+            version: "1.0".to_string(),
+            capabilities: Vec::new(),
+        };
+        handler.handle_with_identity(register(), owner).unwrap();
+        assert!(handler.handle_with_identity(register(), impostor).is_err());
+        let contract = TaskContract::minimal(app.clone());
+        assert!(handler
+            .handle_with_identity(
+                Request::DeclareCurrentTask {
+                    contract: contract.clone()
+                },
+                impostor
+            )
+            .is_err());
+        assert!(handler
+            .handle_with_identity(
+                Request::SubmitTask {
+                    contract: contract.clone()
+                },
+                impostor
+            )
+            .is_err());
+        assert!(handler
+            .handle_with_identity(Request::SubmitNativeTask { contract }, impostor)
+            .is_err());
+        assert!(handler
+            .handle_with_identity(
+                Request::ClearCurrentTask {
+                    application_id: app.clone()
+                },
+                impostor
+            )
+            .is_err());
+        assert!(handler
+            .handle_with_identity(
+                Request::Unregister {
+                    application_id: app
+                },
+                impostor
+            )
+            .is_err());
     }
 }

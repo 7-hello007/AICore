@@ -78,14 +78,42 @@ impl IPolicyExecutor for OkExecutor {
     }
 }
 
+struct NoOpExecutor;
+
+impl IPolicyExecutor for NoOpExecutor {
+    fn execute(&self, policy: &ResourcePolicy, _targets: &ExecutionTargets) -> ExecutionResult {
+        ExecutionResult {
+            policy_id: policy.policy_id.clone(),
+            overall_status: ExecutionOverallStatus::NoOp,
+            started_at_unix_ms: 0,
+            finished_at_unix_ms: 0,
+            outcomes: vec![ExecutionOutcome {
+                resource: "mock".to_string(),
+                target: "system".to_string(),
+                status: ExecutionStatus::NotSupported,
+                message: "unavailable".to_string(),
+            }],
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "noop_executor"
+    }
+}
+
 fn build_loop(queue: Arc<dyn ITaskQueue>) -> AdaptiveLoop {
+    build_loop_with_executor(queue, Arc::new(OkExecutor))
+}
+
+fn build_loop_with_executor(
+    queue: Arc<dyn ITaskQueue>,
+    executor: Arc<dyn IPolicyExecutor>,
+) -> AdaptiveLoop {
     let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(MockTelemetry::new());
     let ctx_engine = Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new())));
     let base: Arc<dyn IPolicyEngine> = Arc::new(RuleBasedPolicyEngine::new());
     let fallback = base.clone();
     let validator = Arc::new(aicore_core::policy::DefaultPolicyValidator::new());
-    let executor: Arc<dyn IPolicyExecutor> = Arc::new(OkExecutor);
-
     AdaptiveLoop::new(
         telemetry,
         ctx_engine,
@@ -191,5 +219,23 @@ fn task_without_task_field_does_not_change_workload() {
     assert_eq!(
         queue.get("t1").unwrap().unwrap().state,
         TaskState::Completed
+    );
+}
+
+#[test]
+fn no_op_does_not_complete_a_task_or_mark_a_real_failure_for_safe_mode() {
+    let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+    queue.enqueue(dev_task("noop-task")).unwrap();
+    let loop_ = build_loop_with_executor(queue.clone(), Arc::new(NoOpExecutor));
+    let outcome = loop_.tick(&ExecutionTargets::default());
+    assert!(!outcome.success);
+    assert_eq!(outcome.execution_status, Some(ExecutionOverallStatus::NoOp));
+    assert_eq!(
+        queue.get("noop-task").unwrap().unwrap().state,
+        TaskState::Failed
+    );
+    assert_eq!(
+        loop_.current_mode(),
+        aicore_contracts::runtime::mode::RuntimeMode::Normal
     );
 }

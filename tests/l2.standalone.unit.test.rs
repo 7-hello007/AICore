@@ -1,12 +1,21 @@
 //! L2 独立测试。
 
 use aicore_contracts::{
-    application::id::ApplicationId, context::workload::WorkloadType, task::contract::TaskContract,
-    task::lifecycle::TaskState, tier::capability::TierCapability,
-    traits::native_task_provider::INativeTaskProvider,
+    application::id::ApplicationId,
+    context::workload::WorkloadType,
+    task::contract::TaskContract,
+    task::lifecycle::TaskState,
+    task::queued::QueuedTask,
+    tier::capability::TierCapability,
+    traits::{
+        native_task_provider::{INativeTaskProvider, NativeTaskHandle},
+        task_queue::ITaskQueue,
+    },
 };
+use aicore_task_runtime::InMemoryTaskQueue;
 use aicore_tier::TierHub;
-use aicore_tier_l2::{register_l2, L2_TIER_ID};
+use aicore_tier_l2::{register_l2, register_l2_with_queue, L2_TIER_ID};
+use std::sync::Arc;
 
 fn ai_contract() -> TaskContract {
     let mut c = TaskContract::minimal(ApplicationId::new("com.example.ai"));
@@ -83,7 +92,6 @@ fn l2_cancel_completed_rejected() {
 
 #[test]
 fn l2_query_unknown_handle_fails() {
-    use aicore_contracts::traits::native_task_provider::NativeTaskHandle;
     let hub = TierHub::new();
     let (_id, provider) = register_l2(&hub).unwrap();
 
@@ -91,6 +99,34 @@ fn l2_query_unknown_handle_fails() {
         handle_id: "nonexistent".to_string(),
     };
     assert!(provider.query(&fake).is_err());
+}
+
+#[test]
+fn queue_backed_l2_only_controls_its_own_handles() {
+    let queue = Arc::new(InMemoryTaskQueue::new());
+    queue
+        .enqueue(QueuedTask::new(
+            "ordinary-task".to_string(),
+            ai_contract(),
+            1,
+        ))
+        .unwrap();
+    let hub = TierHub::new();
+    let (_, provider) = register_l2_with_queue(&hub, queue.clone()).unwrap();
+    let ordinary = NativeTaskHandle {
+        handle_id: "ordinary-task".to_string(),
+    };
+    assert!(provider.query(&ordinary).is_err());
+    assert!(provider.cancel(&ordinary).is_err());
+    assert_eq!(
+        queue.get("ordinary-task").unwrap().unwrap().state,
+        TaskState::Queued
+    );
+
+    let native = provider.submit(&ai_contract()).unwrap();
+    assert_eq!(provider.query(&native).unwrap(), TaskState::Queued);
+    provider.cancel(&native).unwrap();
+    assert_eq!(provider.query(&native).unwrap(), TaskState::Cancelled);
 }
 
 #[test]

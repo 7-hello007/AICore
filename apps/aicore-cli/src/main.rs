@@ -275,6 +275,9 @@ fn fallback_state_file(path: &PathBuf) -> ExitCode {
 
 fn print_data(data: ResponseData) {
     match data {
+        ResponseData::HandshakeAck { .. } | ResponseData::Ack => {
+            eprintln!("unexpected IPC control response");
+        },
         ResponseData::Status { status } => render_dashboard(&status, None),
         ResponseData::Capabilities { component, entries } => {
             println!("component: {}", component);
@@ -301,6 +304,15 @@ fn print_data(data: ResponseData) {
                 accepted, task_id, message
             );
         },
+        ResponseData::CurrentTaskDeclared => println!("current task declared"),
+        ResponseData::CurrentTaskCleared { cleared } => {
+            println!("current task cleared: {}", cleared);
+        },
+        ResponseData::NativeTaskSubmitted { handle_id } => {
+            println!("native task submitted: {}", handle_id);
+        },
+        ResponseData::NativeTaskStatus { state } => println!("native task status: {:?}", state),
+        ResponseData::NativeTaskCancelled => println!("native task cancelled"),
         ResponseData::Context { context } => match context {
             Some(c) => println!("{}", serde_json::to_string_pretty(&c).unwrap()),
             None => println!("(no context captured yet)"),

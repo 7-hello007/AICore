@@ -10,6 +10,7 @@ pub struct CliArgs {
     pub ipc_path: Option<PathBuf>,
     pub memory_path: Option<PathBuf>,
     pub plugins_dir: Option<PathBuf>,
+    pub plugin_policy: Option<PathBuf>,
     pub log_format: Option<LogFormat>,
     pub once: bool,
 }
@@ -27,6 +28,7 @@ OPTIONS:
     --ipc-path <PATH>       IPC socket path (default: temp dir/aicore/aicored.sock)
     --memory-path <PATH>    SQLite memory path (default: temp dir/aicore/memory.db)
     --plugins-dir <PATH>    Plugins directory (default: temp dir/aicore/plugins)
+    --plugin-policy <PATH>  Operator-pinned plugin activation policy (platform mode only)
     --log-format <FMT>      plain | json (default plain)
     --once                  Run exactly one tick and exit
     -h, --help              Print help
@@ -74,6 +76,10 @@ where
             "--plugins-dir" => {
                 let v = iter.next().ok_or("--plugins-dir requires a value")?;
                 result.plugins_dir = Some(PathBuf::from(v));
+            },
+            "--plugin-policy" => {
+                let v = iter.next().ok_or("--plugin-policy requires a value")?;
+                result.plugin_policy = Some(PathBuf::from(v));
             },
             "--log-format" => {
                 let v = iter.next().ok_or("--log-format requires a value")?;

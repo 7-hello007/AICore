@@ -128,7 +128,7 @@ fn success_path_produces_six_stages() {
     );
     assert_eq!(
         trace.stage(ControlStage::Verify).unwrap().status,
-        StageStatus::Success
+        StageStatus::Skipped
     );
     assert_eq!(
         trace.stage(ControlStage::Rollback).unwrap().status,
@@ -218,6 +218,7 @@ fn noop_does_not_trigger_rollback() {
     let trace = tx.execute_transparent(&policy("p"), &ExecutionTargets::default(), None);
 
     assert!(!trace.rollback.triggered);
+    assert!(!trace.is_success());
     // NoOp → Verify 不适用
     assert_eq!(
         trace.stage(ControlStage::Verify).unwrap().status,

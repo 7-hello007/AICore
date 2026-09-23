@@ -1,4 +1,5 @@
 pub mod input;
+pub mod intent;
 pub mod model_metadata;
 pub mod runtime;
 pub mod suggestion;

@@ -208,8 +208,8 @@ impl TransparentExecutor {
             return checker.verify(policy, result);
         }
 
-        // 无 checker：Apply 成功即视为 Verify 通过
-        PostConditionResult::Passed
+        // 没有读回能力时不能把 Apply 的返回值当作已验证的系统状态。
+        PostConditionResult::NotApplicable
     }
 
     fn do_rollback(

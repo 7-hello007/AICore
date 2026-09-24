@@ -17,12 +17,13 @@ use aicore_contracts::{
     },
     memory::{profile::UserProfile, record::HistoricalRecord},
     policy::resource_policy::ResourcePolicy,
+    prediction::input::PredictionInput,
     runtime::config::AdaptiveLoopConfig,
     task::{contract::TaskContract, queued::QueuedTask},
     telemetry::snapshot::ComputerSnapshot,
     traits::{
         memory_store::IMemoryStore, policy_engine::IPolicyEngine, policy_executor::IPolicyExecutor,
-        runtime_orchestrator::IRuntimeOrchestrator, task_queue::ITaskQueue,
+        predictor::IPredictor, runtime_orchestrator::IRuntimeOrchestrator, task_queue::ITaskQueue,
         telemetry_provider::ITelemetryProvider,
     },
 };
@@ -99,6 +100,60 @@ fn registered_task_uses_consented_application_pattern_and_records_identity() {
     assert!(outcome.validation_accepted);
     let history = memory.load_records(1).unwrap();
     assert_eq!(history[0].application_id, Some(app));
+}
+
+#[test]
+fn mock_prospective_application_predictions_require_consent() {
+    let memory = InMemoryStore::new();
+    let app = ApplicationId::new("app.prospective");
+    for day in 0..3 {
+        let mut sample = rec(
+            &format!("train-{day}"),
+            (day * 24 + 14) * 3_600_000,
+            WorkloadType::Development,
+        );
+        sample.application_id = Some(app.clone());
+        memory.append_record(&sample).unwrap();
+    }
+    // The held-out mock days are never inserted into training history.
+    let predictor = ShortHorizonPredictor::with_defaults();
+    assert!(aicore_memory::personalized_context(&memory, 100)
+        .unwrap()
+        .is_none());
+    memory
+        .save_profile(&UserProfile {
+            profile_enabled: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let trained = aicore_memory::personalized_context(&memory, 100)
+        .unwrap()
+        .unwrap();
+    let holdout = [WorkloadType::Development; 3];
+    let correct = holdout
+        .iter()
+        .enumerate()
+        .filter(|(index, expected)| {
+            let snapshot = ComputerSnapshot {
+                collected_at_unix_ms: Some(((*index as u64 + 3) * 24 + 14) * 3_600_000),
+                ..Default::default()
+            };
+            let input = PredictionInput {
+                application_id: Some(app.clone()),
+                snapshot,
+                memory: Some(trained.clone()),
+                ..Default::default()
+            };
+            predictor
+                .predict(&input)
+                .is_ok_and(|prediction| prediction.predicted_workload == **expected)
+        })
+        .count();
+    assert_eq!(correct, holdout.len());
+    memory.save_profile(&UserProfile::default()).unwrap();
+    assert!(aicore_memory::personalized_context(&memory, 100)
+        .unwrap()
+        .is_none());
 }
 
 struct OkExecutor;

@@ -101,16 +101,7 @@ pub fn validated_intent_policy(
         ));
     }
     let proposal = agent.propose(request)?;
-    if proposal.workload_type == WorkloadType::Unknown
-        || !proposal.confidence.is_finite()
-        || proposal.confidence < 0.6
-        || proposal.confidence > 1.0
-        || proposal.expires_at_unix_ms <= inputs.now_unix_ms
-    {
-        return Err(ContractError::ContractInvalid(
-            "unusable intent proposal".into(),
-        ));
-    }
+    validate_intent_proposal(&proposal, inputs.now_unix_ms)?;
     let mut proposed_context = inputs.context.clone();
     proposed_context.workload_type = proposal.workload_type;
     let policy = engine.generate(inputs.snapshot, &proposed_context);
@@ -122,6 +113,22 @@ pub fn validated_intent_policy(
         )));
     }
     Ok(policy)
+}
+
+/// Shared gate for local intent API and policy conversion. Semantic proposals
+/// are never accepted as executable commands.
+pub fn validate_intent_proposal(proposal: &IntentProposal, now_unix_ms: u64) -> ContractResult<()> {
+    if proposal.workload_type == WorkloadType::Unknown
+        || !proposal.confidence.is_finite()
+        || proposal.confidence < 0.6
+        || proposal.confidence > 1.0
+        || proposal.expires_at_unix_ms <= now_unix_ms
+    {
+        return Err(ContractError::ContractInvalid(
+            "unusable intent proposal".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

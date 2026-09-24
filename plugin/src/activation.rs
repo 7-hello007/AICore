@@ -5,6 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use aicore_contracts::errors::AicoreResult;
 use aicore_contracts::errors::{ContractError, ContractResult};
+use aicore_contracts::hardware::{
+    capability::{HardwareCapability, HardwareDeviceKind},
+    matrix::DeviceCapabilityMatrix,
+};
 use aicore_contracts::plugin::{
     host::{IPluginHost, PluginHostState, PluginProcessHandle, PluginProcessSpec},
     manifest::{PluginManifest, TrustLevel},
@@ -13,8 +17,13 @@ use aicore_contracts::plugin::{
     state::PluginState,
 };
 use aicore_contracts::policy::priority::PolicyPriority;
+use aicore_contracts::policy::resource_policy::PowerMode;
 use aicore_contracts::traits::process_controller::IProcessController;
 use aicore_contracts::traits::telemetry_provider::ITelemetryProvider;
+use aicore_contracts::traits::{
+    hardware_executor::{HardwareExecutionHint, HardwareExecutionRequest},
+    safe_actuator::ActuationPermit,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -30,6 +39,25 @@ static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const EXECUTE_INTERFACE: &str = "extension.execute";
 const TELEMETRY_INTERFACE: &str = "telemetry.snapshot_v1";
 const PROCESS_PRIORITY_INTERFACE: &str = "process.priority_v1";
+const GPU_CONTROL_INTERFACE: &str = "gpu.control_v1";
+const NPU_CONTROL_INTERFACE: &str = "npu.control_v1";
+const POWER_CONTROL_INTERFACE: &str = "power.profile_v1";
+
+/// Independent platform readback gate. The plugin cannot supply its own
+/// verifier; a caller must bind an adapter-backed implementation explicitly.
+pub trait IPluginControlReadback: Send + Sync {
+    fn can_verify_hardware(&self, kind: HardwareDeviceKind, device_id: &str) -> bool;
+    fn hardware_matches(&self, request: &HardwareExecutionRequest) -> ContractResult<bool>;
+    fn can_verify_power(&self) -> bool;
+    fn power_matches(&self, mode: PowerMode) -> ContractResult<bool>;
+}
+
+pub struct HardwareControlContext<'a> {
+    pub matrix: &'a DeviceCapabilityMatrix,
+    pub permit: &'a ActuationPermit,
+    pub now_unix_ms: u64,
+    pub readback: &'a dyn IPluginControlReadback,
+}
 
 /// Operator-controlled activation policy. A plugin manifest cannot grant
 /// itself trust or extra permissions by changing its own JSON.
@@ -82,8 +110,8 @@ struct ActivePlugin {
 }
 
 /// Explicitly activates pinned, verified subprocess plugins. Only the
-/// generic extension and typed read-only telemetry interfaces are bindable;
-/// hardware control interfaces still require their own safe adapters.
+/// generic extension and typed interfaces are bindable. Control calls require
+/// an independent readback adapter and operator-pinned permissions.
 pub struct PluginActivationManager {
     registry: Arc<PluginRegistry>,
     host: Arc<dyn IManagedPluginHost>,
@@ -438,6 +466,150 @@ impl PluginActivationManager {
         }
     }
 
+    fn control_handle(
+        &self,
+        plugin_id: &str,
+        interface: &str,
+    ) -> Result<PluginProcessHandle, ActivationError> {
+        let handle = {
+            let active = self
+                .active
+                .lock()
+                .map_err(|_| ActivationError::Lifecycle("active lock poisoned".into()))?;
+            let entry = active
+                .get(plugin_id)
+                .ok_or_else(|| ActivationError::NotActive(plugin_id.into()))?;
+            if !entry.interfaces.iter().any(|name| name == interface) {
+                return Err(ActivationError::Rejected(
+                    "control interface not bound".into(),
+                ));
+            }
+            entry.handle.clone()
+        };
+        if self.host.state(&handle) != PluginHostState::Running {
+            self.mark_failed(plugin_id, "plugin process is no longer running");
+            return Err(ActivationError::NotActive(plugin_id.into()));
+        }
+        Ok(handle)
+    }
+
+    pub fn set_hardware(
+        &self,
+        plugin_id: &str,
+        kind: HardwareDeviceKind,
+        request: &HardwareExecutionRequest,
+        context: HardwareControlContext<'_>,
+    ) -> Result<(), ActivationError> {
+        let HardwareControlContext {
+            matrix,
+            permit,
+            now_unix_ms,
+            readback,
+        } = context;
+        let interface = match kind {
+            HardwareDeviceKind::Gpu => GPU_CONTROL_INTERFACE,
+            HardwareDeviceKind::Npu => NPU_CONTROL_INTERFACE,
+            HardwareDeviceKind::Unknown => {
+                return Err(ActivationError::Rejected("unknown hardware kind".into()))
+            },
+        };
+        let required = match &request.hint {
+            HardwareExecutionHint::WorkloadPreference(value)
+                if value.trim().is_empty() || value.len() > 64 =>
+            {
+                return Err(ActivationError::Rejected("invalid workload hint".into()));
+            },
+            HardwareExecutionHint::WorkloadPreference(_) => HardwareCapability::WorkloadHint,
+            HardwareExecutionHint::MaxPowerWatts(watts) if !watts.is_finite() || *watts <= 0.0 => {
+                return Err(ActivationError::Rejected("invalid power limit".into()));
+            },
+            HardwareExecutionHint::MaxPowerWatts(_) => HardwareCapability::VendorControl,
+            _ => HardwareCapability::ProviderSelection,
+        };
+        if request.device_id.trim().is_empty()
+            || matrix.device_id != request.device_id
+            || matrix.capabilities.device_kind != kind
+            || !matrix.supports(required)
+            || permit.model_only
+            || permit.device_id != request.device_id
+            || permit.capability != required
+            || now_unix_ms >= permit.expires_at_unix_ms
+            || !readback.can_verify_hardware(kind, &request.device_id)
+        {
+            return Err(ActivationError::Rejected(
+                "hardware capability, permit or independent readback unavailable".into(),
+            ));
+        }
+        let handle = self.control_handle(plugin_id, interface)?;
+        match self.host.call(
+            &handle,
+            &HostRequest::SetHardware {
+                device_kind: kind,
+                device_id: request.device_id.clone(),
+                hint: request.hint.clone(),
+            },
+        ) {
+            Ok(HostResponse::HardwareSet {
+                device_kind: acknowledged_kind,
+                device_id,
+                hint,
+            }) if acknowledged_kind == kind
+                && device_id == request.device_id
+                && hint == request.hint => {},
+            Ok(_) => {
+                self.mark_failed(plugin_id, "incorrect hardware acknowledgement");
+                return Err(ActivationError::Rejected(
+                    "incorrect hardware acknowledgement".into(),
+                ));
+            },
+            Err(error) => {
+                self.mark_failed(plugin_id, &error.to_string());
+                return Err(ActivationError::Host(error.to_string()));
+            },
+        }
+        match readback.hardware_matches(request) {
+            Ok(true) => Ok(()),
+            Ok(false) | Err(_) => {
+                self.mark_failed(plugin_id, "hardware readback failed");
+                Err(ActivationError::Rejected("hardware readback failed".into()))
+            },
+        }
+    }
+
+    pub fn set_power(
+        &self,
+        plugin_id: &str,
+        mode: PowerMode,
+        readback: &dyn IPluginControlReadback,
+    ) -> Result<(), ActivationError> {
+        if !readback.can_verify_power() {
+            return Err(ActivationError::Rejected(
+                "independent power readback unavailable".into(),
+            ));
+        }
+        let handle = self.control_handle(plugin_id, POWER_CONTROL_INTERFACE)?;
+        match self.host.call(&handle, &HostRequest::SetPower { mode }) {
+            Ok(HostResponse::PowerSet { mode: acknowledged }) if acknowledged == mode => {},
+            Ok(_) => {
+                self.mark_failed(plugin_id, "incorrect power acknowledgement");
+                return Err(ActivationError::Rejected(
+                    "incorrect power acknowledgement".into(),
+                ));
+            },
+            Err(error) => {
+                self.mark_failed(plugin_id, &error.to_string());
+                return Err(ActivationError::Host(error.to_string()));
+            },
+        }
+        match readback.power_matches(mode) {
+            Ok(true) => Ok(()),
+            Ok(false) | Err(_) => {
+                self.mark_failed(plugin_id, "power readback failed");
+                Err(ActivationError::Rejected("power readback failed".into()))
+            },
+        }
+    }
+
     pub fn bound_process_priority_ids(&self) -> Result<Vec<String>, ActivationError> {
         let active = self
             .active
@@ -566,7 +738,12 @@ impl PluginActivationManager {
         if manifest.interfaces.iter().any(|interface| {
             !matches!(
                 interface.as_str(),
-                EXECUTE_INTERFACE | TELEMETRY_INTERFACE | PROCESS_PRIORITY_INTERFACE
+                EXECUTE_INTERFACE
+                    | TELEMETRY_INTERFACE
+                    | PROCESS_PRIORITY_INTERFACE
+                    | GPU_CONTROL_INTERFACE
+                    | NPU_CONTROL_INTERFACE
+                    | POWER_CONTROL_INTERFACE
             ) || !pin.allowed_interfaces.contains(interface)
         }) || (manifest
             .interfaces
@@ -585,18 +762,35 @@ impl PluginActivationManager {
                         .permissions
                         .contains(&PluginPermission::ProcessControl)
                     || !pin.allow_control))
+            || [
+                (GPU_CONTROL_INTERFACE, PluginPermission::GpuControl),
+                (NPU_CONTROL_INTERFACE, PluginPermission::NpuControl),
+                (POWER_CONTROL_INTERFACE, PluginPermission::PowerControl),
+            ]
+            .iter()
+            .any(|(interface, permission)| {
+                manifest.interfaces.iter().any(|name| name == interface)
+                    && (manifest.kind != aicore_contracts::plugin::manifest::PluginKind::Adapter
+                        || !manifest.permissions.contains(permission)
+                        || !pin.allow_control)
+            })
             || manifest.interfaces.is_empty()
             || manifest
                 .permissions
                 .iter()
                 .any(|permission| !pin.allowed_permissions.contains(permission))
             || (manifest.requests_control()
-                && (manifest.permissions.iter().any(|permission| {
-                    permission.is_control() && *permission != PluginPermission::ProcessControl
-                }) || !manifest
-                    .interfaces
-                    .iter()
-                    .any(|interface| interface == PROCESS_PRIORITY_INTERFACE)))
+                && manifest.permissions.iter().any(|permission| {
+                    let required = match permission {
+                        PluginPermission::ProcessControl => PROCESS_PRIORITY_INTERFACE,
+                        PluginPermission::GpuControl => GPU_CONTROL_INTERFACE,
+                        PluginPermission::NpuControl => NPU_CONTROL_INTERFACE,
+                        PluginPermission::PowerControl => POWER_CONTROL_INTERFACE,
+                        _ if permission.is_control() => return true,
+                        _ => return false,
+                    };
+                    !pin.allow_control || !manifest.interfaces.iter().any(|name| name == required)
+                }))
         {
             return Err(ActivationError::Rejected(
                 "manifest requests an unbound interface or unpinned permission".into(),
@@ -771,6 +965,8 @@ mod tests {
         fail_next_stop: AtomicBool,
         wrong_priority_ack: AtomicBool,
         priority_calls: AtomicUsize,
+        hardware_calls: AtomicUsize,
+        power_calls: AtomicUsize,
     }
 
     impl IPluginHost for MockHost {
@@ -836,6 +1032,22 @@ mod tests {
                         },
                         priority: *priority,
                     }
+                },
+                HostRequest::SetHardware {
+                    device_kind,
+                    device_id,
+                    hint,
+                } => {
+                    self.hardware_calls.fetch_add(1, Ordering::SeqCst);
+                    HostResponse::HardwareSet {
+                        device_kind: *device_kind,
+                        device_id: device_id.clone(),
+                        hint: hint.clone(),
+                    }
+                },
+                HostRequest::SetPower { mode } => {
+                    self.power_calls.fetch_add(1, Ordering::SeqCst);
+                    HostResponse::PowerSet { mode: *mode }
                 },
                 HostRequest::Shutdown => HostResponse::ShuttingDown,
             })
@@ -1101,6 +1313,185 @@ mod tests {
         registry.register(wrong_kind.manifest.clone()).unwrap();
         let invalid_manager = PluginActivationManager::new(registry, host.clone());
         assert!(invalid_manager.activate(&wrong_kind, &invalid_pin).is_err());
+    }
+
+    struct MockReadback {
+        available: bool,
+        matches: bool,
+    }
+
+    impl IPluginControlReadback for MockReadback {
+        fn can_verify_hardware(&self, _kind: HardwareDeviceKind, _device_id: &str) -> bool {
+            self.available
+        }
+        fn hardware_matches(&self, _request: &HardwareExecutionRequest) -> ContractResult<bool> {
+            Ok(self.matches)
+        }
+        fn can_verify_power(&self) -> bool {
+            self.available
+        }
+        fn power_matches(&self, _mode: PowerMode) -> ContractResult<bool> {
+            Ok(self.matches)
+        }
+    }
+
+    #[test]
+    fn typed_gpu_npu_power_require_pin_and_independent_readback() {
+        use aicore_contracts::hardware::{
+            capability::{HardwareCapabilityEntry, HardwareCapabilitySet},
+            matrix::{HardwareVendor, HostOs},
+        };
+        use aicore_contracts::traits::hardware_executor::HardwareExecutionHint;
+        let mut fixture = Fixture::new();
+        fixture.discovered.manifest.kind = PluginKind::Adapter;
+        fixture.discovered.manifest.interfaces = vec![
+            GPU_CONTROL_INTERFACE.into(),
+            NPU_CONTROL_INTERFACE.into(),
+            POWER_CONTROL_INTERFACE.into(),
+        ];
+        fixture.discovered.manifest.permissions = vec![
+            PluginPermission::GpuControl,
+            PluginPermission::NpuControl,
+            PluginPermission::PowerControl,
+        ];
+        let bytes = serde_json::to_vec(&fixture.discovered.manifest).unwrap();
+        std::fs::write(&fixture.pin.manifest_path, &bytes).unwrap();
+        fixture.pin.manifest_sha256 = SignatureVerifier::compute_sha256_from_bytes(&bytes).hash_hex;
+        fixture.pin.allowed_interfaces = fixture.discovered.manifest.interfaces.clone();
+        fixture.pin.allowed_permissions = fixture.discovered.manifest.permissions.clone();
+        let host = Arc::new(MockHost::default());
+        let denied = manager(&fixture, host.clone());
+        assert!(denied.activate(&fixture.discovered, &fixture.pin).is_err());
+        assert_eq!(host.spawned.load(Ordering::SeqCst), 0);
+
+        fixture.pin.allow_control = true;
+        let manager = manager(&fixture, host.clone());
+        manager.activate(&fixture.discovered, &fixture.pin).unwrap();
+        let no_readback = MockReadback {
+            available: false,
+            matches: false,
+        };
+        let readback = MockReadback {
+            available: true,
+            matches: true,
+        };
+        let gpu = HardwareExecutionRequest {
+            device_id: "gpu:mock".into(),
+            hint: HardwareExecutionHint::GraphicsMode,
+        };
+        let matrix = |id: &str, capability| DeviceCapabilityMatrix {
+            os: HostOs::Windows,
+            vendor: HardwareVendor::Other("mock".into()),
+            device_id: id.into(),
+            capabilities: HardwareCapabilitySet::new(id)
+                .with(HardwareCapabilityEntry::supported(capability)),
+            thermal_limit_celsius: None,
+        };
+        let gpu_matrix = matrix("gpu:mock", HardwareCapability::ProviderSelection);
+        let gpu_permit = ActuationPermit {
+            device_id: "gpu:mock".into(),
+            capability: HardwareCapability::ProviderSelection,
+            expires_at_unix_ms: 100,
+            model_only: false,
+        };
+        assert!(manager
+            .set_hardware(
+                "echo",
+                HardwareDeviceKind::Gpu,
+                &gpu,
+                HardwareControlContext {
+                    matrix: &gpu_matrix,
+                    permit: &gpu_permit,
+                    now_unix_ms: 10,
+                    readback: &no_readback
+                }
+            )
+            .is_err());
+        assert!(manager
+            .set_power("echo", PowerMode::Balanced, &no_readback)
+            .is_err());
+        assert_eq!(host.hardware_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(host.power_calls.load(Ordering::SeqCst), 0);
+        assert!(manager
+            .set_hardware(
+                "echo",
+                HardwareDeviceKind::Gpu,
+                &gpu,
+                HardwareControlContext {
+                    matrix: &gpu_matrix,
+                    permit: &gpu_permit,
+                    now_unix_ms: 100,
+                    readback: &readback
+                }
+            )
+            .is_err());
+        manager
+            .set_hardware(
+                "echo",
+                HardwareDeviceKind::Gpu,
+                &gpu,
+                HardwareControlContext {
+                    matrix: &gpu_matrix,
+                    permit: &gpu_permit,
+                    now_unix_ms: 10,
+                    readback: &readback,
+                },
+            )
+            .unwrap();
+        let npu = HardwareExecutionRequest {
+            device_id: "npu:mock".into(),
+            hint: HardwareExecutionHint::ComputeMode,
+        };
+        let npu_matrix = matrix("npu:mock", HardwareCapability::ProviderSelection);
+        let npu_permit = ActuationPermit {
+            device_id: "npu:mock".into(),
+            capability: HardwareCapability::ProviderSelection,
+            expires_at_unix_ms: 100,
+            model_only: false,
+        };
+        manager
+            .set_hardware(
+                "echo",
+                HardwareDeviceKind::Npu,
+                &npu,
+                HardwareControlContext {
+                    matrix: &npu_matrix,
+                    permit: &npu_permit,
+                    now_unix_ms: 10,
+                    readback: &readback,
+                },
+            )
+            .unwrap();
+        manager
+            .set_power("echo", PowerMode::Balanced, &readback)
+            .unwrap();
+        assert_eq!(host.hardware_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(host.power_calls.load(Ordering::SeqCst), 1);
+
+        let mismatch = MockReadback {
+            available: true,
+            matches: false,
+        };
+        assert!(manager
+            .set_power("echo", PowerMode::Balanced, &mismatch)
+            .is_err());
+        assert_eq!(
+            manager.registry.get("echo").unwrap().unwrap().state,
+            PluginState::Failed
+        );
+        assert!(manager
+            .set_hardware(
+                "echo",
+                HardwareDeviceKind::Gpu,
+                &gpu,
+                HardwareControlContext {
+                    matrix: &gpu_matrix,
+                    permit: &gpu_permit,
+                    now_unix_ms: 10,
+                    readback: &readback
+                }
+            )
+            .is_err());
     }
 
     #[test]

@@ -15,3 +15,6 @@ aicore-adapter-linux = { path = "../linux" }
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 aicore-adapter-windows = { path = "../windows" }
+
+[dev-dependencies]
+aicore-core = { path = "../../core" }

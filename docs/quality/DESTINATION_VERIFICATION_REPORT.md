@@ -1,5 +1,57 @@
 # AICore destination implementation and verification report
 
+## Continuation: 2026-09-24 (desktop code-layer closure)
+
+This continuation changed only `C:\Users\12282\Desktop\AICore_V4_Windows`.
+The WSL project was not synchronized or modified. The desktop build remains
+offline with the existing Rust 1.75 toolchain and project-local `env/cargo-home`.
+No environment was downloaded, installer or service was started, or host control
+setter was invoked.
+
+Application registration can now opt into an operator-owned artifact pin file
+(`AICORE_APP_POLICY_PATH`). The daemon resolves a SHA-256 digest from the
+authenticated peer's executable with read-only OS process APIs and authorizes
+each application action against the pin. Missing, stale, unreadable, or
+unapproved identities fail closed. This is an on-disk executable digest and
+process-bound identity, **not** signed-image validation or a native Windows
+cross-user ACL certification. IPC supports an explicit supported-version
+handshake downgrade; unsupported wire major versions still fail.
+
+The existing plugin activation path has typed GPU/NPU/power control messages,
+operator pins, live permits, capability checks, and independent readback checks.
+Mock tests cover success and fail-closed cases. No real control plugin or
+certified readback backend was activated. The local Ollama intent provider uses
+`AICORE_OLLAMA_MODEL` (default `llama3.2:3b`) and a loopback-only endpoint; the
+IPC intent API returns a validated semantic proposal, not direct actuation.
+IPC handler work runs on Tokio's blocking pool so executable hashing and local
+model latency do not occupy the async reactor. Model timing observations remain
+labelled `Model` and cannot establish real-world effect.
+
+The safe Windows workspace test command excludes five retained tests that can
+reach host process or power setters. It passed after the stale Windows GPU test
+assertion was corrected to the actual capability contract. The direct Ollama
+provider example successfully classified a compilation intent using the
+already-running `llama3.2:3b`. An initial simulated-daemon-to-Ollama attempt
+failed with connection refused while the external service was unavailable.
+After it became available again, the same simulated daemon, Windows named-pipe
+IPC, operator-pinned read-only CLI executable SHA-256, and `llama3.2:3b`
+intent path **PASS**ed. The result proves that specific
+local configuration at the time of test, not other models or real actuation.
+
+| Final desktop check | Result and scope |
+|---|---|
+| `cargo check --workspace --all-targets --locked --offline` | **PASS**, exit 0 |
+| `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` | **PASS**, exit 0 |
+| `cargo fmt --all -- --check` | **PASS**, exit 0 |
+| `cargo test --workspace --all-targets --locked --offline -- --skip controller_handles_bad_pid_gracefully --skip executor_runs_and_reports_outcomes --skip full_loop_runs_and_records_metrics --skip history_disabled_by_default_means_no_records --skip history_enabled_records_tick` | **PASS**, exit 0: 141 targets, 711 passed, 0 failed, 0 ignored, 5 filtered; full log in `env/validation/safe-tests-final.log` |
+| `scripts/verify/simulated_platform_windows_smoke.ps1` | **PASS**, exit 0: 10 ticks, 5 in-memory successes, 0 failures, named-pipe status/ticks |
+| `scripts/verify/simulated_platform_ollama_intent.ps1 -Model llama3.2:3b` | **PASS** on final pinned run, exit 0: read-only executable pin and compilation intent with confidence 1 over named pipe; initial unpinned attempt **FAIL** with connection refused while Ollama was unavailable |
+
+Real workload effect, native Windows ACL cross-user rejection, signed-image
+attestation, native control deadlines, certified plugin control readback,
+GPU/NPU/power actuation, Windows service/SCM and other model backends remain
+**NOT VERIFIED**. They cannot be inferred from simulator or mock success.
+
 ## Continuation: 2026-09-24 (Windows desktop Platform Simulator)
 
 The project was copied from WSL to

@@ -21,6 +21,52 @@ pub enum ClientIdentity {
 }
 
 impl ClientIdentity {
+    /// Read-only executable digest for an operator-pinned application policy.
+    /// A missing/inaccessible executable fails closed. This is not a code
+    /// signing or Windows ACL certification claim.
+    pub fn artifact_sha256(self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+        use std::io::Read;
+        if !self.is_current() {
+            return None;
+        }
+        let path = match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux {
+                pid,
+                executable_dev,
+                executable_ino,
+                ..
+            } => {
+                use std::os::unix::fs::MetadataExt;
+                let path = std::path::PathBuf::from(format!("/proc/{pid}/exe"));
+                let metadata = std::fs::metadata(&path).ok()?;
+                if (metadata.dev(), metadata.ino()) != (executable_dev, executable_ino) {
+                    return None;
+                }
+                path
+            },
+            #[cfg(target_os = "windows")]
+            Self::Windows { pid, .. } => crate::transport::process_executable_path(pid)?,
+            Self::Unauthenticated | Self::Internal => return None,
+        };
+        let mut file = std::fs::File::open(path).ok()?;
+        let mut hasher = Sha256::new();
+        let mut bytes = 0u64;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = file.read(&mut buffer).ok()?;
+            if count == 0 {
+                break;
+            }
+            bytes = bytes.checked_add(count as u64)?;
+            if bytes > 256 * 1024 * 1024 {
+                return None;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        self.is_current().then(|| hex::encode(hasher.finalize()))
+    }
     /// Recheck the live peer before an application-scoped request. An
     /// inaccessible peer is not accepted, but also is not automatically
     /// reclaimed by the stale-owner cleanup path.
@@ -86,6 +132,25 @@ impl ClientIdentity {
             } => crate::transport::process_identity_stale(pid, created_at_100ns),
             Self::Unauthenticated | Self::Internal => false,
         }
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_artifact_tests {
+    use super::*;
+
+    #[test]
+    fn current_process_executable_has_read_only_digest() {
+        let pid = std::process::id();
+        let created_at_100ns = crate::transport::process_creation_time(pid).unwrap();
+        let peer = ClientIdentity::Windows {
+            pid,
+            created_at_100ns,
+        };
+        let digest = peer.artifact_sha256().unwrap();
+        assert_eq!(digest.len(), 64);
+        assert!(digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(ClientIdentity::Unauthenticated.artifact_sha256(), None);
     }
 }
 

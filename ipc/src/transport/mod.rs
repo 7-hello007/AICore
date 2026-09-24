@@ -58,7 +58,7 @@ pub(crate) use linux::{read_process_executable_identity, read_process_start_time
 #[cfg(target_os = "windows")]
 pub use windows::{client_connect, server_listen, IpcListener, IpcStream};
 #[cfg(target_os = "windows")]
-pub(crate) use windows::{process_creation_time, process_identity_stale};
+pub(crate) use windows::{process_creation_time, process_executable_path, process_identity_stale};
 
 /// 传输层抽象。
 #[async_trait]

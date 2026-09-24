@@ -35,7 +35,14 @@ impl IpcClient {
             ));
         }
         let ack_enabled = match (response.success, response.data, response.error) {
-            (true, Some(ResponseData::HandshakeAck { capabilities }), _) => capabilities
+            (
+                true,
+                Some(ResponseData::HandshakeAck {
+                    capabilities,
+                    selected_version,
+                }),
+                _,
+            ) if selected_version == IPC_PROTOCOL_VERSION => capabilities
                 .iter()
                 .any(|capability| capability == "request_ack"),
             (false, _, Some(error)) if error.code == "ERR_NOT_SUPPORTED" => false,

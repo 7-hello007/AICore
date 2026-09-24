@@ -41,6 +41,7 @@ dependencies = [
  "aicore-adapter-linux",
  "aicore-adapter-windows",
  "aicore-contracts",
+ "aicore-core",
  "serde",
  "serde_json",
 ]
@@ -196,8 +197,10 @@ version = "0.4.0"
 dependencies = [
  "aicore-contracts",
  "async-trait",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",

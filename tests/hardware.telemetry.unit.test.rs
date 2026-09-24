@@ -51,10 +51,19 @@ fn linux_sample_unknown_gpu_fails() {
 
 #[cfg(target_os = "windows")]
 #[test]
-fn windows_gpu_telemetry_not_supported() {
+fn windows_gpu_telemetry_rejects_unknown_id_without_hardware_assumptions() {
     let p = PlatformProvider::new();
     let devices = p.gpu_devices();
-    assert!(devices.is_empty());
+    assert!(devices
+        .iter()
+        .all(|device| device.id.starts_with("nvidia:")));
     let err = p.sample_gpu("drm:card0").unwrap_err();
-    assert!(format!("{}", err).contains("not implemented"));
+    assert!(matches!(
+        err,
+        aicore_contracts::errors::ContractError::InvalidRequest(_)
+    ));
+    assert!(matches!(
+        p.sample_npu("npu:unknown"),
+        Err(aicore_contracts::errors::ContractError::NotSupported(_))
+    ));
 }

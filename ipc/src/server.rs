@@ -68,6 +68,46 @@ mod windows_pipe_tests {
         }
     }
 
+    #[test]
+    fn newer_major_handshake_selects_one_wire_without_accepting_two_requests() {
+        let handler: Arc<dyn IpcHandler> = Arc::new(IdentityStatusHandler {
+            saw_current_peer: AtomicBool::new(false),
+        });
+        let mut handshake = Envelope::new(
+            "negotiate",
+            Request::Handshake {
+                capabilities: vec![],
+                supported_versions: vec![
+                    aicore_contracts::schema::SchemaVersion::new(2, 0),
+                    IPC_PROTOCOL_VERSION,
+                ],
+            },
+        );
+        handshake.version = aicore_contracts::schema::SchemaVersion::new(2, 0);
+        let accepted = process_envelope(&handler, handshake, ClientIdentity::Internal);
+        assert!(
+            matches!(accepted.data, Some(ResponseData::HandshakeAck { selected_version, .. })
+            if selected_version == IPC_PROTOCOL_VERSION)
+        );
+        let mut wrong_wire = Envelope::new("wrong", Request::GetStatus);
+        wrong_wire.version = aicore_contracts::schema::SchemaVersion::new(2, 0);
+        assert_eq!(
+            process_envelope(&handler, wrong_wire, ClientIdentity::Internal)
+                .error
+                .unwrap()
+                .code,
+            "ERR_PROTOCOL_MISMATCH"
+        );
+        assert!(
+            process_envelope(
+                &handler,
+                Envelope::new("right", Request::GetStatus),
+                ClientIdentity::Internal
+            )
+            .success
+        );
+    }
+
     #[tokio::test]
     async fn named_pipe_handshake_ack_and_peer_identity_roundtrip() {
         let path = format!(
@@ -225,16 +265,16 @@ async fn handle_connection(
                         IpcError::invalid_request("duplicate request_id"),
                     )
                 } else if matches!(envelope.payload, Request::Handshake { .. }) {
-                    let response = process_envelope(&handler, envelope, identity);
+                    let response = dispatch_blocking(handler.clone(), envelope, identity).await;
                     acknowledgements = matches!(
                         &response.data,
-                        Some(ResponseData::HandshakeAck { capabilities })
+                        Some(ResponseData::HandshakeAck { capabilities, .. })
                             if capabilities.iter().any(|capability| capability == "request_ack")
                     );
                     response
                 } else {
                     send_ack = acknowledgements && envelope.version == IPC_PROTOCOL_VERSION;
-                    process_envelope(&handler, envelope, identity)
+                    dispatch_blocking(handler.clone(), envelope, identity).await
                 }
             },
             Err(e) => ResponseEnvelope::err(
@@ -255,6 +295,19 @@ async fn handle_connection(
     Ok(())
 }
 
+async fn dispatch_blocking(
+    handler: Arc<dyn IpcHandler>,
+    envelope: Envelope,
+    identity: ClientIdentity,
+) -> ResponseEnvelope {
+    let request_id = envelope.request_id.clone();
+    tokio::task::spawn_blocking(move || process_envelope(&handler, envelope, identity))
+        .await
+        .unwrap_or_else(|error| {
+            ResponseEnvelope::err(request_id, IpcError::internal(error.to_string()))
+        })
+}
+
 async fn write_response(
     stream: &mut IpcStream,
     response: &ResponseEnvelope,
@@ -272,7 +325,7 @@ fn process_envelope(
 ) -> ResponseEnvelope {
     let negotiable_handshake = matches!(&envelope.payload,
         Request::Handshake { supported_versions, .. }
-            if supported_versions.contains(&IPC_PROTOCOL_VERSION));
+            if aicore_contracts::ipc::protocol::negotiate_version(supported_versions).is_some());
     if envelope.version != IPC_PROTOCOL_VERSION && !negotiable_handshake {
         return ResponseEnvelope::err(
             envelope.request_id,
@@ -288,6 +341,7 @@ fn process_envelope(
             | Request::SubmitTask { .. }
             | Request::DeclareCurrentTask { .. }
             | Request::ClearCurrentTask { .. }
+            | Request::ProposeIntent { .. }
             | Request::SubmitNativeTask { .. }
             | Request::GetNativeTask { .. }
             | Request::CancelNativeTask { .. }
@@ -311,6 +365,7 @@ fn process_envelope(
                 request_id,
                 ResponseData::HandshakeAck {
                     capabilities: accepted,
+                    selected_version: IPC_PROTOCOL_VERSION,
                 },
             )
         },
@@ -375,7 +430,8 @@ mod tests {
             serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
         assert!(matches!(
             response.data,
-            Some(ResponseData::HandshakeAck { capabilities }) if capabilities == ["request_ack"]
+            Some(ResponseData::HandshakeAck { capabilities, selected_version })
+                if capabilities == ["request_ack"] && selected_version == IPC_PROTOCOL_VERSION
         ));
 
         stream

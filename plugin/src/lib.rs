@@ -9,9 +9,9 @@ pub mod signature;
 pub mod trust;
 
 pub use activation::{
-    ActivationError, IManagedPluginHost, ManagedPluginProcessController,
-    ManagedPluginTelemetryProvider, PluginActivationManager, PluginActivationPin,
-    PluginActivationPolicy,
+    ActivationError, HardwareControlContext, IManagedPluginHost, IPluginControlReadback,
+    ManagedPluginProcessController, ManagedPluginTelemetryProvider, PluginActivationManager,
+    PluginActivationPin, PluginActivationPolicy,
 };
 pub use discovery::{
     discover_from_dir, register_discovered, DiscoveredPlugin, DiscoveryReport, RejectedPlugin,

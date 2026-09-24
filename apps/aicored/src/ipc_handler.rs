@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use aicore_api::ApplicationRegistry;
+use aicore_ai::{validate_intent_proposal, BoundedIntentAgent};
+use aicore_api::{ApplicationAction, ApplicationIdentityPolicy, ApplicationRegistry};
 use aicore_contracts::dashboard::snapshot::DashboardSnapshot;
 use aicore_contracts::task::contract::TaskContract;
 use aicore_contracts::task::queued::QueuedTask;
@@ -24,6 +25,11 @@ use crate::tick_history::TickHistory;
 pub struct DaemonIpcHandler {
     registry: Arc<ApplicationRegistry>,
     app_owners: Mutex<HashMap<ApplicationId, ClientIdentity>>,
+    identity_policy: Option<(
+        Arc<ApplicationIdentityPolicy>,
+        Arc<dyn IApplicationArtifactResolver>,
+    )>,
+    intent_agent: Option<Arc<BoundedIntentAgent>>,
     status: Arc<Mutex<DaemonStatus>>,
     history: Arc<TickHistory>,
     plugins: Arc<PluginRegistry>,
@@ -34,6 +40,19 @@ pub struct DaemonIpcHandler {
     component: String,
     last_policy_json: Arc<Mutex<Option<String>>>,
     last_context_json: Arc<Mutex<Option<String>>>,
+}
+
+/// Platform adapters resolve artifact identity from the authenticated peer.
+/// The request body and application name are never trusted as artifact proof.
+pub trait IApplicationArtifactResolver: Send + Sync {
+    fn artifact_sha256(&self, peer: ClientIdentity) -> Option<String>;
+}
+
+pub struct PeerExecutableArtifactResolver;
+impl IApplicationArtifactResolver for PeerExecutableArtifactResolver {
+    fn artifact_sha256(&self, peer: ClientIdentity) -> Option<String> {
+        peer.artifact_sha256()
+    }
 }
 
 impl DaemonIpcHandler {
@@ -108,6 +127,8 @@ impl DaemonIpcHandler {
         Self {
             registry,
             app_owners: Mutex::new(HashMap::new()),
+            identity_policy: None,
+            intent_agent: None,
             status,
             history,
             plugins,
@@ -121,17 +142,52 @@ impl DaemonIpcHandler {
         }
     }
 
+    pub fn with_identity_policy(
+        mut self,
+        policy: Arc<ApplicationIdentityPolicy>,
+        resolver: Arc<dyn IApplicationArtifactResolver>,
+    ) -> Self {
+        self.identity_policy = Some((policy, resolver));
+        self
+    }
+
+    pub fn with_intent_agent(mut self, agent: Arc<BoundedIntentAgent>) -> Self {
+        self.intent_agent = Some(agent);
+        self
+    }
+
+    fn authorize_artifact(
+        &self,
+        application_id: &ApplicationId,
+        identity: ClientIdentity,
+        action: ApplicationAction,
+    ) -> Result<(), IpcError> {
+        let Some((policy, resolver)) = &self.identity_policy else {
+            return Ok(());
+        };
+        let digest = resolver.artifact_sha256(identity).ok_or_else(|| {
+            IpcError::new(
+                "ERR_PERMISSION_DENIED",
+                "application artifact identity unavailable",
+            )
+        })?;
+        policy
+            .authorize(application_id, &digest, action)
+            .map_err(|error| IpcError::new("ERR_PERMISSION_DENIED", error.to_string()))
+    }
+
     fn authorize_app(
         &self,
         application_id: &ApplicationId,
         identity: ClientIdentity,
+        action: ApplicationAction,
     ) -> Result<(), IpcError> {
         let owners = self
             .app_owners
             .lock()
             .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
         if owners.get(application_id) == Some(&identity) {
-            Ok(())
+            self.authorize_artifact(application_id, identity, action)
         } else {
             Err(IpcError::new(
                 "ERR_PERMISSION_DENIED",
@@ -154,6 +210,7 @@ impl DaemonIpcHandler {
                 "IPC peer identity unavailable",
             ));
         }
+        self.authorize_artifact(&application_id, identity, ApplicationAction::Register)?;
         let mut owners = self
             .app_owners
             .lock()
@@ -195,8 +252,9 @@ impl DaemonIpcHandler {
         &self,
         contract: &TaskContract,
         identity: ClientIdentity,
+        action: ApplicationAction,
     ) -> Result<(), IpcError> {
-        self.authorize_app(&contract.application_id, identity)?;
+        self.authorize_app(&contract.application_id, identity, action)?;
         if !self
             .registry
             .is_registered(&contract.application_id)
@@ -239,7 +297,7 @@ impl DaemonIpcHandler {
 
             Request::Unregister { application_id } => {
                 let id = ApplicationId::new(application_id.0.clone());
-                self.authorize_app(&id, identity)?;
+                self.authorize_app(&id, identity, ApplicationAction::Unregister)?;
                 let mut owners = self
                     .app_owners
                     .lock()
@@ -256,7 +314,11 @@ impl DaemonIpcHandler {
             },
 
             Request::DeclareCurrentTask { contract } => {
-                self.validate_registered_contract(&contract, identity)?;
+                self.validate_registered_contract(
+                    &contract,
+                    identity,
+                    ApplicationAction::DeclareTask,
+                )?;
                 let source = self
                     .l1_source
                     .as_ref()
@@ -268,7 +330,7 @@ impl DaemonIpcHandler {
             },
 
             Request::ClearCurrentTask { application_id } => {
-                self.authorize_app(&application_id, identity)?;
+                self.authorize_app(&application_id, identity, ApplicationAction::ClearTask)?;
                 let source = self
                     .l1_source
                     .as_ref()
@@ -279,8 +341,39 @@ impl DaemonIpcHandler {
                 Ok(ResponseData::CurrentTaskCleared { cleared })
             },
 
+            Request::ProposeIntent { request } => {
+                self.authorize_app(
+                    &request.application_id,
+                    identity,
+                    ApplicationAction::ProposeIntent,
+                )?;
+                if request.text.trim().is_empty() || request.text.len() > 4096 {
+                    return Err(IpcError::invalid_request("invalid intent text"));
+                }
+                let agent = self
+                    .intent_agent
+                    .as_ref()
+                    .ok_or_else(|| IpcError::not_supported("local intent provider unavailable"))?;
+                let proposal = aicore_contracts::traits::intent_agent::IIntentAgent::propose(
+                    agent.as_ref(),
+                    &request,
+                )
+                .map_err(|error| IpcError::new("ERR_AI_INFERENCE_FAILED", error.to_string()))?;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|error| IpcError::internal(error.to_string()))?
+                    .as_millis() as u64;
+                validate_intent_proposal(&proposal, now)
+                    .map_err(|error| IpcError::invalid_request(error.to_string()))?;
+                Ok(ResponseData::IntentProposed { proposal })
+            },
+
             Request::SubmitNativeTask { contract } => {
-                self.validate_registered_contract(&contract, identity)?;
+                self.validate_registered_contract(
+                    &contract,
+                    identity,
+                    ApplicationAction::SubmitNativeTask,
+                )?;
                 let provider = self.l2_provider.as_ref().ok_or_else(|| {
                     IpcError::not_supported("L2 native task provider unavailable")
                 })?;
@@ -296,7 +389,7 @@ impl DaemonIpcHandler {
                 application_id,
                 handle_id,
             } => {
-                self.authorize_app(&application_id, identity)?;
+                self.authorize_app(&application_id, identity, ApplicationAction::ReadNativeTask)?;
                 let provider = self.l2_provider.as_ref().ok_or_else(|| {
                     IpcError::not_supported("L2 native task provider unavailable")
                 })?;
@@ -317,7 +410,11 @@ impl DaemonIpcHandler {
                 application_id,
                 handle_id,
             } => {
-                self.authorize_app(&application_id, identity)?;
+                self.authorize_app(
+                    &application_id,
+                    identity,
+                    ApplicationAction::CancelNativeTask,
+                )?;
                 let provider = self.l2_provider.as_ref().ok_or_else(|| {
                     IpcError::not_supported("L2 native task provider unavailable")
                 })?;
@@ -338,7 +435,11 @@ impl DaemonIpcHandler {
             },
 
             Request::SubmitTask { contract } => {
-                self.validate_registered_contract(&contract, identity)?;
+                self.validate_registered_contract(
+                    &contract,
+                    identity,
+                    ApplicationAction::SubmitTask,
+                )?;
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
@@ -522,8 +623,173 @@ impl DaemonIpcHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aicore_api::ApprovedApplication;
     use aicore_contracts::traits::task_source::ITaskSource;
     use aicore_task_runtime::InMemoryTaskQueue;
+
+    struct MockArtifactResolver;
+    impl IApplicationArtifactResolver for MockArtifactResolver {
+        fn artifact_sha256(&self, _peer: ClientIdentity) -> Option<String> {
+            Some("a".repeat(64))
+        }
+    }
+
+    struct MockLocalIntent;
+    impl aicore_contracts::traits::intent_agent::IIntentAgent for MockLocalIntent {
+        fn propose(
+            &self,
+            request: &aicore_contracts::ai::intent::IntentRequest,
+        ) -> aicore_contracts::errors::ContractResult<aicore_contracts::ai::intent::IntentProposal>
+        {
+            Ok(aicore_contracts::ai::intent::IntentProposal {
+                workload_type: aicore_contracts::context::workload::WorkloadType::Development,
+                confidence: 0.9,
+                reason: "mock local proposal".into(),
+                expires_at_unix_ms: request.submitted_at_unix_ms + 30_000,
+            })
+        }
+        fn deployment(&self) -> aicore_contracts::ai::intent::IntentDeployment {
+            aicore_contracts::ai::intent::IntentDeployment::Local
+        }
+        fn name(&self) -> &'static str {
+            "mock_local_intent"
+        }
+    }
+
+    #[test]
+    fn intent_api_requires_registered_pinned_app_and_returns_only_semantics() {
+        let policy = Arc::new(ApplicationIdentityPolicy::new());
+        let app = ApplicationId::new("app.intent_api");
+        policy
+            .pin(ApprovedApplication {
+                application_id: app.clone(),
+                artifact_sha256: "a".repeat(64),
+                allowed_actions: vec![
+                    ApplicationAction::Register,
+                    ApplicationAction::ProposeIntent,
+                ],
+            })
+            .unwrap();
+        let agent = Arc::new(
+            BoundedIntentAgent::new(
+                Arc::new(MockLocalIntent),
+                std::time::Duration::from_millis(100),
+            )
+            .unwrap(),
+        );
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            Arc::new(InMemoryTaskQueue::new()),
+            None,
+            None,
+            Vec::new(),
+            "mock".into(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        )
+        .with_identity_policy(policy, Arc::new(MockArtifactResolver))
+        .with_intent_agent(agent);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let request = aicore_contracts::ai::intent::IntentRequest {
+            application_id: app.clone(),
+            text: "edit source".into(),
+            submitted_at_unix_ms: now,
+        };
+        assert_eq!(
+            handler
+                .handle(Request::ProposeIntent {
+                    request: request.clone()
+                })
+                .unwrap_err()
+                .code,
+            "ERR_PERMISSION_DENIED"
+        );
+        handler
+            .handle(Request::Register {
+                application_id: app,
+                name: "Intent".into(),
+                version: "1".into(),
+                capabilities: vec![],
+            })
+            .unwrap();
+        assert!(
+            matches!(handler.handle(Request::ProposeIntent { request }).unwrap(),
+            ResponseData::IntentProposed { proposal }
+                if proposal.workload_type == aicore_contracts::context::workload::WorkloadType::Development)
+        );
+    }
+
+    #[test]
+    fn pinned_application_identity_denies_unapproved_action() {
+        let policy = Arc::new(ApplicationIdentityPolicy::new());
+        let app = ApplicationId::new("app.pinned");
+        policy
+            .pin(ApprovedApplication {
+                application_id: app.clone(),
+                artifact_sha256: "a".repeat(64),
+                allowed_actions: vec![ApplicationAction::Register],
+            })
+            .unwrap();
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            Arc::new(InMemoryTaskQueue::new()),
+            None,
+            None,
+            Vec::new(),
+            "mock".into(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        )
+        .with_identity_policy(policy.clone(), Arc::new(MockArtifactResolver));
+        handler
+            .handle(Request::Register {
+                application_id: app.clone(),
+                name: "Pinned".into(),
+                version: "1".into(),
+                capabilities: vec![],
+            })
+            .unwrap();
+        let denied = handler
+            .handle(Request::SubmitTask {
+                contract: TaskContract::minimal(app.clone()),
+            })
+            .unwrap_err();
+        assert_eq!(denied.code, "ERR_PERMISSION_DENIED");
+        policy
+            .pin(ApprovedApplication {
+                application_id: app.clone(),
+                artifact_sha256: "a".repeat(64),
+                allowed_actions: vec![ApplicationAction::Register, ApplicationAction::SubmitTask],
+            })
+            .unwrap();
+        assert!(matches!(
+            handler
+                .handle(Request::SubmitTask {
+                    contract: TaskContract::minimal(app.clone()),
+                })
+                .unwrap(),
+            ResponseData::TaskSubmitted { accepted: true, .. }
+        ));
+        policy.revoke(&app).unwrap();
+        assert_eq!(
+            handler
+                .handle(Request::SubmitTask {
+                    contract: TaskContract::minimal(app),
+                })
+                .unwrap_err()
+                .code,
+            "ERR_PERMISSION_DENIED"
+        );
+    }
 
     #[test]
     fn registered_application_can_declare_and_clear_l1_task() {

@@ -1,6 +1,8 @@
 //! Process-local platform adapter seeded only from a read-only captured fixture.
 use aicore_contracts::{
     capability::entry::CapabilityEntry,
+    context::workload::WorkloadType,
+    effect::{EffectSample, MeasurementSource},
     errors::{ContractError, ContractResult},
     hardware::{
         capability::{HardwareCapability, HardwareCapabilitySet, HardwareDeviceKind},
@@ -63,6 +65,32 @@ pub struct SimulatedPlatform {
 }
 
 impl SimulatedPlatform {
+    /// Measures a caller-owned simulated operation. The elapsed time is real,
+    /// but the workload source remains Model and cannot enter verified effect
+    /// feedback as an observed host benefit.
+    pub fn measure_model_interval<T>(
+        &self,
+        workload_type: WorkloadType,
+        operation: impl FnOnce(&Self) -> ContractResult<T>,
+    ) -> ContractResult<(T, EffectSample)> {
+        let started = std::time::Instant::now();
+        let output = operation(self)?;
+        let timestamp_unix_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| ContractError::ResourceUnavailable(error.to_string()))?
+            .as_millis() as u64;
+        Ok((
+            output,
+            EffectSample {
+                source: MeasurementSource::Model,
+                timestamp_unix_ms,
+                workload_type,
+                latency_ms: Some(started.elapsed().as_secs_f64() * 1000.0),
+                throughput_per_sec: None,
+                energy_mwh: None,
+            },
+        ))
+    }
     pub fn from_fixture(fixture: PlatformFixture) -> ContractResult<Self> {
         let gpu_ids: BTreeSet<_> = fixture
             .gpu_samples
@@ -494,10 +522,44 @@ impl ISafeHardwareActuator for SimulatedPlatform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aicore_contracts::effect::{EffectComparison, OverheadBudget};
+    use aicore_core::effect::{assess_effect, EffectFeedbackTracker};
 
     fn captured() -> SimulatedPlatform {
         SimulatedPlatform::from_json(include_str!("../fixtures/linux_wsl_readonly.json"))
             .expect("bundled read-only capture must be valid")
+    }
+
+    #[test]
+    fn captured_model_intervals_never_become_verified_benefit() {
+        let platform =
+            SimulatedPlatform::from_json(include_str!("../fixtures/windows_readonly.json"))
+                .unwrap();
+        let pid = platform.captured_process_ids()[0];
+        let (_, baseline) = platform
+            .measure_model_interval(WorkloadType::Development, |sim| sim.get_priority(pid))
+            .unwrap();
+        let (_, intervention) = platform
+            .measure_model_interval(WorkloadType::Development, |sim| sim.get_priority(pid))
+            .unwrap();
+        let assessment = assess_effect(
+            &EffectComparison {
+                policy_id: "model-only".into(),
+                baseline,
+                intervention,
+                control: None,
+                control_overhead_ms: 1,
+                slow_loop_overhead_ms: 1,
+                memory_overhead_mb: 1,
+            },
+            OverheadBudget {
+                max_control_ms: 10,
+                max_slow_ms: 10,
+                max_memory_mb: 10,
+            },
+        );
+        assert!(!assessment.verified);
+        assert!(!EffectFeedbackTracker::new(4).record(assessment).unwrap());
     }
 
     #[test]

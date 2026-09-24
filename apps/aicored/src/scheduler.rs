@@ -2,7 +2,8 @@ use std::path::PathBuf;
 use std::sync::{mpsc as sync_mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use aicore_api::ApplicationRegistry;
+use aicore_ai::{BoundedIntentAgent, OllamaIntentAgent, OllamaIntentConfig};
+use aicore_api::{ApplicationIdentityPolicy, ApplicationRegistry, ApprovedApplication};
 use aicore_contracts::{
     capability::entry::CapabilityEntry,
     runtime::{daemon_config::DaemonConfig, daemon_status::DaemonStatus, tick::TickOutcome},
@@ -17,7 +18,7 @@ use aicore_plugin::{
 use aicore_runtime::dual_loop::{ModelTickDriver, PlatformTickDriver};
 use tokio::sync::mpsc;
 
-use crate::ipc_handler::DaemonIpcHandler;
+use crate::ipc_handler::{DaemonIpcHandler, PeerExecutableArtifactResolver};
 use crate::runtime::DaemonRuntime;
 use crate::state::write_status_atomic;
 use crate::tick_history::TickHistory;
@@ -233,7 +234,7 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     );
 
     let registry = Arc::new(ApplicationRegistry::new());
-    let handler = Arc::new(DaemonIpcHandler::new(
+    let mut handler = DaemonIpcHandler::new(
         registry,
         status.clone(),
         history.clone(),
@@ -245,7 +246,46 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         format!("{}-daemon", runtime.platform_name),
         last_policy_json.clone(),
         last_context_json.clone(),
-    ));
+    );
+    if let Some(path) = std::env::var_os("AICORE_APP_POLICY_PATH") {
+        let path = PathBuf::from(path);
+        if !path.is_absolute() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "application policy path must be absolute",
+            ));
+        }
+        let pins: Vec<ApprovedApplication> = serde_json::from_slice(&std::fs::read(path)?)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        let policy = Arc::new(ApplicationIdentityPolicy::new());
+        for pin in pins {
+            policy.pin(pin).map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+            })?;
+        }
+        handler = handler.with_identity_policy(policy, Arc::new(PeerExecutableArtifactResolver));
+    }
+    match std::env::var("AICORE_INTENT_BACKEND").as_deref() {
+        Ok("disabled") => {},
+        Ok("ollama") | Err(std::env::VarError::NotPresent) => {
+            let provider = OllamaIntentConfig::from_env()
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let timeout = provider.timeout;
+            let agent = OllamaIntentAgent::new(provider)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let bounded = BoundedIntentAgent::new(Arc::new(agent), timeout)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            handler = handler.with_intent_agent(Arc::new(bounded));
+        },
+        Ok(other) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("unsupported intent backend: {other}"),
+            ))
+        },
+        Err(error) => return Err(std::io::Error::other(error.to_string())),
+    }
+    let handler = Arc::new(handler);
 
     let stale_reaper = if once {
         None

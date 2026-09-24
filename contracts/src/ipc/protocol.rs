@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ai::intent::{IntentProposal, IntentRequest};
 use crate::application::id::ApplicationId;
 use crate::capability::entry::CapabilityEntry;
 use crate::context::snapshot::ContextSnapshot;
@@ -11,6 +12,15 @@ use crate::task::lifecycle::TaskState;
 
 /// IPC 协议版本。不兼容变更需递增 major。
 pub const IPC_PROTOCOL_VERSION: SchemaVersion = SchemaVersion::CURRENT;
+
+/// Select a wire format implemented by this server. A client may send a
+/// handshake envelope from another major version only if it also offers the
+/// current wire format; no unimplemented major is silently accepted.
+pub fn negotiate_version(offered: &[SchemaVersion]) -> Option<SchemaVersion> {
+    offered
+        .contains(&IPC_PROTOCOL_VERSION)
+        .then_some(IPC_PROTOCOL_VERSION)
+}
 
 /// 请求 / 响应 Envelope。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -66,6 +76,10 @@ pub enum Request {
     /// Clear only this application's current L1 declaration.
     ClearCurrentTask {
         application_id: ApplicationId,
+    },
+    /// Semantic local intent only; the response is not an executable policy.
+    ProposeIntent {
+        request: IntentRequest,
     },
     SubmitNativeTask {
         contract: TaskContract,
@@ -140,6 +154,9 @@ impl ResponseEnvelope {
 pub enum ResponseData {
     HandshakeAck {
         capabilities: Vec<String>,
+        /// Defaults to 1.0 when decoding a response from an older daemon.
+        #[serde(default)]
+        selected_version: SchemaVersion,
     },
     Ack,
     Registered {
@@ -156,6 +173,9 @@ pub enum ResponseData {
     CurrentTaskDeclared,
     CurrentTaskCleared {
         cleared: bool,
+    },
+    IntentProposed {
+        proposal: IntentProposal,
     },
     NativeTaskSubmitted {
         handle_id: String,
@@ -249,4 +269,28 @@ fn now_unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod negotiation_tests {
+    use super::*;
+
+    #[test]
+    fn newer_major_can_offer_implemented_wire_version() {
+        let newer = SchemaVersion::new(2, 0);
+        assert_eq!(
+            negotiate_version(&[newer, IPC_PROTOCOL_VERSION]),
+            Some(IPC_PROTOCOL_VERSION)
+        );
+        assert_eq!(negotiate_version(&[newer]), None);
+        assert_eq!(negotiate_version(&[]), None);
+    }
+
+    #[test]
+    fn old_ack_decodes_with_current_selected_version() {
+        let old = r#"{"kind":"handshake_ack","capabilities":["request_ack"]}"#;
+        assert!(matches!(serde_json::from_str::<ResponseData>(old).unwrap(),
+            ResponseData::HandshakeAck { selected_version, .. }
+                if selected_version == IPC_PROTOCOL_VERSION));
+    }
 }

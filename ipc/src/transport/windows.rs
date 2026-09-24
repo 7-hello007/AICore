@@ -98,6 +98,26 @@ pub(crate) fn process_creation_time(pid: u32) -> Option<u64> {
     (result != 0).then_some(((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64)
 }
 
+pub(crate) fn process_executable_path(pid: u32) -> Option<PathBuf> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: OpenProcess returns a handle owned here and closed below.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return None;
+    }
+    let mut path = vec![0u16; 32_768];
+    let mut length = path.len() as u32;
+    // SAFETY: `path` is a writable UTF-16 buffer and `length` gives its size.
+    let ok = unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) };
+    // SAFETY: this handle came from OpenProcess above.
+    unsafe { CloseHandle(process) };
+    (ok != 0 && length > 0)
+        .then(|| PathBuf::from(String::from_utf16_lossy(&path[..length as usize])))
+}
+
 pub(crate) fn process_identity_stale(pid: u32, created_at_100ns: u64) -> bool {
     use windows_sys::Win32::Foundation::{
         CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, WAIT_OBJECT_0,

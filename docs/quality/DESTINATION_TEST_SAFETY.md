@@ -1,5 +1,49 @@
 # Destination work: isolated test boundary
 
+## Windows desktop code continuation (2026-09-24)
+
+Use the Windows desktop checkout only. The reviewed Windows-safe workspace run
+uses `cargo test --workspace --all-targets --locked --offline --` with these
+five `--skip` filters: `controller_handles_bad_pid_gracefully`,
+`executor_runs_and_reports_outcomes`, `full_loop_runs_and_records_metrics`,
+`history_disabled_by_default_means_no_records`, and
+`history_enabled_records_tick`. The first invokes a process setter even
+though its PID is intended to be invalid; the latter four construct real
+process/power controllers and may apply a policy. These tests are retained.
+The filtered run is not an unfiltered workspace pass. The run completed with
+141 targets, 711 passed, 0 failed, 0 ignored and 5 filtered.
+
+`AICORE_APP_POLICY_PATH` may point to an **absolute path** containing a JSON
+array of operator-approved applications. Example schema:
+
+```json
+[{"application_id":"aicore.cli","artifact_sha256":"<64 hex characters>","allowed_actions":["register","propose_intent","unregister"]}]
+```
+
+The daemon reads this file at startup. When configured, every application
+action requires the authenticated IPC peer's executable SHA-256 and a matching
+per-action pin. Missing/unreadable executable, absent pin or revoked action is
+denied. The digest is a read-only file hash, not a Windows code-signing/SID or
+cross-user ACL certificate. Without this optional policy, the prior
+process-bound IPC behavior remains.
+
+`AICORE_INTENT_BACKEND=ollama` (default) exposes a semantic `ProposeIntent`
+IPC request; `disabled` returns `NotSupported`. `AICORE_OLLAMA_MODEL` defaults
+to `llama3.2:3b`, with loopback host, port and timeout configurable through
+`AICORE_OLLAMA_HOST`, `AICORE_OLLAMA_PORT` and
+`AICORE_OLLAMA_TIMEOUT_MS`. The provider connects only to loopback and does
+not start or install Ollama. `aicore intent --text "..." --ipc-path <pipe>`
+registers the calling application, requests a semantic proposal, then
+unregisters. An operator pin must grant those three actions. The response is
+not an executable policy; any policy conversion still passes the existing
+policy engine and validator.
+
+`scripts/verify/simulated_platform_ollama_intent.ps1` runs only a project-built
+simulated daemon, local IPC and a pre-existing Ollama service. It uses scratch
+files under `env/`, stops only its test daemon and never invokes a platform
+setter. Its result is a local intent integration result, not a Windows
+hardware or ACL certification.
+
 The current authorization permits Model Mode, mocks, isolated filesystem/IPC
 fixtures and **read-only** native telemetry/capability checks. The unfiltered
 `cargo test --workspace --all-targets --locked` command also contains tests

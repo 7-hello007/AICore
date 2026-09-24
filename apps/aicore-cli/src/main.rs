@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use aicore_contracts::ipc::protocol::{Request, ResponseData};
+use aicore_contracts::{ai::intent::IntentRequest, application::id::ApplicationId};
 use aicore_ipc::{unwrap_response, IpcClient};
 
 const HELP: &str = "\
@@ -18,6 +19,7 @@ COMMANDS:
     context          Show latest context snapshot
     ticks            List recent ticks (default 10)
     plugins          List registered plugins
+    intent           Ask the local intent provider for a semantic proposal
     watch            Live-refresh terminal dashboard
 
 OPTIONS:
@@ -25,6 +27,8 @@ OPTIONS:
     --state-path <PATH>     State file path (fallback)
     --limit <N>             ticks: number of entries (default 10, max 200)
     --interval-ms <MS>      watch: refresh interval (default 1000)
+    --text <TEXT>           intent: task description (max 4096 bytes)
+    --application-id <ID>   intent: application identity (default aicore.cli)
     -h, --help              Print help
 ";
 
@@ -49,6 +53,8 @@ struct ParsedArgs {
     limit: usize,
     interval_ms: u64,
     command: String,
+    text: Option<String>,
+    application_id: String,
 }
 
 fn parse_args() -> Result<ParsedArgs, String> {
@@ -67,6 +73,8 @@ fn parse_args() -> Result<ParsedArgs, String> {
     let mut limit: usize = 10;
     let mut interval_ms: u64 = 1000;
     let mut command: Option<String> = None;
+    let mut text: Option<String> = None;
+    let mut application_id = "aicore.cli".to_string();
 
     let mut i = 0;
     while i < raw.len() {
@@ -109,6 +117,20 @@ fn parse_args() -> Result<ParsedArgs, String> {
                     return Err("--interval-ms must be >= 200".to_string());
                 }
             },
+            "--text" => {
+                i += 1;
+                if i >= raw.len() {
+                    return Err("--text requires a value".into());
+                }
+                text = Some(raw[i].clone());
+            },
+            "--application-id" => {
+                i += 1;
+                if i >= raw.len() {
+                    return Err("--application-id requires a value".into());
+                }
+                application_id = raw[i].clone();
+            },
             other if other.starts_with("--") => {
                 return Err(format!("unknown option: {}", other));
             },
@@ -131,6 +153,8 @@ fn parse_args() -> Result<ParsedArgs, String> {
         limit,
         interval_ms,
         command,
+        text,
+        application_id,
     })
 }
 
@@ -169,11 +193,87 @@ fn main() -> ExitCode {
             Request::GetRecentTicks { limit: args.limit },
         )),
         "plugins" => rt.block_on(run_once(&args, Request::ListPlugins)),
+        "intent" => rt.block_on(run_intent(&args)),
         "watch" => rt.block_on(run_watch(&args)),
         other => {
             eprintln!("error: unknown command: {}", other);
             eprintln!("{}", HELP);
             ExitCode::from(2)
+        },
+    }
+}
+
+async fn run_intent(args: &ParsedArgs) -> ExitCode {
+    let Some(text) = args.text.as_ref() else {
+        eprintln!("intent requires --text");
+        return ExitCode::from(2);
+    };
+    let application_id = ApplicationId::new(&args.application_id);
+    if !application_id.is_valid() || text.trim().is_empty() || text.len() > 4096 {
+        eprintln!("invalid application ID or intent text");
+        return ExitCode::from(2);
+    }
+    let mut client = match IpcClient::connect(args.ipc_path.clone()).await {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("IPC connect failed: {error}");
+            return ExitCode::from(1);
+        },
+    };
+    let send = |phase: &str| format!("cli-intent-{}-{phase}", std::process::id());
+    let registration = Request::Register {
+        application_id: application_id.clone(),
+        name: "AICore CLI".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        capabilities: vec!["intent.propose".into()],
+    };
+    let registered = client
+        .call(&send("register"), registration, Duration::from_secs(5))
+        .await
+        .map_err(|error| error.to_string())
+        .and_then(|response| unwrap_response(response).map_err(|error| error.message));
+    if let Err(error) = registered {
+        eprintln!("intent registration failed: {error}");
+        return ExitCode::from(1);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0);
+    let result = client
+        .call(
+            &send("propose"),
+            Request::ProposeIntent {
+                request: IntentRequest {
+                    application_id: application_id.clone(),
+                    text: text.clone(),
+                    submitted_at_unix_ms: now,
+                },
+            },
+            Duration::from_secs(35),
+        )
+        .await
+        .map_err(|error| error.to_string())
+        .and_then(|response| unwrap_response(response).map_err(|error| error.message));
+    let _ = client
+        .call(
+            &send("unregister"),
+            Request::Unregister { application_id },
+            Duration::from_secs(5),
+        )
+        .await;
+    match result {
+        Ok(data @ ResponseData::IntentProposed { .. }) => {
+            print_data(data);
+            ExitCode::SUCCESS
+        },
+        Ok(_) => {
+            eprintln!("unexpected intent response");
+            ExitCode::from(1)
+        },
+        Err(error) => {
+            eprintln!("intent request failed: {error}");
+            ExitCode::from(1)
         },
     }
 }
@@ -307,6 +407,12 @@ fn print_data(data: ResponseData) {
         ResponseData::CurrentTaskDeclared => println!("current task declared"),
         ResponseData::CurrentTaskCleared { cleared } => {
             println!("current task cleared: {}", cleared);
+        },
+        ResponseData::IntentProposed { proposal } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&proposal).unwrap_or_default()
+            );
         },
         ResponseData::NativeTaskSubmitted { handle_id } => {
             println!("native task submitted: {}", handle_id);

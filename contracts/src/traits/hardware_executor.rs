@@ -1,7 +1,8 @@
 use crate::errors::ContractResult;
+use serde::{Deserialize, Serialize};
 
 /// 硬件执行提示。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HardwareExecutionHint {
     /// 工作负载偏好，例如 "graphics" / "compute" / "auto"。
     WorkloadPreference(String),

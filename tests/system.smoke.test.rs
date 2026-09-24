@@ -14,8 +14,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use aicore_contracts::{
+    errors::ContractResult,
     execution::targets::ExecutionTargets,
     runtime::config::AdaptiveLoopConfig,
+    telemetry::{cpu::CpuSnapshot, memory::MemorySnapshot, snapshot::ComputerSnapshot},
     traits::{
         policy_executor::IPolicyExecutor, runtime_orchestrator::IRuntimeOrchestrator,
         telemetry_provider::ITelemetryProvider,
@@ -28,25 +30,43 @@ use aicore_core::{
 };
 use aicore_runtime::AdaptiveLoop;
 
-#[cfg(target_os = "linux")]
-use aicore_adapter_linux::{LinuxPowerController, LinuxProcessController, LinuxTelemetryProvider};
-#[cfg(target_os = "windows")]
-use aicore_adapter_windows::{
-    WindowsPowerController, WindowsProcessController, WindowsTelemetryProvider,
-};
+/// The smoke test checks loop accounting, not host controls or sensors.
+struct IsolatedTelemetry;
+
+impl ITelemetryProvider for IsolatedTelemetry {
+    fn collect(&self) -> ContractResult<ComputerSnapshot> {
+        Ok(ComputerSnapshot {
+            collected_at_unix_ms: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            ),
+            cpu: CpuSnapshot {
+                logical_cores: 4,
+                ..Default::default()
+            },
+            memory: MemorySnapshot {
+                total_mb: 1024,
+                available_mb: 1024,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "isolated_smoke"
+    }
+
+    fn capabilities(&self) -> Vec<&'static str> {
+        vec!["cpu.telemetry", "memory.telemetry"]
+    }
+}
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 fn build_loop() -> AdaptiveLoop {
-    let telemetry: Arc<dyn ITelemetryProvider> = {
-        #[cfg(target_os = "linux")]
-        {
-            Arc::new(LinuxTelemetryProvider::new())
-        }
-        #[cfg(target_os = "windows")]
-        {
-            Arc::new(WindowsTelemetryProvider::new())
-        }
-    };
+    let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(IsolatedTelemetry);
 
     let ctx_engine = Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new())));
     let base: Arc<dyn aicore_contracts::traits::policy_engine::IPolicyEngine> =
@@ -54,22 +74,7 @@ fn build_loop() -> AdaptiveLoop {
     let primary = base.clone();
     let fallback = base;
 
-    let executor: Arc<dyn IPolicyExecutor> = {
-        #[cfg(target_os = "linux")]
-        {
-            Arc::new(DefaultPolicyExecutor::new(
-                Some(Arc::new(LinuxProcessController::new())),
-                Some(Arc::new(LinuxPowerController::new())),
-            ))
-        }
-        #[cfg(target_os = "windows")]
-        {
-            Arc::new(DefaultPolicyExecutor::new(
-                Some(Arc::new(WindowsProcessController::new())),
-                Some(Arc::new(WindowsPowerController::new())),
-            ))
-        }
-    };
+    let executor: Arc<dyn IPolicyExecutor> = Arc::new(DefaultPolicyExecutor::new(None, None));
 
     let validator = Arc::new(DefaultPolicyValidator::new());
 
@@ -111,7 +116,14 @@ fn smoke_runs_without_panic() {
 
     let m = loop_.metrics();
     assert_eq!(m.total_ticks, ticks);
-    assert_eq!(m.total_ticks, m.successful_ticks + m.failed_ticks);
+    assert_eq!(
+        m.total_ticks,
+        m.successful_ticks + m.failed_ticks + m.noop_ticks
+    );
+    assert_eq!(
+        m.noop_ticks, ticks,
+        "no controller or target can apply a policy"
+    );
     assert_eq!(m.policies_generated, ticks);
 }
 

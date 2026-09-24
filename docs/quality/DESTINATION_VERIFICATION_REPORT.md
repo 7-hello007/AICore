@@ -1,5 +1,53 @@
 # AICore destination implementation and verification report
 
+## Continuation: 2026-09-24 (Windows desktop Platform Simulator)
+
+The project was copied from WSL to
+`C:\Users\12282\Desktop\AICore_V4_Windows` without copying Linux build output.
+No installer or service was run. Existing Windows Rust 1.75 and MSVC binaries
+were invoked directly. The first offline build found the Windows user's Cargo
+cache incomplete (`base64ct` missing); existing local WSL Cargo cache/index
+were copied into the desktop project's `env/cargo-home`. All subsequent Cargo
+commands used that directory and `--offline`. **No network environment download
+was made or approved.**
+
+The new Windows fixture was captured through Windows Adapter read-only methods
+and is documented in `docs/platform/PLATFORM_SIMULATOR.md`. Its SHA-256 is
+`de6a6903f51c49619059edf4e55e90dd7772a98ddde6c92a953ad3556ffa1cec`.
+It contains 10 process identities with getter-observed priority and affinity;
+identifying strings are redacted. This host produced no sampled GPU/NPU and no
+recognized built-in power profile. Those unsupported paths were not populated
+with invented values. Windows builds now embed this fixture; Linux builds keep
+their Linux/WSL capture. The `system_smoke` test now uses isolated telemetry and
+no controller, asserts `successful + failed + noop = total`, and verifies all
+its ticks are neutral NoOp. Its three tests are no longer filtered from the
+safe workspace suite. The Windows capability declaration for process priority
+and affinity writes is now `Conditional` on target access rights, matching the
+actual per-PID getter/setter contract; the stale `Unsupported` test was fixed.
+
+| Check | Result and scope |
+|---|---|
+| Linux `cargo check --workspace --all-targets --locked` | **PASS**, exit 0 |
+| Linux `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | **PASS**, exit 0 |
+| Linux `cargo fmt --all -- --check` | **PASS**, exit 0 |
+| Linux `bash scripts/verify/model_safe_workspace_tests.sh` | **PASS**, exit 0: 140 test targets, 701 passed, 0 failed, 0 ignored, 40 filtered native-control/host-sensitive tests |
+| Windows desktop `cargo check --workspace --all-targets --locked --offline` | **PASS**, exit 0, native MSVC build |
+| Windows desktop `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` | **PASS**, exit 0; Windows-only Clippy defects corrected |
+| Windows desktop `cargo fmt --all -- --check` | **PASS**, exit 0 |
+| Windows desktop `cargo test -p aicore-adapter-simulated-platform --all-targets --locked --offline` | **PASS**, exit 0: 4 simulator unit tests; no host setters |
+| Windows desktop `cargo test -p aicore-daemon simulated_platform_tests --locked --offline -- --test-threads=1` | **PASS**, exit 0: 4 tests covering slow-provider deadline/expiry, readback, rollback and SafeMode against the Windows fixture |
+| Windows desktop `cargo test -p aicore-ipc --all-targets --locked --offline` | **PASS**, exit 0: 2 tests, including real same-user named-pipe handshake, Ack and current peer identity |
+| Windows desktop `cargo test -p aicore-tests --test system_smoke --locked --offline` | **PASS**, exit 0: 3 isolated NoOp smoke tests |
+| Windows desktop read-only `capability_detect_unit` and `telemetry_real_data_unit` targets | **PASS**, exit 0: 8 and 5 tests respectively; no setter invoked |
+| Windows desktop `scripts/verify/simulated_platform_windows_smoke.ps1` | **PASS**, exit 0: 10 continuous ticks, 5 successful **in-memory** executions, 0 failed; CLI `status` and `ticks` used a real named pipe with a nonexistent fallback file |
+| Unfiltered native-control workspace tests and Windows cross-user ACL denial | **SKIPPED / NOT VERIFIED** under the current authorization and available identity setup |
+
+The Windows same-user named pipe and local peer-identity path now have native
+runtime evidence, while Windows service/SCM, cross-user ACL denial, real
+priority/affinity/power writes, GPU/NPU control, actual effect and native
+control deadlines remain **NOT VERIFIED**. Simulated successes are not native
+hardware certification. No system configuration change was requested or made.
+
 ## Continuation: 2026-09-24 (captured Platform Simulator)
 
 Destination completion remains **NO / NOT VERIFIED**. This continuation added

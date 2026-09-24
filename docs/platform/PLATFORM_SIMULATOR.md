@@ -23,6 +23,19 @@ were inserted to create unavailable GPU, NPU or power controls. The simulator
 rejects malformed capabilities, synthetic process IDs absent from the
 recorded snapshot and hardware matrices without corresponding sampled devices.
 
+The Windows fixture is
+`adapters/simulated-platform/fixtures/windows_readonly.json` (SHA-256
+`de6a6903f51c49619059edf4e55e90dd7772a98ddde6c92a953ad3556ffa1cec`).
+It was captured on a Windows desktop on 2026-09-24 by the read-only
+`capture_windows` example using the Windows telemetry/capability/hardware
+providers and process/power getters. It records 10 processes for which both
+priority and affinity were readable. Process names, applications, mount paths,
+network interface names and hardware names are redacted. The capture returned
+no sampled GPU/NPU and no recognized built-in power profile; none were added
+to the fixture. A recorded PID is only an in-memory simulator key, not a live
+process target. Windows builds select this fixture; Linux builds select the
+Linux/WSL fixture.
+
 The fixture contains captured PIDs only as **in-memory keys**. The daemon
 selects the first captured PID as a simulator foreground target and the next
 as a simulator background target to exercise the existing executor. This is
@@ -38,10 +51,17 @@ IPC, plugins and SQLite; it leaves artifacts there for review. Unit tests
 exercise readback, unsupported devices, fixture consistency and affinity
 restoration. Daemon tests exercise slow-provider expiry/deadline, fresh plan
 apply, verification failure/rollback and repeated failure to SafeMode.
+On Windows, build the project binaries offline and run
+`scripts/verify/simulated_platform_windows_smoke.ps1`. It starts only a
+project-built simulated daemon, uses isolated paths under `env/`, checks
+continuous ticks and read-only CLI `status`/`ticks` over a named pipe, then
+stops only that test daemon. The Windows IPC unit test separately checks
+named-pipe handshake, Ack and current peer process identity. The four daemon
+simulator tests execute against the Windows fixture on Windows.
 
 **Scope of evidence:** the simulator proves contract wiring and state
-transitions for this recorded Linux/WSL sample. It does not certify native
-Windows pipes, actual priority/affinity/power or GPU/NPU writes, sensor
-accuracy, performance benefit, or a hard deadline when native binding itself
-blocks. Those require separate target-host evidence and explicit approval
-before any configuration-changing operation.
+transitions for the recorded Linux/WSL and Windows samples. It does not
+certify Windows access denial for a different user, actual priority, affinity,
+power or GPU/NPU writes, sensor accuracy, performance benefit, or a hard
+deadline when native binding itself blocks. Those require separate target-host
+evidence and explicit approval before any configuration-changing operation.

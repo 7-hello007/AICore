@@ -10,7 +10,8 @@ daemon. Those can change host configuration, so the unfiltered command remains
 `AICORE_EXECUTION_MODE=simulated-platform` selects the memory-only platform
 adapter and the continuous `PlatformTickDriver`. Run
 `bash scripts/verify/simulated_platform_smoke.sh` for an isolated daemon
-smoke using the captured fixture described in
+smoke on Linux, or `scripts/verify/simulated_platform_windows_smoke.ps1`
+on Windows, using the host-specific captured fixture described in
 `docs/platform/PLATFORM_SIMULATOR.md`. This is a simulated Platform Mode pass,
 not native hardware certification. Existing tests that instantiate native
 controllers directly still need the filters below.
@@ -21,7 +22,8 @@ tests. The filters cover:
 
 - direct process affinity, process controller, power controller and platform
   executor calls, including Linux GPU `release()` (which can write sysfs);
-- daemon/release smoke tests that use default platform mode;
+- daemon/release smoke tests that use default platform mode; `system_smoke`
+  now uses isolated telemetry and no controllers, so its three tests run;
 - live Linux CPU/GPU/NPU/temperature telemetry and L0 observations;
 - end-to-end pipelines whose source is the live Linux adapter.
 
@@ -39,7 +41,9 @@ profile are not changed.
 
 Platform Mode binder/executor tests that may change process scheduling, power
 or GPU state need a specific authorization and rollback plan first. Windows
-native pipe behavior also needs a native toolchain and a Windows test host.
+native same-user named-pipe handshake, Ack and peer identity were exercised
+on a Windows desktop; cross-user ACL denial and service behavior remain
+unverified.
 
 For a real Platform Mode write test, approval must identify the actual,
 stable test PID/name and every device path or power target, requested value,

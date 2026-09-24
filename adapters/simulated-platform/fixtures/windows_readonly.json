@@ -1,0 +1,619 @@
+{
+  "source": "WindowsTelemetryProvider + WindowsCapabilityProvider + WindowsHardwareTelemetryProvider + WindowsProcessController + WindowsPowerController; read-only; identifying strings redacted",
+  "snapshot": {
+    "collected_at_unix_ms": 1790239903956,
+    "freshness_ms": 0,
+    "cpu": {
+      "usage_percent": 39.34339,
+      "temperature_celsius": null,
+      "logical_cores": 16,
+      "physical_cores": null,
+      "frequency_mhz": 0,
+      "per_core_usage": [
+        31.19918,
+        33.245605,
+        37.30095,
+        31.793922,
+        37.826992,
+        36.03413,
+        32.559258,
+        25.700783,
+        55.378918,
+        30.348885,
+        25.79039,
+        28.165718,
+        69.182495,
+        30.303741,
+        58.831554,
+        65.83208
+      ]
+    },
+    "gpu": {
+      "name": null,
+      "usage_percent": null,
+      "memory_used_mb": null,
+      "memory_total_mb": null,
+      "temperature_celsius": null,
+      "vendor": null
+    },
+    "npu": {
+      "name": null,
+      "usage_percent": null,
+      "available": false,
+      "vendor": null
+    },
+    "memory": {
+      "total_mb": 32042,
+      "used_mb": 19587,
+      "available_mb": 12455,
+      "usage_percent": 61.129143,
+      "swap_total_mb": 32768,
+      "swap_used_mb": 0
+    },
+    "disks": [
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 500.00097274780273,
+        "used_gb": 473.8746910095215,
+        "available_gb": 26.12628173828125,
+        "usage_percent": 94.77476
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 451.64355087280273,
+        "used_gb": 424.53659439086914,
+        "available_gb": 27.106956481933594,
+        "usage_percent": 93.99815
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 0.03099203109741211,
+        "used_gb": 0.026788711547851562,
+        "available_gb": 0.004203319549560547,
+        "usage_percent": 86.437416
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 57.3017578125,
+        "used_gb": 53.91015625,
+        "available_gb": 3.3916015625,
+        "usage_percent": 94.081154
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 17.98828125,
+        "used_gb": 13.6748046875,
+        "available_gb": 4.3134765625,
+        "usage_percent": 76.02063
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 4.98828125,
+        "used_gb": 4.952320098876953,
+        "available_gb": 0.035961151123046875,
+        "usage_percent": 99.27909
+      }
+    ],
+    "networks": [
+      {
+        "interface": "<redacted>",
+        "received_bytes": 0,
+        "transmitted_bytes": 78967,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 0,
+        "transmitted_bytes": 430,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 0,
+        "transmitted_bytes": 0,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 8493601,
+        "transmitted_bytes": 7490888,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 0,
+        "transmitted_bytes": 0,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 175708334,
+        "transmitted_bytes": 65400894,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 0,
+        "transmitted_bytes": 0,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 0,
+        "transmitted_bytes": 419,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      }
+    ],
+    "temperature": {
+      "cpu_celsius": null,
+      "gpu_celsius": null,
+      "system_celsius": null
+    },
+    "battery": {
+      "present": false,
+      "percentage": null,
+      "charging": null,
+      "time_remaining_sec": null
+    },
+    "power": {
+      "ac_connected": false,
+      "power_plan": null,
+      "cpu_power_watts": null,
+      "gpu_power_watts": null
+    },
+    "top_processes": [
+      {
+        "pid": 14892,
+        "name": "<redacted>",
+        "cpu_usage_percent": 100.0,
+        "memory_mb": 20,
+        "is_foreground": false
+      },
+      {
+        "pid": 11068,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 10,
+        "is_foreground": false
+      },
+      {
+        "pid": 11464,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 1,
+        "is_foreground": false
+      },
+      {
+        "pid": 1832,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 440,
+        "is_foreground": false
+      },
+      {
+        "pid": 9612,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 9,
+        "is_foreground": false
+      },
+      {
+        "pid": 28728,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 8,
+        "is_foreground": false
+      },
+      {
+        "pid": 5724,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 5,
+        "is_foreground": false
+      },
+      {
+        "pid": 13440,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 15,
+        "is_foreground": false
+      },
+      {
+        "pid": 22912,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 29,
+        "is_foreground": false
+      },
+      {
+        "pid": 34036,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 13,
+        "is_foreground": false
+      },
+      {
+        "pid": 29456,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 43,
+        "is_foreground": false
+      },
+      {
+        "pid": 20200,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 19,
+        "is_foreground": false
+      },
+      {
+        "pid": 22752,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 11,
+        "is_foreground": false
+      },
+      {
+        "pid": 17508,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 63,
+        "is_foreground": false
+      },
+      {
+        "pid": 11260,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 88,
+        "is_foreground": false
+      },
+      {
+        "pid": 4924,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 20,
+        "is_foreground": false
+      },
+      {
+        "pid": 3232,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 7,
+        "is_foreground": false
+      },
+      {
+        "pid": 2964,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 11,
+        "is_foreground": false
+      },
+      {
+        "pid": 7120,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 11,
+        "is_foreground": false
+      },
+      {
+        "pid": 7480,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 27,
+        "is_foreground": false
+      }
+    ],
+    "applications": []
+  },
+  "capabilities": [
+    {
+      "name": "cpu.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "memory.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "disk.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "network.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.priority.read",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.priority.write",
+      "status": "conditional",
+      "detail": "target PID access rights depend on the current Windows security token"
+    },
+    {
+      "name": "power.profile.read",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "power.profile.write",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "gpu.telemetry",
+      "status": "partial",
+      "detail": "vendor/runtime dependent; NVIDIA supported when nvidia-smi is installed"
+    },
+    {
+      "name": "gpu.control",
+      "status": "unsupported",
+      "detail": "vendor-specific GPU control requires vendor adapter/runtime"
+    },
+    {
+      "name": "npu.telemetry",
+      "status": "unsupported",
+      "detail": "requires Windows ML/vendor runtime adapter"
+    },
+    {
+      "name": "npu.control",
+      "status": "unsupported",
+      "detail": "requires vendor runtime; no generic cross-vendor control API"
+    },
+    {
+      "name": "temperature.telemetry",
+      "status": "unsupported",
+      "detail": "best-effort through vendor/runtime sensors"
+    },
+    {
+      "name": "foreground.telemetry",
+      "status": "partial",
+      "detail": "GetForegroundWindow wired; window title read best-effort"
+    },
+    {
+      "name": "process.affinity.read",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.affinity.write",
+      "status": "conditional",
+      "detail": "target PID access rights depend on the current Windows security token"
+    }
+  ],
+  "processes": {
+    "1832": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "2964": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "7480": {
+      "priority": "background",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "9612": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "11260": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "14892": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "17508": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "28728": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "29456": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "34036": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    }
+  },
+  "power_profile": null,
+  "gpu_samples": [],
+  "npu_samples": [],
+  "hardware_matrices": []
+}

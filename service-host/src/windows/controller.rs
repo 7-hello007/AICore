@@ -19,9 +19,9 @@ impl WindowsServiceController {
     pub fn new() -> Self {
         #[cfg(target_os = "windows")]
         {
-            return Self {
+            Self {
                 config: std::sync::Mutex::new(None),
-            };
+            }
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -241,7 +241,7 @@ impl IServiceController for WindowsServiceController {
                 },
             };
             let backup = format!("{}.bak", current);
-            if let Err(e) = std::fs::copy(&current, &backup) {
+            if let Err(e) = std::fs::copy(&current, backup) {
                 return ServiceOperationResult::failed(
                     ServiceState::Failed,
                     format!("backup failed: {}", e),
@@ -274,7 +274,7 @@ impl IServiceController for WindowsServiceController {
                 },
             };
             let backup = format!("{}.bak", current);
-            match std::fs::copy(&backup, &current) {
+            match std::fs::copy(backup, &current) {
                 Ok(_) => ServiceOperationResult::ok(ServiceState::Stopped),
                 Err(e) => ServiceOperationResult::failed(
                     ServiceState::Failed,

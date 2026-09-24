@@ -39,7 +39,10 @@ impl ICapabilityProvider for WindowsCapabilityProvider {
             CapabilityEntry::supported("process.telemetry"),
             // 进程 / 电源：已通过 Windows API 提供
             CapabilityEntry::supported("process.priority.read"),
-            CapabilityEntry::supported("process.priority.write"),
+            CapabilityEntry::conditional(
+                "process.priority.write",
+                "target PID access rights depend on the current Windows security token",
+            ),
             CapabilityEntry::supported("power.profile.read"),
             CapabilityEntry::supported("power.profile.write"),
             // GPU / NPU / 温度：能力取决于设备驱动/厂商运行时。
@@ -79,7 +82,10 @@ impl ICapabilityProvider for WindowsCapabilityProvider {
                 "GetForegroundWindow wired; window title read best-effort",
             ),
             CapabilityEntry::supported("process.affinity.read"),
-            CapabilityEntry::supported("process.affinity.write"),
+            CapabilityEntry::conditional(
+                "process.affinity.write",
+                "target PID access rights depend on the current Windows security token",
+            ),
         ]
     }
 

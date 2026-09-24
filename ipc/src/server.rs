@@ -31,6 +31,77 @@ pub trait IpcHandler: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
 
+#[cfg(all(test, target_os = "windows"))]
+mod windows_pipe_tests {
+    use super::*;
+    use crate::IpcClient;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct IdentityStatusHandler {
+        saw_current_peer: AtomicBool,
+    }
+
+    impl IpcHandler for IdentityStatusHandler {
+        fn handle(&self, _request: Request) -> Result<ResponseData, IpcError> {
+            Err(IpcError::not_supported("identity required"))
+        }
+
+        fn handle_with_identity(
+            &self,
+            request: Request,
+            identity: ClientIdentity,
+        ) -> Result<ResponseData, IpcError> {
+            if !identity.is_current() {
+                return Err(IpcError::new("ERR_PERMISSION_DENIED", "peer not current"));
+            }
+            self.saw_current_peer.store(true, Ordering::SeqCst);
+            match request {
+                Request::GetStatus => Ok(ResponseData::Status {
+                    status: aicore_contracts::runtime::daemon_status::DaemonStatus::new(1),
+                }),
+                _ => Err(IpcError::not_supported("unsupported test request")),
+            }
+        }
+
+        fn name(&self) -> &'static str {
+            "windows_identity_status_test"
+        }
+    }
+
+    #[tokio::test]
+    async fn named_pipe_handshake_ack_and_peer_identity_roundtrip() {
+        let path = format!(
+            r"\\.\pipe\aicore-sim-ipc-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let handler = Arc::new(IdentityStatusHandler {
+            saw_current_peer: AtomicBool::new(false),
+        });
+        let (shutdown, rx) = mpsc::channel(1);
+        let server = IpcServer::bind(&path, handler.clone())
+            .unwrap()
+            .with_shutdown(rx);
+        let task = tokio::spawn(server.run());
+        let mut client = IpcClient::connect(&path).await.unwrap();
+        let response = client
+            .call(
+                "status",
+                Request::GetStatus,
+                std::time::Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(response.data, Some(ResponseData::Status { .. })));
+        assert!(handler.saw_current_peer.load(Ordering::SeqCst));
+        shutdown.send(()).await.unwrap();
+        task.await.unwrap();
+    }
+}
+
 /// IPC Server。
 pub struct IpcServer {
     listener: IpcListener,

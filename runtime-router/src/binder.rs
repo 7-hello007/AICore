@@ -169,16 +169,16 @@ impl DefaultRuntimeBinder {
             },
         };
 
-        // 无 inference 输入 → 只声明绑定成功
+        // Binding a model is not an inference operation.
         let inference_req = match &request.inference {
             Some(r) => r,
             None => {
                 return Ok(BindingResult {
                     route_id: request.route.route_id.clone(),
                     source: request.route.source,
-                    executed: true,
+                    executed: false,
                     inference: None,
-                    reason: format!("bound to {} (no inference payload)", runtime.runtime_name()),
+                    reason: format!("{} available, no inference payload", runtime.runtime_name()),
                     latency_ms: start.elapsed().as_millis() as u64,
                 });
             },
@@ -240,7 +240,7 @@ impl DefaultRuntimeBinder {
             },
         };
 
-        let device_id = self
+        let Some(device_id) = self
             .hardware
             .iter()
             .find(|h| {
@@ -248,13 +248,16 @@ impl DefaultRuntimeBinder {
                     && h.is_supported(HardwareCapability::DeviceIdentity)
             })
             .map(|h| h.device_name.clone())
-            .unwrap_or_else(|| {
-                if cfg!(target_os = "windows") {
-                    "nvidia:0".to_string()
-                } else {
-                    "drm:card0".to_string()
-                }
+        else {
+            return Ok(BindingResult {
+                route_id: request.route.route_id.clone(),
+                source: RuntimeRouteSource::Gpu,
+                executed: false,
+                inference: None,
+                reason: "no identified GPU device".into(),
+                latency_ms: start.elapsed().as_millis() as u64,
             });
+        };
         let hint = match request.context.workload_type {
             aicore_contracts::context::workload::WorkloadType::AiInference => {
                 HardwareExecutionHint::WorkloadPreference("compute".to_string())
@@ -316,7 +319,7 @@ impl DefaultRuntimeBinder {
             },
         };
 
-        let device_id = self
+        let Some(device_id) = self
             .hardware
             .iter()
             .find(|h| {
@@ -324,13 +327,16 @@ impl DefaultRuntimeBinder {
                     && h.is_supported(HardwareCapability::DeviceIdentity)
             })
             .map(|h| h.device_name.clone())
-            .unwrap_or_else(|| {
-                if cfg!(target_os = "windows") {
-                    "npu:0".to_string()
-                } else {
-                    "npu:accel0".to_string()
-                }
+        else {
+            return Ok(BindingResult {
+                route_id: request.route.route_id.clone(),
+                source: RuntimeRouteSource::Npu,
+                executed: false,
+                inference: None,
+                reason: "no identified NPU device".into(),
+                latency_ms: start.elapsed().as_millis() as u64,
             });
+        };
 
         let exec_req = HardwareExecutionRequest {
             device_id,

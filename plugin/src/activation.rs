@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use aicore_contracts::errors::AicoreResult;
+use aicore_contracts::errors::{ContractError, ContractResult};
 use aicore_contracts::plugin::{
     host::{IPluginHost, PluginHostState, PluginProcessHandle, PluginProcessSpec},
     manifest::{PluginManifest, TrustLevel},
@@ -11,12 +12,15 @@ use aicore_contracts::plugin::{
     signature::PluginSignature,
     state::PluginState,
 };
+use aicore_contracts::policy::priority::PolicyPriority;
+use aicore_contracts::traits::process_controller::IProcessController;
+use aicore_contracts::traits::telemetry_provider::ITelemetryProvider;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     discovery::DiscoveredPlugin,
     host::protocol::{HostRequest, HostResponse},
-    registry::PluginRegistry,
+    registry::{PluginRegistry, RegistryError},
     signature::SignatureVerifier,
     trust::{TrustEntry, TrustStore},
     SubprocessPluginHost,
@@ -24,6 +28,8 @@ use crate::{
 
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const EXECUTE_INTERFACE: &str = "extension.execute";
+const TELEMETRY_INTERFACE: &str = "telemetry.snapshot_v1";
+const PROCESS_PRIORITY_INTERFACE: &str = "process.priority_v1";
 
 /// Operator-controlled activation policy. A plugin manifest cannot grant
 /// itself trust or extra permissions by changing its own JSON.
@@ -76,12 +82,83 @@ struct ActivePlugin {
 }
 
 /// Explicitly activates pinned, verified subprocess plugins. Only the
-/// existing generic `extension.execute` protocol is currently bindable;
-/// hardware/provider interfaces require their own typed protocol adapters.
+/// generic extension and typed read-only telemetry interfaces are bindable;
+/// hardware control interfaces still require their own safe adapters.
 pub struct PluginActivationManager {
     registry: Arc<PluginRegistry>,
     host: Arc<dyn IManagedPluginHost>,
     active: Mutex<HashMap<String, ActivePlugin>>,
+}
+
+/// Typed read-only provider adapter. The runtime may select it only after
+/// operator-pinned activation; an unavailable plugin surfaces an error.
+pub struct ManagedPluginTelemetryProvider {
+    manager: Arc<PluginActivationManager>,
+    plugin_id: String,
+}
+
+/// Typed write adapter. It is only eligible after an operator pin and a
+/// process-control manifest match. Independent platform readback must be used
+/// by the caller before accepting its acknowledgement as a successful policy.
+pub struct ManagedPluginProcessController {
+    manager: Arc<PluginActivationManager>,
+    plugin_id: String,
+}
+
+impl ManagedPluginProcessController {
+    pub fn new(manager: Arc<PluginActivationManager>, plugin_id: impl Into<String>) -> Self {
+        Self {
+            manager,
+            plugin_id: plugin_id.into(),
+        }
+    }
+}
+
+impl IProcessController for ManagedPluginProcessController {
+    fn set_priority(&self, pid: u32, priority: PolicyPriority) -> ContractResult<()> {
+        self.manager
+            .set_priority(&self.plugin_id, pid, priority)
+            .map_err(|error| ContractError::AdapterUnavailable(error.to_string()))
+    }
+
+    fn get_priority(&self, _pid: u32) -> ContractResult<PolicyPriority> {
+        Err(ContractError::CapabilityUnavailable(
+            "plugin priority readback is not trusted; use platform adapter".into(),
+        ))
+    }
+
+    fn capabilities(&self) -> Vec<&'static str> {
+        vec![PROCESS_PRIORITY_INTERFACE]
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "managed_plugin_process"
+    }
+}
+
+impl ManagedPluginTelemetryProvider {
+    pub fn new(manager: Arc<PluginActivationManager>, plugin_id: impl Into<String>) -> Self {
+        Self {
+            manager,
+            plugin_id: plugin_id.into(),
+        }
+    }
+}
+
+impl ITelemetryProvider for ManagedPluginTelemetryProvider {
+    fn collect(&self) -> ContractResult<aicore_contracts::telemetry::snapshot::ComputerSnapshot> {
+        self.manager
+            .collect_telemetry(&self.plugin_id)
+            .map_err(|error| ContractError::AdapterUnavailable(error.to_string()))
+    }
+
+    fn platform_name(&self) -> &'static str {
+        "managed_plugin"
+    }
+
+    fn capabilities(&self) -> Vec<&'static str> {
+        vec![TELEMETRY_INTERFACE]
+    }
 }
 
 impl PluginActivationManager {
@@ -168,6 +245,62 @@ impl PluginActivationManager {
             .map_err(|error| ActivationError::Lifecycle(error.to_string()))
     }
 
+    /// Restart, upgrade or roll back to an operator-pinned artifact. The
+    /// replacement is verified and health-checked before the active handle
+    /// changes; a failed candidate leaves the prior process bound.
+    pub fn replace_active(
+        &self,
+        discovered: &DiscoveredPlugin,
+        pin: &PluginActivationPin,
+    ) -> Result<(), ActivationError> {
+        let name = &discovered.manifest.name;
+        {
+            let active = self
+                .active
+                .lock()
+                .map_err(|_| ActivationError::Lifecycle("active lock poisoned".into()))?;
+            if !active.contains_key(name) {
+                return Err(ActivationError::NotActive(name.clone()));
+            }
+        }
+        let candidate = self.verify_and_spawn(discovered, pin)?;
+        {
+            let mut active = match self.active.lock() {
+                Ok(active) => active,
+                Err(_) => {
+                    self.discard_unpublished(candidate);
+                    return Err(ActivationError::Lifecycle("active lock poisoned".into()));
+                },
+            };
+            let Some(previous) = active.get(name) else {
+                self.discard_unpublished(candidate);
+                return Err(ActivationError::NotActive(name.clone()));
+            };
+            // Validate registry state before stopping the old process. The
+            // callback and manifest commit share the registry write lock.
+            let previous_handle = previous.handle.clone();
+            if let Err(error) =
+                self.registry
+                    .replace_active_manifest_after(discovered.manifest.clone(), || {
+                        self.host
+                            .stop(&previous_handle)
+                            .map_err(|error| RegistryError::ProcessStopFailed(error.to_string()))
+                    })
+            {
+                self.discard_unpublished(candidate);
+                return Err(match error {
+                    RegistryError::ProcessStopFailed(reason) => ActivationError::Host(reason),
+                    other => ActivationError::Lifecycle(other.to_string()),
+                });
+            }
+            if let Some(previous) = active.remove(name) {
+                cleanup_stage(&previous.stage_dir, &previous.staged_path);
+            }
+            active.insert(name.clone(), candidate);
+        }
+        Ok(())
+    }
+
     pub fn call_extension(&self, plugin_id: &str, input: u32) -> Result<u32, ActivationError> {
         let handle = {
             let active = self
@@ -206,6 +339,141 @@ impl PluginActivationManager {
                 Err(ActivationError::Host(error.to_string()))
             },
         }
+    }
+
+    pub fn collect_telemetry(
+        &self,
+        plugin_id: &str,
+    ) -> Result<aicore_contracts::telemetry::snapshot::ComputerSnapshot, ActivationError> {
+        let handle = {
+            let active = self
+                .active
+                .lock()
+                .map_err(|_| ActivationError::Lifecycle("active lock poisoned".into()))?;
+            let entry = active
+                .get(plugin_id)
+                .ok_or_else(|| ActivationError::NotActive(plugin_id.into()))?;
+            if !entry
+                .interfaces
+                .iter()
+                .any(|name| name == TELEMETRY_INTERFACE)
+            {
+                return Err(ActivationError::Rejected(
+                    "telemetry capability not bound".into(),
+                ));
+            }
+            entry.handle.clone()
+        };
+        if self.host.state(&handle) != PluginHostState::Running {
+            self.mark_failed(plugin_id, "plugin process is no longer running");
+            return Err(ActivationError::NotActive(plugin_id.into()));
+        }
+        match self.host.call(&handle, &HostRequest::ReadTelemetry) {
+            Ok(HostResponse::Telemetry { snapshot }) => Ok(*snapshot),
+            Ok(other) => {
+                self.mark_failed(plugin_id, "plugin returned wrong telemetry response");
+                Err(ActivationError::Rejected(format!(
+                    "unexpected telemetry response: {other:?}"
+                )))
+            },
+            Err(error) => {
+                self.mark_failed(plugin_id, &error.to_string());
+                Err(ActivationError::Host(error.to_string()))
+            },
+        }
+    }
+
+    pub fn set_priority(
+        &self,
+        plugin_id: &str,
+        pid: u32,
+        priority: PolicyPriority,
+    ) -> Result<(), ActivationError> {
+        if pid == 0 {
+            return Err(ActivationError::Rejected(
+                "process priority requires an explicit nonzero PID".into(),
+            ));
+        }
+        let handle = {
+            let active = self
+                .active
+                .lock()
+                .map_err(|_| ActivationError::Lifecycle("active lock poisoned".into()))?;
+            let entry = active
+                .get(plugin_id)
+                .ok_or_else(|| ActivationError::NotActive(plugin_id.into()))?;
+            if !entry
+                .interfaces
+                .iter()
+                .any(|name| name == PROCESS_PRIORITY_INTERFACE)
+            {
+                return Err(ActivationError::Rejected(
+                    "process priority capability not bound".into(),
+                ));
+            }
+            entry.handle.clone()
+        };
+        if self.host.state(&handle) != PluginHostState::Running {
+            self.mark_failed(plugin_id, "plugin process is no longer running");
+            return Err(ActivationError::NotActive(plugin_id.into()));
+        }
+        match self
+            .host
+            .call(&handle, &HostRequest::SetPriority { pid, priority })
+        {
+            Ok(HostResponse::PrioritySet {
+                pid: acknowledged_pid,
+                priority: acknowledged_priority,
+            }) if acknowledged_pid == pid && acknowledged_priority == priority => Ok(()),
+            Ok(other) => {
+                self.mark_failed(plugin_id, "plugin returned wrong priority response");
+                Err(ActivationError::Rejected(format!(
+                    "unexpected priority response: {other:?}"
+                )))
+            },
+            Err(error) => {
+                self.mark_failed(plugin_id, &error.to_string());
+                Err(ActivationError::Host(error.to_string()))
+            },
+        }
+    }
+
+    pub fn bound_process_priority_ids(&self) -> Result<Vec<String>, ActivationError> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| ActivationError::Lifecycle("active lock poisoned".into()))?;
+        let mut ids: Vec<_> = active
+            .iter()
+            .filter(|(_, entry)| {
+                entry
+                    .interfaces
+                    .iter()
+                    .any(|name| name == PROCESS_PRIORITY_INTERFACE)
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        ids.sort();
+        Ok(ids)
+    }
+
+    pub fn bound_telemetry_ids(&self) -> Result<Vec<String>, ActivationError> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| ActivationError::Lifecycle("active lock poisoned".into()))?;
+        let mut ids: Vec<_> = active
+            .iter()
+            .filter(|(_, entry)| {
+                entry
+                    .interfaces
+                    .iter()
+                    .any(|name| name == TELEMETRY_INTERFACE)
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        ids.sort();
+        Ok(ids)
     }
 
     pub fn refresh_health(&self) {
@@ -296,13 +564,39 @@ impl PluginActivationManager {
             ));
         }
         if manifest.interfaces.iter().any(|interface| {
-            interface != EXECUTE_INTERFACE || !pin.allowed_interfaces.contains(interface)
-        }) || manifest.interfaces.is_empty()
+            !matches!(
+                interface.as_str(),
+                EXECUTE_INTERFACE | TELEMETRY_INTERFACE | PROCESS_PRIORITY_INTERFACE
+            ) || !pin.allowed_interfaces.contains(interface)
+        }) || (manifest
+            .interfaces
+            .iter()
+            .any(|interface| interface == TELEMETRY_INTERFACE)
+            && (manifest.kind != aicore_contracts::plugin::manifest::PluginKind::Telemetry
+                || !manifest
+                    .permissions
+                    .contains(&PluginPermission::TelemetryRead)))
+            || (manifest
+                .interfaces
+                .iter()
+                .any(|interface| interface == PROCESS_PRIORITY_INTERFACE)
+                && (manifest.kind != aicore_contracts::plugin::manifest::PluginKind::Adapter
+                    || !manifest
+                        .permissions
+                        .contains(&PluginPermission::ProcessControl)
+                    || !pin.allow_control))
+            || manifest.interfaces.is_empty()
             || manifest
                 .permissions
                 .iter()
                 .any(|permission| !pin.allowed_permissions.contains(permission))
-            || manifest.requests_control()
+            || (manifest.requests_control()
+                && (manifest.permissions.iter().any(|permission| {
+                    permission.is_control() && *permission != PluginPermission::ProcessControl
+                }) || !manifest
+                    .interfaces
+                    .iter()
+                    .any(|interface| interface == PROCESS_PRIORITY_INTERFACE)))
         {
             return Err(ActivationError::Rejected(
                 "manifest requests an unbound interface or unpinned permission".into(),
@@ -474,6 +768,9 @@ mod tests {
         spawned: AtomicUsize,
         stopped: AtomicUsize,
         crashed: AtomicBool,
+        fail_next_stop: AtomicBool,
+        wrong_priority_ack: AtomicBool,
+        priority_calls: AtomicUsize,
     }
 
     impl IPluginHost for MockHost {
@@ -489,6 +786,11 @@ mod tests {
         }
 
         fn stop(&self, _handle: &PluginProcessHandle) -> AicoreResult<()> {
+            if self.fail_next_stop.swap(false, Ordering::SeqCst) {
+                return Err(aicore_contracts::errors::AicoreError::PluginFailed(
+                    "mock stop failure".into(),
+                ));
+            }
             self.stopped.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -521,6 +823,20 @@ mod tests {
             Ok(match request {
                 HostRequest::Ping => HostResponse::Pong,
                 HostRequest::Execute { input } => HostResponse::Result { output: input + 1 },
+                HostRequest::ReadTelemetry => HostResponse::Telemetry {
+                    snapshot: Box::default(),
+                },
+                HostRequest::SetPriority { pid, priority } => {
+                    self.priority_calls.fetch_add(1, Ordering::SeqCst);
+                    HostResponse::PrioritySet {
+                        pid: if self.wrong_priority_ack.load(Ordering::SeqCst) {
+                            pid.saturating_add(1)
+                        } else {
+                            *pid
+                        },
+                        priority: *priority,
+                    }
+                },
                 HostRequest::Shutdown => HostResponse::ShuttingDown,
             })
         }
@@ -623,6 +939,171 @@ mod tests {
     }
 
     #[test]
+    fn pinned_replacement_keeps_old_process_on_failure_and_supports_rollback() {
+        let original = Fixture::new();
+        let mut upgraded = Fixture::new();
+        upgraded.discovered.manifest.version = "2.0".into();
+        let bytes = serde_json::to_vec(&upgraded.discovered.manifest).unwrap();
+        std::fs::write(&upgraded.pin.manifest_path, &bytes).unwrap();
+        upgraded.pin.manifest_sha256 =
+            SignatureVerifier::compute_sha256_from_bytes(&bytes).hash_hex;
+        let host = Arc::new(MockHost::default());
+        let manager = manager(&original, host.clone());
+        manager
+            .activate(&original.discovered, &original.pin)
+            .unwrap();
+        let mut invalid = upgraded.pin.clone();
+        invalid.artifact_sha256 = "0".repeat(64);
+        assert!(manager
+            .replace_active(&upgraded.discovered, &invalid)
+            .is_err());
+        assert_eq!(host.spawned.load(Ordering::SeqCst), 1);
+        assert_eq!(host.stopped.load(Ordering::SeqCst), 0);
+        assert_eq!(manager.call_extension("echo", 1).unwrap(), 2);
+        host.fail_next_stop.store(true, Ordering::SeqCst);
+        assert!(manager
+            .replace_active(&upgraded.discovered, &upgraded.pin)
+            .is_err());
+        assert_eq!(
+            manager
+                .registry
+                .get("echo")
+                .unwrap()
+                .unwrap()
+                .manifest
+                .version,
+            "1.0"
+        );
+        assert_eq!(manager.call_extension("echo", 1).unwrap(), 2);
+        manager
+            .replace_active(&upgraded.discovered, &upgraded.pin)
+            .unwrap();
+        assert_eq!(
+            manager
+                .registry
+                .get("echo")
+                .unwrap()
+                .unwrap()
+                .manifest
+                .version,
+            "2.0"
+        );
+        assert_eq!(host.spawned.load(Ordering::SeqCst), 3);
+        assert_eq!(host.stopped.load(Ordering::SeqCst), 2);
+        manager
+            .replace_active(&original.discovered, &original.pin)
+            .unwrap();
+        assert_eq!(
+            manager
+                .registry
+                .get("echo")
+                .unwrap()
+                .unwrap()
+                .manifest
+                .version,
+            "1.0"
+        );
+        assert_eq!(host.spawned.load(Ordering::SeqCst), 4);
+        assert_eq!(host.stopped.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn typed_telemetry_requires_kind_permission_and_pin() {
+        let mut fixture = Fixture::new();
+        fixture.discovered.manifest.kind = PluginKind::Telemetry;
+        fixture.discovered.manifest.interfaces = vec![TELEMETRY_INTERFACE.into()];
+        fixture.discovered.manifest.permissions = vec![PluginPermission::TelemetryRead];
+        let bytes = serde_json::to_vec(&fixture.discovered.manifest).unwrap();
+        std::fs::write(&fixture.pin.manifest_path, &bytes).unwrap();
+        fixture.pin.manifest_sha256 = SignatureVerifier::compute_sha256_from_bytes(&bytes).hash_hex;
+        fixture.pin.allowed_interfaces = vec![TELEMETRY_INTERFACE.into()];
+        fixture.pin.allowed_permissions = vec![PluginPermission::TelemetryRead];
+        let host = Arc::new(MockHost::default());
+        let active_manager = Arc::new(manager(&fixture, host.clone()));
+        active_manager
+            .activate(&fixture.discovered, &fixture.pin)
+            .unwrap();
+        assert_eq!(
+            active_manager
+                .collect_telemetry("echo")
+                .unwrap()
+                .collected_at_unix_ms,
+            None
+        );
+        let provider = ManagedPluginTelemetryProvider::new(active_manager.clone(), "echo");
+        assert_eq!(provider.collect().unwrap().collected_at_unix_ms, None);
+        assert!(active_manager.call_extension("echo", 1).is_err());
+        active_manager.stop("echo").unwrap();
+        assert!(provider.collect().is_err());
+
+        let mut unpinned = fixture.pin.clone();
+        unpinned.allowed_permissions.clear();
+        let manager = manager(&fixture, host.clone());
+        assert!(manager.activate(&fixture.discovered, &unpinned).is_err());
+        assert_eq!(host.spawned.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn typed_priority_control_requires_exact_operator_pin_and_fails_closed() {
+        let mut fixture = Fixture::new();
+        fixture.discovered.manifest.kind = PluginKind::Adapter;
+        fixture.discovered.manifest.interfaces = vec![PROCESS_PRIORITY_INTERFACE.into()];
+        fixture.discovered.manifest.permissions = vec![PluginPermission::ProcessControl];
+        let bytes = serde_json::to_vec(&fixture.discovered.manifest).unwrap();
+        std::fs::write(&fixture.pin.manifest_path, &bytes).unwrap();
+        fixture.pin.manifest_sha256 = SignatureVerifier::compute_sha256_from_bytes(&bytes).hash_hex;
+        fixture.pin.allowed_interfaces = vec![PROCESS_PRIORITY_INTERFACE.into()];
+        fixture.pin.allowed_permissions = vec![PluginPermission::ProcessControl];
+
+        let host = Arc::new(MockHost::default());
+        let without_control = manager(&fixture, host.clone());
+        assert!(without_control
+            .activate(&fixture.discovered, &fixture.pin)
+            .is_err());
+        assert_eq!(host.spawned.load(Ordering::SeqCst), 0);
+
+        fixture.pin.allow_control = true;
+        let active_manager = Arc::new(manager(&fixture, host.clone()));
+        active_manager
+            .activate(&fixture.discovered, &fixture.pin)
+            .unwrap();
+        assert_eq!(
+            active_manager.bound_process_priority_ids().unwrap(),
+            vec!["echo"]
+        );
+        let controller = ManagedPluginProcessController::new(active_manager.clone(), "echo");
+        assert!(controller.set_priority(0, PolicyPriority::High).is_err());
+        assert_eq!(host.priority_calls.load(Ordering::SeqCst), 0);
+        controller.set_priority(42, PolicyPriority::High).unwrap();
+        assert!(controller.get_priority(42).is_err());
+        assert!(controller
+            .set_affinity(
+                42,
+                &aicore_contracts::traits::process_controller::AffinityMask::new(vec![0])
+            )
+            .is_err());
+        host.wrong_priority_ack.store(true, Ordering::SeqCst);
+        assert!(controller.set_priority(42, PolicyPriority::High).is_err());
+        assert_eq!(
+            active_manager.registry.get("echo").unwrap().unwrap().state,
+            PluginState::Failed
+        );
+        assert!(controller.set_priority(42, PolicyPriority::High).is_err());
+
+        let mut wrong_kind = fixture.discovered.clone();
+        wrong_kind.manifest.kind = PluginKind::Telemetry;
+        let invalid_bytes = serde_json::to_vec(&wrong_kind.manifest).unwrap();
+        std::fs::write(&fixture.pin.manifest_path, &invalid_bytes).unwrap();
+        let mut invalid_pin = fixture.pin.clone();
+        invalid_pin.manifest_sha256 =
+            SignatureVerifier::compute_sha256_from_bytes(&invalid_bytes).hash_hex;
+        let registry = Arc::new(PluginRegistry::new());
+        registry.register(wrong_kind.manifest.clone()).unwrap();
+        let invalid_manager = PluginActivationManager::new(registry, host.clone());
+        assert!(invalid_manager.activate(&wrong_kind, &invalid_pin).is_err());
+    }
+
+    #[test]
     fn changed_artifact_is_rejected_before_spawn() {
         let mut fixture = Fixture::new();
         fixture.pin.artifact_sha256 = "0".repeat(64);
@@ -655,6 +1136,9 @@ mod tests {
             Err(ActivationError::NotActive(_))
         ));
         assert_eq!(host.stopped.load(Ordering::SeqCst), 1);
+        host.crashed.store(false, Ordering::SeqCst);
+        manager.activate(&fixture.discovered, &fixture.pin).unwrap();
+        assert_eq!(manager.call_extension("echo", 2).unwrap(), 3);
     }
 
     #[test]

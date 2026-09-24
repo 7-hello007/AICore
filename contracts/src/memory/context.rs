@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+use crate::application::id::ApplicationId;
 use crate::context::workload::WorkloadType;
 use crate::policy::resource_policy::PowerMode;
 
 use super::record::HistoricalRecord;
+
+type ApplicationWorkloadCounts = (ApplicationId, u8, Vec<(WorkloadType, usize)>);
 
 /// 从历史记录推导出来的轻量级上下文。
 ///
@@ -17,6 +20,18 @@ pub struct MemoryContext {
     /// Opt-in aggregate by UTC hour; contains no application names or raw events.
     #[serde(default)]
     pub hourly_patterns: Vec<HourlyWorkloadPattern>,
+    /// Opt-in aggregate of explicit application task identifiers.
+    #[serde(default)]
+    pub application_patterns: Vec<ApplicationHourlyPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ApplicationHourlyPattern {
+    pub application_id: ApplicationId,
+    pub hour_utc: u8,
+    pub dominant_workload: WorkloadType,
+    pub sample_count: usize,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -98,12 +113,58 @@ impl MemoryContext {
             })
             .collect();
 
+        let mut per_app: Vec<ApplicationWorkloadCounts> = Vec::new();
+        for record in records {
+            let Some(app) = &record.application_id else {
+                continue;
+            };
+            if record.workload_type == WorkloadType::Unknown {
+                continue;
+            }
+            let hour = ((record.timestamp_unix_ms / 3_600_000) % 24) as u8;
+            let index = match per_app
+                .iter()
+                .position(|(id, h, _)| id == app && *h == hour)
+            {
+                Some(index) => index,
+                None => {
+                    per_app.push((app.clone(), hour, Vec::new()));
+                    per_app.len() - 1
+                },
+            };
+            let counts = &mut per_app[index].2;
+            if let Some((_, count)) = counts.iter_mut().find(|(w, _)| *w == record.workload_type) {
+                *count += 1;
+            } else {
+                counts.push((record.workload_type, 1));
+            }
+        }
+        let application_patterns = per_app
+            .into_iter()
+            .filter_map(|(application_id, hour_utc, counts)| {
+                let sample_count: usize = counts.iter().map(|(_, count)| count).sum();
+                if sample_count < 3 {
+                    return None;
+                }
+                let (dominant_workload, dominant_count) =
+                    counts.iter().max_by_key(|(_, count)| *count)?;
+                Some(ApplicationHourlyPattern {
+                    application_id,
+                    hour_utc,
+                    dominant_workload: *dominant_workload,
+                    sample_count,
+                    confidence: *dominant_count as f32 / sample_count as f32,
+                })
+            })
+            .collect();
+
         Self {
             recent_workloads: recent,
             dominant_workload: dominant,
             preferred_power_mode: preferred_power,
             sample_count: records.len(),
             hourly_patterns,
+            application_patterns,
         }
     }
 }
@@ -118,6 +179,7 @@ mod tests {
 
     fn record(day: u64, workload_type: WorkloadType) -> HistoricalRecord {
         HistoricalRecord {
+            application_id: None,
             record_id: format!("day-{}", day),
             timestamp_unix_ms: (day * 24 + 14) * 3_600_000,
             workload_type,
@@ -148,5 +210,28 @@ mod tests {
         assert_eq!(pattern.dominant_workload, WorkloadType::Development);
         assert_eq!(pattern.sample_count, 4);
         assert!((pattern.confidence - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn explicit_application_pattern_is_separate_and_legacy_record_stays_readable() {
+        let app = ApplicationId::new("app.editor");
+        let mut records = vec![
+            record(0, WorkloadType::Development),
+            record(1, WorkloadType::Development),
+            record(2, WorkloadType::Development),
+        ];
+        for entry in &mut records {
+            entry.application_id = Some(app.clone());
+        }
+        let other = record(3, WorkloadType::Gaming);
+        records.push(other);
+        let context = MemoryContext::from_records(&records);
+        assert_eq!(context.application_patterns.len(), 1);
+        assert_eq!(context.application_patterns[0].application_id, app);
+        assert_eq!(context.application_patterns[0].sample_count, 3);
+        let mut legacy = serde_json::to_value(&records[0]).unwrap();
+        legacy.as_object_mut().unwrap().remove("application_id");
+        let parsed: HistoricalRecord = serde_json::from_value(legacy).unwrap();
+        assert_eq!(parsed.application_id, None);
     }
 }

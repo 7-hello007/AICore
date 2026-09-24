@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aicore_contracts::{
     context::workload::WorkloadType,
@@ -40,6 +40,49 @@ use crate::metrics::MetricsCollector;
 use crate::safe_mode::SafeModeController;
 
 static RECORD_ID_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Immutable result of the slow observation/planning side. Only a validated
+/// policy reaches the apply side; dropping an unused plan fails its dequeued
+/// tasks instead of leaving them Running forever.
+pub struct PreparedTick {
+    tick_id: u64,
+    trace: TraceContext,
+    start: Instant,
+    max_age: Option<Duration>,
+    mode_before: RuntimeMode,
+    state: aicore_core::domain::computer_state::ComputerState,
+    context: aicore_contracts::context::snapshot::ContextSnapshot,
+    prediction: Option<aicore_contracts::prediction::output::Prediction>,
+    application_id: Option<aicore_contracts::application::id::ApplicationId>,
+    tasks: PreparedTaskGuard,
+    runtime_route: Option<aicore_contracts::runtime::route::RuntimeRoute>,
+    runtime_binding: Option<BindingResult>,
+    binding_deferred: bool,
+    policy: ResourcePolicy,
+    snap_fields: SnapshotFields,
+}
+
+struct PreparedTaskGuard {
+    tasks: Vec<aicore_contracts::task::queued::QueuedTask>,
+    queue: Option<Arc<dyn ITaskQueue>>,
+    armed: bool,
+}
+
+impl Drop for PreparedTaskGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            if let Some(queue) = &self.queue {
+                for task in &self.tasks {
+                    if let Err(error) =
+                        queue.fail(&task.task_id, "prepared policy expired or discarded".into())
+                    {
+                        tracing::warn!(component="adaptive_loop", event="prepared_task_cleanup_failed", task_id=%task.task_id, error=%error);
+                    }
+                }
+            }
+        }
+    }
+}
 
 fn historical_record_id(timestamp_unix_ms: u64, tick_id: u64) -> String {
     let sequence = RECORD_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -177,6 +220,22 @@ impl AdaptiveLoop {
         &self.metrics
     }
 
+    pub(crate) fn has_model_only_effects(&self) -> bool {
+        self.executor.name() == "model_policy_executor"
+            && self
+                .runtime_binder
+                .as_ref()
+                .is_some_and(|binder| binder.name() == "model_runtime_binder")
+    }
+
+    pub(crate) fn memory_store(&self) -> Option<Arc<dyn IMemoryStore>> {
+        self.memory.clone()
+    }
+
+    pub(crate) fn may_record_history(memory: &Arc<dyn IMemoryStore>) -> bool {
+        Self::should_record_history(memory)
+    }
+
     fn now_unix_ms() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -215,6 +274,7 @@ impl AdaptiveLoop {
         context: aicore_contracts::context::snapshot::ContextSnapshot,
         state: &aicore_core::domain::computer_state::ComputerState,
         memory_ctx: &Option<MemoryContext>,
+        application_id: Option<aicore_contracts::application::id::ApplicationId>,
     ) -> (
         aicore_contracts::context::snapshot::ContextSnapshot,
         Option<aicore_contracts::prediction::output::Prediction>,
@@ -225,6 +285,7 @@ impl AdaptiveLoop {
         };
 
         let input = PredictionInput {
+            application_id,
             snapshot: state.snapshot.clone(),
             context: context.clone(),
             memory: memory_ctx.clone(),
@@ -356,8 +417,29 @@ impl AdaptiveLoop {
     }
 }
 
-impl IRuntimeOrchestrator for AdaptiveLoop {
-    fn tick(&self, targets: &ExecutionTargets) -> TickOutcome {
+impl AdaptiveLoop {
+    /// Slow side for model execution: telemetry, history, prediction, policy
+    /// validation and model binding. Platform binding can change device state
+    /// and must instead be deferred until a fresh plan reaches the apply side.
+    pub fn prepare_tick(
+        &self,
+        max_age: Option<Duration>,
+    ) -> Result<PreparedTick, Box<TickOutcome>> {
+        self.prepare_tick_inner(max_age, false)
+    }
+
+    pub(crate) fn prepare_platform_tick(
+        &self,
+        max_age: Duration,
+    ) -> Result<PreparedTick, Box<TickOutcome>> {
+        self.prepare_tick_inner(Some(max_age), true)
+    }
+
+    fn prepare_tick_inner(
+        &self,
+        max_age: Option<Duration>,
+        defer_binding: bool,
+    ) -> Result<PreparedTick, Box<TickOutcome>> {
         let tick_id = self.tick_counter.fetch_add(1, Ordering::SeqCst) + 1;
         let trace = TraceContext::new(tick_id);
         let start = Instant::now();
@@ -390,7 +472,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                     "telemetry collect failed"
                 );
 
-                return TickOutcome {
+                return Err(Box::new(TickOutcome {
                     tick_id,
                     trace_id: trace.trace_id.clone(),
                     timestamp_unix_ms: Self::now_unix_ms(),
@@ -416,7 +498,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                     current_policy_json: None,
                     runtime_route_json: None,
                     ai_runtime_health_json: None,
-                };
+                }));
             },
         };
 
@@ -450,9 +532,6 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             "context built"
         );
 
-        let memory_ctx = self.build_memory_context();
-        let (mut context, prediction) = self.apply_prediction(context, &state, &memory_ctx);
-
         // 2.5：L1 显式 task contract 优先于 L0 推断；L2 provider 独立注册。
         let tier_task = self.tier_hub.as_ref().and_then(|hub| {
             hub.best_task_source()
@@ -462,8 +541,20 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         });
         // 一个 tick 只执行一个 task，避免一个 policy 被错误地用于多个任务后又全部标记完成。
         const MAX_TASKS_PER_TICK: usize = 1;
-        let active_tasks = self.dequeue_tasks(MAX_TASKS_PER_TICK);
+        let mut tasks = PreparedTaskGuard {
+            tasks: self.dequeue_tasks(MAX_TASKS_PER_TICK),
+            queue: self.task_queue.clone(),
+            armed: true,
+        };
+        let active_tasks = &tasks.tasks;
         let active_task = active_tasks.first();
+        let application_id = tier_task
+            .as_ref()
+            .or_else(|| active_task.map(|task| &task.contract))
+            .map(|contract| contract.application_id.clone());
+        let memory_ctx = self.build_memory_context();
+        let (mut context, prediction) =
+            self.apply_prediction(context, &state, &memory_ctx, application_id.clone());
         if let Some(contract) = tier_task.as_ref() {
             context = apply_task_contract(context, contract);
         }
@@ -492,7 +583,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         }
 
         let runtime_route = self.decide_runtime_route(&state, &context);
-        let mut runtime_binding: Option<BindingResult> = None;
+        let runtime_binding: Option<BindingResult> = None;
         tracing::debug!(
             component = "adaptive_loop",
             event = "runtime_routing",
@@ -575,7 +666,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         if !validation.accepted {
             self.metrics.record_policy_rejected();
             if let Some(queue) = &self.task_queue {
-                for task in &active_tasks {
+                for task in active_tasks {
                     if let Err(error) = queue.fail(
                         &task.task_id,
                         format!("policy rejected: {:?}", validation.issues),
@@ -590,6 +681,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                     }
                 }
             }
+            tasks.armed = false;
             let mode_after = self.safe_mode.record_failure();
             let duration_ms = start.elapsed().as_millis() as u64;
             self.metrics.record_tick(false, duration_ms);
@@ -605,7 +697,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                 "policy rejected by validator"
             );
 
-            return TickOutcome {
+            return Err(Box::new(TickOutcome {
                 tick_id,
                 trace_id: trace.trace_id.clone(),
                 timestamp_unix_ms: Self::now_unix_ms(),
@@ -633,11 +725,101 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                 runtime_route_json: snap_fields.runtime_route_json.clone(),
                 ai_runtime_health_json: snap_fields.ai_runtime_health_json.clone(),
                 runtime_binding_reason: runtime_binding.as_ref().map(|b| b.reason.clone()),
-            };
+            }));
         }
 
         // Policy 已通过 Validator；此后才允许 Runtime Binder 产生推理/硬件副作用。
-        runtime_binding = self.execute_runtime_binding(runtime_route.as_ref(), &state, &context);
+        let runtime_binding = if defer_binding {
+            None
+        } else {
+            self.execute_runtime_binding(runtime_route.as_ref(), &state, &context)
+        };
+
+        Ok(PreparedTick {
+            tick_id,
+            trace,
+            start,
+            max_age,
+            mode_before,
+            state,
+            context,
+            prediction,
+            application_id,
+            tasks,
+            runtime_route,
+            runtime_binding,
+            binding_deferred: defer_binding,
+            policy,
+            snap_fields,
+        })
+    }
+
+    /// Apply only a fresh, validated immutable plan. Platform plans defer
+    /// potentially state-changing binding until after expiry and mode checks.
+    pub fn apply_prepared_tick(
+        &self,
+        prepared: PreparedTick,
+        targets: &ExecutionTargets,
+    ) -> TickOutcome {
+        self.apply_prepared_tick_inner(prepared, targets, None)
+    }
+
+    pub(crate) fn apply_prepared_tick_with_history_sender(
+        &self,
+        prepared: PreparedTick,
+        targets: &ExecutionTargets,
+        history_sender: Option<&mpsc::SyncSender<HistoricalRecord>>,
+    ) -> TickOutcome {
+        self.apply_prepared_tick_inner(prepared, targets, history_sender)
+    }
+
+    fn apply_prepared_tick_inner(
+        &self,
+        prepared: PreparedTick,
+        targets: &ExecutionTargets,
+        history_sender: Option<&mpsc::SyncSender<HistoricalRecord>>,
+    ) -> TickOutcome {
+        let PreparedTick {
+            tick_id,
+            trace,
+            start,
+            max_age,
+            mode_before,
+            state,
+            context,
+            prediction,
+            application_id,
+            mut tasks,
+            runtime_route,
+            runtime_binding,
+            binding_deferred,
+            policy,
+            snap_fields,
+        } = prepared;
+        if max_age.is_some_and(|age| start.elapsed() > age)
+            || (max_age.is_some() && self.safe_mode.current_mode() != mode_before)
+        {
+            return self.neutral_tick("prepared policy expired before apply");
+        }
+        if let Some(queue) = &self.task_queue {
+            for task in &tasks.tasks {
+                match queue.get(&task.task_id) {
+                    Ok(Some(current))
+                        if current.state
+                            == aicore_contracts::task::lifecycle::TaskState::Running => {},
+                    _ => {
+                        tasks.armed = false;
+                        return self.neutral_tick("prepared task was revoked before apply");
+                    },
+                }
+            }
+        }
+        let runtime_binding = if binding_deferred {
+            self.execute_runtime_binding(runtime_route.as_ref(), &state, &context)
+        } else {
+            runtime_binding
+        };
+        let active_tasks = tasks.tasks.clone();
 
         // Platform mode 可从本 tick 的真实 telemetry 推导 process targets；显式 targets 始终优先。
         let effective_targets = derive_execution_targets(targets, &state.snapshot);
@@ -720,7 +902,11 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
 
         // 6. Measure
         let duration_ms = start.elapsed().as_millis() as u64;
-        self.metrics.record_tick(exec_success, duration_ms);
+        if exec_success || exec_failure {
+            self.metrics.record_tick(exec_success, duration_ms);
+        } else {
+            self.metrics.record_neutral_tick(duration_ms);
+        }
 
         // 7. SafeMode 转换
         // - 成功 → record_success（重置失败计数）
@@ -737,9 +923,6 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             && mode_after != mode_before
         {
             self.metrics.record_safe_mode_entry();
-        }
-        if matches!(overall, ExecutionOverallStatus::NoOp) {
-            self.metrics.record_noop_tick();
         }
         if mode_after != mode_before {
             if let Some(bus) = &self.event_bus {
@@ -781,10 +964,11 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
         // 8. Learn：写入历史（若已启用）
         let mut recorded = false;
         if let Some(memory) = &self.memory {
-            if Self::should_record_history(memory) {
+            if history_sender.is_some() || Self::should_record_history(memory) {
                 let timestamp_unix_ms = Self::now_unix_ms();
                 let record = HistoricalRecord {
                     record_id: historical_record_id(timestamp_unix_ms, tick_id),
+                    application_id,
                     timestamp_unix_ms,
                     workload_type: context.workload_type,
                     interaction_level: context.interaction_level,
@@ -797,7 +981,15 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
                     memory_usage_percent: state.snapshot.memory.usage_percent,
                     power_mode: policy.power.mode,
                 };
-                if memory.append_record(&record).is_ok() {
+                if let Some(sender) = history_sender {
+                    if sender.try_send(record).is_err() {
+                        tracing::warn!(
+                            component = "adaptive_loop",
+                            event = "history_queue_full",
+                            "history record not queued"
+                        );
+                    }
+                } else if memory.append_record(&record).is_ok() {
                     recorded = true;
                 }
             }
@@ -818,6 +1010,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             "tick finished"
         );
 
+        tasks.armed = false;
         TickOutcome {
             tick_id,
             trace_id: trace.trace_id.clone(),
@@ -846,6 +1039,29 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
             runtime_route_json: snap_fields.runtime_route_json.clone(),
             ai_runtime_health_json: snap_fields.ai_runtime_health_json.clone(),
             runtime_binding_reason: runtime_binding.as_ref().map(|b| b.reason.clone()),
+        }
+    }
+
+    pub fn neutral_tick(&self, reason: &str) -> TickOutcome {
+        let tick_id = self.tick_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        self.metrics.record_neutral_tick(0);
+        TickOutcome {
+            tick_id,
+            trace_id: TraceContext::new(tick_id).trace_id,
+            timestamp_unix_ms: Self::now_unix_ms(),
+            mode_after: self.safe_mode.current_mode(),
+            execution_status: Some(ExecutionOverallStatus::NoOp),
+            message: reason.into(),
+            ..Default::default()
+        }
+    }
+}
+
+impl IRuntimeOrchestrator for AdaptiveLoop {
+    fn tick(&self, targets: &ExecutionTargets) -> TickOutcome {
+        match self.prepare_tick(None) {
+            Ok(prepared) => self.apply_prepared_tick(prepared, targets),
+            Err(outcome) => *outcome,
         }
     }
 

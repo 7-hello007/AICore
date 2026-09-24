@@ -18,4 +18,9 @@ pub struct LoopMetrics {
     pub ai_inference_count: u64,
     pub ai_fallback_count: u64,
     pub safe_mode_entries: u64,
+    /// Measured only by the split Model Mode driver, in microseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_fast_control_us: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_slow_prepare_us: Option<u64>,
 }

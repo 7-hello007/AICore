@@ -115,6 +115,31 @@ impl IPredictor for ShortHorizonPredictor {
             )));
         }
 
+        // Explicit application patterns outrank system-wide history when a
+        // registered task identifies the app; absent identity never guesses.
+        if let (Some(app), Some(timestamp_unix_ms)) =
+            (&input.application_id, input.snapshot.collected_at_unix_ms)
+        {
+            let hour = ((timestamp_unix_ms / 3_600_000) % 24) as u8;
+            if let Some(pattern) = memory.application_patterns.iter().find(|pattern| {
+                &pattern.application_id == app
+                    && pattern.hour_utc == hour
+                    && pattern.sample_count >= self.min_samples
+                    && pattern.confidence >= self.min_confidence.max(0.65)
+            }) {
+                return Ok(Prediction {
+                    predicted_workload: pattern.dominant_workload,
+                    confidence: pattern.confidence,
+                    horizon_ms: self.horizon_ms,
+                    reason: format!(
+                        "registered application UTC hour {} pattern from {} samples",
+                        hour, pattern.sample_count
+                    ),
+                    predictor_name: self.name().to_string(),
+                });
+            }
+        }
+
         // 1. 一致性
         if let Some(pred) = self.try_consistent(&memory.recent_workloads, memory.sample_count) {
             return Ok(pred);

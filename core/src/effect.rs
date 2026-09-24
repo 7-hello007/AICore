@@ -1,12 +1,43 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use aicore_contracts::{
+    context::workload::WorkloadType,
     effect::{
-        EffectAssessment, EffectComparison, EffectVerdict, MeasurementSource, OverheadBudget,
+        EffectAssessment, EffectComparison, EffectSample, EffectVerdict, MeasurementSource,
+        OverheadBudget,
     },
     errors::{ContractError, ContractResult},
 };
+
+/// Measure a caller-owned workload completion with a monotonic clock. Only
+/// latency is observed here; throughput and energy remain unavailable unless
+/// an independent collector supplies them. A failed workload yields no sample.
+pub fn observe_workload<T>(
+    workload_type: WorkloadType,
+    run: impl FnOnce() -> ContractResult<T>,
+) -> ContractResult<(T, EffectSample)> {
+    let started = Instant::now();
+    let output = run()?;
+    let latency_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let timestamp_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| ContractError::ResourceUnavailable(format!("system clock: {error}")))?
+        .as_millis()
+        .min(u64::MAX as u128) as u64;
+    Ok((
+        output,
+        EffectSample {
+            source: MeasurementSource::Observed,
+            timestamp_unix_ms,
+            workload_type,
+            latency_ms: Some(latency_ms),
+            throughput_per_sec: None,
+            energy_mwh: None,
+        },
+    ))
+}
 
 /// Evaluates measured effects without turning simulated or absent readings
 /// into an observed improvement. The optional control sample is a concurrent
@@ -161,6 +192,30 @@ mod tests {
             max_slow_ms: 100,
             max_memory_mb: 32,
         }
+    }
+
+    #[test]
+    fn isolated_workload_records_only_measured_latency() {
+        let (first, sample) = observe_workload(WorkloadType::Development, || {
+            let mut values: Vec<u32> = (0..100_000).rev().collect();
+            values.sort_unstable();
+            Ok(values[0])
+        })
+        .unwrap();
+        assert_eq!(first, 0);
+        assert_eq!(sample.source, MeasurementSource::Observed);
+        assert!(sample.timestamp_unix_ms > 0);
+        assert!(sample
+            .latency_ms
+            .is_some_and(|value| value.is_finite() && value > 0.0));
+        assert_eq!(sample.throughput_per_sec, None);
+        assert_eq!(sample.energy_mwh, None);
+
+        let failed: ContractResult<((), EffectSample)> =
+            observe_workload(WorkloadType::Development, || {
+                Err(ContractError::InvalidRequest("workload failed".into()))
+            });
+        assert!(matches!(failed, Err(ContractError::InvalidRequest(_))));
     }
 
     #[test]

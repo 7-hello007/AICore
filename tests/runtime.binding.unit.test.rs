@@ -112,7 +112,7 @@ fn ai_runtime_route_without_backend_not_executed() {
 }
 
 #[test]
-fn ai_runtime_route_bound_without_inference() {
+fn ai_runtime_route_without_inference_does_not_claim_execution() {
     let (rt, handle) = onnx_backend();
     let b = DefaultRuntimeBinder::new().with_ai_runtime(rt, handle);
     let req = BindingRequest {
@@ -121,9 +121,9 @@ fn ai_runtime_route_bound_without_inference() {
         inference: None,
     };
     let res = b.bind_and_execute(&req).unwrap();
-    assert!(res.executed);
+    assert!(!res.executed);
     assert!(res.inference.is_none());
-    assert!(res.reason.contains("bound"));
+    assert!(res.reason.contains("no inference payload"));
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn ai_runtime_route_with_inference_executes() {
 }
 
 #[test]
-fn cpu_route_uses_ai_runtime() {
+fn cpu_route_without_inference_does_not_claim_execution() {
     let (rt, handle) = onnx_backend();
     let b = DefaultRuntimeBinder::new().with_ai_runtime(rt, handle);
     let req = BindingRequest {
@@ -158,7 +158,8 @@ fn cpu_route_uses_ai_runtime() {
         inference: None,
     };
     let res = b.bind_and_execute(&req).unwrap();
-    assert!(res.executed);
+    assert!(!res.executed);
+    assert!(res.inference.is_none());
 }
 
 #[test]

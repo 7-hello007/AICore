@@ -10,6 +10,7 @@ members = [
     "examples/plugin-echo",
     "adapters/windows",
     "adapters/linux",
+    "adapters/simulated-platform",
     "ai",
     "ai-runtime",
     "memory",

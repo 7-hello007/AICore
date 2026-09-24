@@ -27,6 +27,7 @@ use aicore_memory::{build_memory_context, InMemoryStore};
 
 fn record(w: WorkloadType, mode: PowerMode) -> HistoricalRecord {
     HistoricalRecord {
+        application_id: None,
         record_id: "r".to_string(),
         timestamp_unix_ms: 1_700_000_000,
         workload_type: w,

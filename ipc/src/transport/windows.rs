@@ -74,7 +74,7 @@ impl IpcStream {
     }
 }
 
-fn process_creation_time(pid: u32) -> Option<u64> {
+pub(crate) fn process_creation_time(pid: u32) -> Option<u64> {
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
     use windows_sys::Win32::System::Threading::{
         GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -96,6 +96,27 @@ fn process_creation_time(pid: u32) -> Option<u64> {
     // SAFETY: this handle was returned by OpenProcess above.
     unsafe { CloseHandle(process) };
     (result != 0).then_some(((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64)
+}
+
+pub(crate) fn process_identity_stale(pid: u32, created_at_100ns: u64) -> bool {
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, WAIT_OBJECT_0,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: PID originated from the pipe peer query; the returned handle is
+    // closed on every successful-open path. Unknown access errors fail closed.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return unsafe { GetLastError() } == ERROR_INVALID_PARAMETER;
+    }
+    // SAFETY: the process handle is valid; zero timeout only queries state.
+    let wait = unsafe { WaitForSingleObject(process, 0) };
+    // SAFETY: this handle was returned by OpenProcess above.
+    unsafe { CloseHandle(process) };
+    wait == WAIT_OBJECT_0
+        || process_creation_time(pid).is_some_and(|current| current != created_at_100ns)
 }
 
 #[async_trait]

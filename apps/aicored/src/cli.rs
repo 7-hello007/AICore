@@ -28,7 +28,7 @@ OPTIONS:
     --ipc-path <PATH>       IPC socket path (default: temp dir/aicore/aicored.sock)
     --memory-path <PATH>    SQLite memory path (default: temp dir/aicore/memory.db)
     --plugins-dir <PATH>    Plugins directory (default: temp dir/aicore/plugins)
-    --plugin-policy <PATH>  Operator-pinned plugin activation policy (platform mode only)
+    --plugin-policy <PATH>  Operator-pinned plugin activation policy (native platform mode only)
     --log-format <FMT>      plain | json (default plain)
     --once                  Run exactly one tick and exit
     -h, --help              Print help

@@ -16,6 +16,7 @@ const BASE_MS: u64 = 1_700_000_000_000;
 
 fn record(id: &str, ts: u64) -> HistoricalRecord {
     HistoricalRecord {
+        application_id: None,
         record_id: id.to_string(),
         timestamp_unix_ms: ts,
         workload_type: WorkloadType::Development,

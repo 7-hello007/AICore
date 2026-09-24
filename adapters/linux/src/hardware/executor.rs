@@ -13,6 +13,28 @@ use crate::telemetry::sysfs;
 
 const DRM_BASE: &str = "/sys/class/drm";
 
+fn drm_card(device_id: &str) -> Option<&str> {
+    let card = device_id.strip_prefix("drm:card")?;
+    if card.is_empty() || !card.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    device_id.strip_prefix("drm:")
+}
+
+fn workload_target(hint: &HardwareExecutionHint) -> Option<&'static str> {
+    match hint {
+        HardwareExecutionHint::WorkloadPreference(value) => match value.as_str() {
+            "compute" | "performance" => Some("high"),
+            "graphics" | "auto" => Some("auto"),
+            "low" | "power_save" => Some("low"),
+            _ => None,
+        },
+        HardwareExecutionHint::GraphicsMode | HardwareExecutionHint::AutoMode => Some("auto"),
+        HardwareExecutionHint::ComputeMode => Some("high"),
+        HardwareExecutionHint::MaxPowerWatts(_) => None,
+    }
+}
+
 /// Linux 硬件执行器（尽力而为）。
 ///
 /// 支持路径：
@@ -37,7 +59,7 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
     fn apply(&self, req: &HardwareExecutionRequest) -> ContractResult<HardwareExecutionResult> {
         let start = Instant::now();
 
-        let card = match req.device_id.strip_prefix("drm:") {
+        let card = match drm_card(&req.device_id) {
             Some(c) => c,
             None => {
                 return Ok(HardwareExecutionResult {
@@ -74,25 +96,17 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
             });
         }
 
-        let target = match &req.hint {
-            HardwareExecutionHint::WorkloadPreference(s) => match s.as_str() {
-                "compute" | "performance" => "high",
-                "graphics" | "auto" => "auto",
-                "low" | "power_save" => "low",
-                _ => "auto",
-            },
-            HardwareExecutionHint::MaxPowerWatts(_) => {
+        let target = match workload_target(&req.hint) {
+            Some(target) => target,
+            None => {
                 return Ok(HardwareExecutionResult {
                     device_id: req.device_id.clone(),
                     status: HardwareExecutionStatus::NotSupported {
-                        reason: "power cap not supported via sysfs here".to_string(),
+                        reason: "unsupported GPU workload hint or power cap".to_string(),
                     },
                     latency_ms: start.elapsed().as_millis() as u64,
                 });
             },
-            HardwareExecutionHint::GraphicsMode => "auto",
-            HardwareExecutionHint::ComputeMode => "high",
-            HardwareExecutionHint::AutoMode => "auto",
         };
 
         // 读当前值，若已一致则 AlreadyInState
@@ -146,5 +160,30 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
 
     fn executor_name(&self) -> &'static str {
         "linux_hardware_executor"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_id_cannot_escape_drm_card_directory() {
+        assert_eq!(drm_card("drm:card0"), Some("card0"));
+        for invalid in ["drm:card", "drm:card0/device", "drm:../card0", "drm:card-1"] {
+            assert_eq!(drm_card(invalid), None);
+        }
+    }
+
+    #[test]
+    fn unknown_workload_preference_has_no_write_target() {
+        assert_eq!(
+            workload_target(&HardwareExecutionHint::WorkloadPreference("unknown".into())),
+            None
+        );
+        assert_eq!(
+            workload_target(&HardwareExecutionHint::MaxPowerWatts(10.0)),
+            None
+        );
     }
 }

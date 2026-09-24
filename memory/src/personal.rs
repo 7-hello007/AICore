@@ -32,6 +32,7 @@ mod tests {
 
     fn record(id: &str, timestamp_unix_ms: u64) -> HistoricalRecord {
         HistoricalRecord {
+            application_id: None,
             record_id: id.into(),
             timestamp_unix_ms,
             workload_type: WorkloadType::Development,

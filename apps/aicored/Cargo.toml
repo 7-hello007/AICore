@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 aicore-contracts = { path = "../../contracts" }
+aicore-adapter-simulated-platform = { path = "../../adapters/simulated-platform" }
 aicore-core = { path = "../../core" }
 aicore-runtime = { path = "../../runtime" }
 aicore-runtime-router = { path = "../../runtime-router" }

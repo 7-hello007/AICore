@@ -1,17 +1,20 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc as sync_mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use aicore_api::ApplicationRegistry;
 use aicore_contracts::{
+    capability::entry::CapabilityEntry,
     runtime::{daemon_config::DaemonConfig, daemon_status::DaemonStatus, tick::TickOutcome},
     traits::runtime_orchestrator::IRuntimeOrchestrator,
 };
 use aicore_ipc::{IpcHandler, IpcServer};
 use aicore_plugin::{
-    discover_from_dir, register_discovered, PluginActivationManager, PluginActivationPolicy,
+    discover_from_dir, register_discovered, ManagedPluginProcessController,
+    ManagedPluginTelemetryProvider, PluginActivationManager, PluginActivationPolicy,
     PluginRegistry, SubprocessPluginHost,
 };
+use aicore_runtime::dual_loop::{ModelTickDriver, PlatformTickDriver};
 use tokio::sync::mpsc;
 
 use crate::ipc_handler::DaemonIpcHandler;
@@ -44,6 +47,7 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         once,
         mut shutdown_rx,
     } = params;
+    let mut runtime = runtime;
 
     let pid = std::process::id();
     let status = Arc::new(Mutex::new(DaemonStatus::new(pid)));
@@ -69,14 +73,16 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         ),
     }
 
-    let activation =
-        PluginActivationManager::new(plugins.clone(), Arc::new(SubprocessPluginHost::new()));
-    let policy = if runtime.model_mode {
+    let activation = Arc::new(PluginActivationManager::new(
+        plugins.clone(),
+        Arc::new(SubprocessPluginHost::new()),
+    ));
+    let policy = if runtime.model_mode || runtime.simulated_platform {
         if plugin_policy.is_some() {
             tracing::warn!(
                 component = "aicored",
-                event = "model_plugin_activation_disabled",
-                "Model Mode never starts external plugin processes"
+                event = "isolated_plugin_activation_disabled",
+                "Model Mode and simulated Platform Mode never start external plugin processes"
             );
         }
         None
@@ -111,6 +117,63 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
             tracing::warn!(component="aicored", event="plugin_activation_rejected", plugin=%discovered.manifest.name, error=%error);
         }
     }
+    if !runtime.model_mode && !runtime.simulated_platform {
+        match activation.bound_telemetry_ids() {
+            Ok(ids) if ids.len() == 1 => {
+                runtime
+                    .telemetry_selection
+                    .bind(Arc::new(ManagedPluginTelemetryProvider::new(
+                        activation.clone(),
+                        ids[0].clone(),
+                    )))
+            },
+            Ok(ids) if ids.len() > 1 => tracing::warn!(
+                component = "aicored",
+                event = "plugin_telemetry_ambiguous",
+                count = ids.len(),
+                "multiple telemetry plugins; platform source retained"
+            ),
+            Ok(_) => {},
+            Err(error) => {
+                tracing::warn!(component="aicored", event="plugin_telemetry_unavailable", error=%error)
+            },
+        }
+        match activation.bound_process_priority_ids() {
+            Ok(ids) if ids.len() == 1 => {
+                if let Err(error) =
+                    runtime
+                        .process_selection
+                        .bind(Arc::new(ManagedPluginProcessController::new(
+                            activation.clone(),
+                            ids[0].clone(),
+                        )))
+                {
+                    tracing::warn!(component="aicored", event="plugin_process_control_bind_failed", error=%error);
+                } else if let Some(entry) = runtime
+                    .capabilities
+                    .iter_mut()
+                    .find(|entry| entry.name == "process.affinity.write")
+                {
+                    *entry = CapabilityEntry::unsupported(
+                        "process.affinity.write",
+                        "selected typed process plugin binds priority only",
+                    );
+                }
+            },
+            Ok(ids) if ids.len() > 1 => tracing::warn!(
+                component = "aicored",
+                event = "plugin_process_control_ambiguous",
+                count = ids.len(),
+                "multiple process controllers; no plugin control bound"
+            ),
+            Ok(_) => {},
+            Err(error) => tracing::warn!(
+                component = "aicored",
+                event = "plugin_process_control_unavailable",
+                error = %error
+            ),
+        }
+    }
 
     let last_policy_json: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let last_context_json: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -123,6 +186,38 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
 
     let interval_ms = config.telemetry.sampling_interval_ms;
     let write_every = config.state_write_interval_ticks;
+    let model_driver = if runtime.model_mode && !once {
+        Some(ModelTickDriver::new(
+            runtime.loop_.clone(),
+            targets.clone(),
+            Duration::from_millis(interval_ms),
+        )?)
+    } else {
+        None
+    };
+    let platform_driver = if !runtime.model_mode && !once {
+        Some(PlatformTickDriver::new(
+            runtime.loop_.clone(),
+            targets.clone(),
+            Duration::from_millis(interval_ms),
+        )?)
+    } else {
+        None
+    };
+    let retention_sender = if let (true, Some(retention)) = (!once, &runtime.retention) {
+        let (sender, receiver) = sync_mpsc::sync_channel::<u64>(1);
+        let retention = retention.clone();
+        std::thread::Builder::new()
+            .name("aicore-model-retention".into())
+            .spawn(move || {
+                while let Ok(now) = receiver.recv() {
+                    run_retention(&retention, now);
+                }
+            })?;
+        Some(sender)
+    } else {
+        None
+    };
 
     tracing::info!(
         component = "aicored",
@@ -133,11 +228,12 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         state_path = %state_path.display(),
         ipc_path = %ipc_path.display(),
         plugins_dir = %plugins_dir.display(),
+        declared_hardware_devices = runtime.hardware_matrices.len(),
         "daemon started"
     );
 
     let registry = Arc::new(ApplicationRegistry::new());
-    let handler: Arc<dyn IpcHandler> = Arc::new(DaemonIpcHandler::new(
+    let handler = Arc::new(DaemonIpcHandler::new(
         registry,
         status.clone(),
         history.clone(),
@@ -150,6 +246,32 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         last_policy_json.clone(),
         last_context_json.clone(),
     ));
+
+    let stale_reaper = if once {
+        None
+    } else {
+        let handler = handler.clone();
+        Some(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let handler = handler.clone();
+                match tokio::task::spawn_blocking(move || handler.reap_stale_applications()).await {
+                    Ok(Ok(0)) => {},
+                    Ok(Ok(count)) => {
+                        tracing::info!(component = "aicored", event = "stale_apps_reaped", count)
+                    },
+                    Ok(Err(error)) => {
+                        tracing::warn!(component="aicored", event="stale_app_reap_failed", error=%error.message)
+                    },
+                    Err(error) => {
+                        tracing::warn!(component="aicored", event="stale_app_reap_join_failed", error=%error)
+                    },
+                }
+            }
+        }))
+    };
+    let handler: Arc<dyn IpcHandler> = handler;
 
     let (ipc_shutdown_tx, ipc_shutdown_rx) = mpsc::channel::<()>(1);
     let ipc_server = IpcServer::bind(ipc_path.clone(), handler)?.with_shutdown(ipc_shutdown_rx);
@@ -200,7 +322,13 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
 
             _ = interval.tick() => {
                 activation.refresh_health();
-                let outcome = runtime.loop_.tick(&targets);
+                let outcome = if let Some(driver) = &model_driver {
+                    driver.tick()
+                } else if let Some(driver) = &platform_driver {
+                    driver.tick()
+                } else {
+                    runtime.loop_.tick(&targets)
+                };
                 let count = {
                     let mut guard = status.lock().expect("status lock");
                     guard.record_tick(&outcome);
@@ -209,30 +337,16 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
                 history.append(&outcome);
                 log_tick(&outcome);
 
-                // V3-J：Retention 检查
+                // Retention may touch disk; continuous modes keep it outside the fast tick.
                 if let Some(retention) = &runtime.retention {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
+                        .map(|d| d.as_millis().min(u64::MAX as u128) as u64)
                         .unwrap_or(0);
-                    if retention.should_run(now) {
-                        match retention.run_once_at(now) {
-                            Ok(report) => tracing::info!(
-                                component = "aicored",
-                                event = "retention_ran",
-                                removed = report.records_removed,
-                                retention_days = report.retention_days,
-                                skipped = report.skipped,
-                                success = report.success,
-                                "retention ran"
-                            ),
-                            Err(e) => tracing::warn!(
-                                component = "aicored",
-                                event = "retention_failed",
-                                error = %e,
-                                "retention failed"
-                            ),
-                        }
+                    if let Some(sender) = &retention_sender {
+                        let _ = sender.try_send(now);
+                    } else {
+                        run_retention(retention, now);
                     }
                 }
 
@@ -252,6 +366,9 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     }
 
     let _ = ipc_shutdown_tx.send(()).await;
+    if let Some(task) = stale_reaper {
+        task.abort();
+    }
     if let Some(task) = ipc_task {
         let _ = tokio::time::timeout(Duration::from_millis(config.shutdown_timeout_ms), task).await;
     }
@@ -269,6 +386,29 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     let guard = status.lock().expect("status lock");
     let _ = write_status_atomic(&state_path, &guard);
     Ok(())
+}
+
+fn run_retention(retention: &aicore_memory::RetentionScheduler, now_unix_ms: u64) {
+    if !retention.should_run(now_unix_ms) {
+        return;
+    }
+    match retention.run_once_at(now_unix_ms) {
+        Ok(report) => tracing::info!(
+            component = "aicored",
+            event = "retention_ran",
+            removed = report.records_removed,
+            retention_days = report.retention_days,
+            skipped = report.skipped,
+            success = report.success,
+            "retention ran"
+        ),
+        Err(error) => tracing::warn!(
+            component = "aicored",
+            event = "retention_failed",
+            error = %error,
+            "retention failed"
+        ),
+    }
 }
 
 fn read_activation_policy(
@@ -322,4 +462,58 @@ fn log_tick(outcome: &TickOutcome) {
         prediction_conf = ?outcome.prediction_confidence,
         "tick completed"
     );
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use aicore_task_runtime::InMemoryTaskQueue;
+
+    #[tokio::test]
+    async fn model_daemon_uses_bounded_slow_worker_and_shuts_down() {
+        let root = std::env::temp_dir().join(format!(
+            "aicore-model-daemon-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let queue: Arc<dyn aicore_contracts::traits::task_queue::ITaskQueue> =
+            Arc::new(InMemoryTaskQueue::new());
+        let runtime = crate::runtime::build_runtime_for_mode(None, Some(queue.clone()), true);
+        assert!(runtime.model_mode);
+        assert!(runtime.hardware_matrices.is_empty());
+        let mut config = DaemonConfig::default();
+        config.telemetry.sampling_interval_ms = 100;
+        config.state_write_interval_ticks = 1;
+        let state_path = root.join("state.json");
+        let (sender, receiver) = mpsc::channel(1);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            let _ = sender.send(()).await;
+        });
+        run(SchedulerConfig {
+            runtime,
+            config,
+            state_path: state_path.clone(),
+            ipc_path: root.join("daemon.sock"),
+            plugins_dir: root.join("plugins"),
+            plugin_policy: None,
+            task_queue: queue,
+            once: false,
+            shutdown_rx: receiver,
+        })
+        .await
+        .expect("isolated model daemon");
+        let status: DaemonStatus =
+            serde_json::from_slice(&std::fs::read(&state_path).expect("model state file"))
+                .expect("valid model status");
+        assert!(status.tick_count >= 2);
+        assert!(status.last_tick.is_some());
+        assert!(
+            status.successful_ticks > 0,
+            "a prepared model policy should be applied"
+        );
+    }
 }

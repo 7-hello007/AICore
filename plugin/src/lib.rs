@@ -9,7 +9,8 @@ pub mod signature;
 pub mod trust;
 
 pub use activation::{
-    ActivationError, IManagedPluginHost, PluginActivationManager, PluginActivationPin,
+    ActivationError, IManagedPluginHost, ManagedPluginProcessController,
+    ManagedPluginTelemetryProvider, PluginActivationManager, PluginActivationPin,
     PluginActivationPolicy,
 };
 pub use discovery::{

@@ -1,0 +1,803 @@
+{
+  "source": "LinuxTelemetryProvider + LinuxCapabilityProvider + LinuxHardwareTelemetryProvider + LinuxProcessController + LinuxPowerController; read-only; identifying strings redacted",
+  "snapshot": {
+    "collected_at_unix_ms": 1790222399165,
+    "freshness_ms": 0,
+    "cpu": {
+      "usage_percent": 3.0054646,
+      "temperature_celsius": null,
+      "logical_cores": 16,
+      "physical_cores": null,
+      "frequency_mhz": 0,
+      "per_core_usage": [
+        16.0,
+        4.347826,
+        8.695652,
+        8.695652,
+        4.347826,
+        4.347826,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        4.347826,
+        4.166667,
+        4.166667,
+        0.0,
+        0.0
+      ]
+    },
+    "gpu": {
+      "name": null,
+      "usage_percent": null,
+      "memory_used_mb": null,
+      "memory_total_mb": null,
+      "temperature_celsius": null,
+      "vendor": null
+    },
+    "npu": {
+      "name": null,
+      "usage_percent": null,
+      "available": false,
+      "vendor": null
+    },
+    "memory": {
+      "total_mb": 15632,
+      "used_mb": 1677,
+      "available_mb": 13955,
+      "usage_percent": 10.727994,
+      "swap_total_mb": 4096,
+      "swap_used_mb": 0
+    },
+    "disks": [
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 7.632900238037109,
+        "used_gb": 0.0,
+        "available_gb": 7.632900238037109,
+        "usage_percent": 0.0
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 500.00097274780273,
+        "used_gb": 471.37445068359375,
+        "available_gb": 28.626522064208984,
+        "usage_percent": 94.274704
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 1006.853931427002,
+        "used_gb": 82.67513275146484,
+        "available_gb": 924.1787986755371,
+        "usage_percent": 8.211234
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 1006.853931427002,
+        "used_gb": 82.67513275146484,
+        "available_gb": 924.1787986755371,
+        "usage_percent": 8.211234
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 7.632900238037109,
+        "used_gb": 0.0,
+        "available_gb": 7.632900238037109,
+        "usage_percent": 0.0
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 7.632900238037109,
+        "used_gb": 0.000072479248046875,
+        "available_gb": 7.6328277587890625,
+        "usage_percent": 0.0009495637
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 7.632900238037109,
+        "used_gb": 0.000072479248046875,
+        "available_gb": 7.6328277587890625,
+        "usage_percent": 0.0009495637
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 500.00097274780273,
+        "used_gb": 471.37445068359375,
+        "available_gb": 28.626522064208984,
+        "usage_percent": 94.274704
+      },
+      {
+        "mount_point": "<redacted>",
+        "total_gb": 451.64355087280273,
+        "used_gb": 423.55766677856445,
+        "available_gb": 28.08588409423828,
+        "usage_percent": 93.7814
+      }
+    ],
+    "networks": [
+      {
+        "interface": "<redacted>",
+        "received_bytes": 1745165,
+        "transmitted_bytes": 2092330,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      },
+      {
+        "interface": "<redacted>",
+        "received_bytes": 65131440,
+        "transmitted_bytes": 65131440,
+        "received_bytes_per_sec": 0,
+        "transmitted_bytes_per_sec": 0
+      }
+    ],
+    "temperature": {
+      "cpu_celsius": null,
+      "gpu_celsius": null,
+      "system_celsius": null
+    },
+    "battery": {
+      "present": true,
+      "percentage": 75.0,
+      "charging": false,
+      "time_remaining_sec": null
+    },
+    "power": {
+      "ac_connected": true,
+      "power_plan": null,
+      "cpu_power_watts": null,
+      "gpu_power_watts": null
+    },
+    "top_processes": [
+      {
+        "pid": 79376,
+        "name": "<redacted>",
+        "cpu_usage_percent": 13.114754,
+        "memory_mb": 6,
+        "is_foreground": false
+      },
+      {
+        "pid": 76625,
+        "name": "<redacted>",
+        "cpu_usage_percent": 4.3715844,
+        "memory_mb": 75,
+        "is_foreground": false
+      },
+      {
+        "pid": 76646,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 75,
+        "is_foreground": false
+      },
+      {
+        "pid": 76668,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 421,
+        "is_foreground": false
+      },
+      {
+        "pid": 76788,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 63,
+        "is_foreground": false
+      },
+      {
+        "pid": 76671,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 421,
+        "is_foreground": false
+      },
+      {
+        "pid": 76596,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 134,
+        "is_foreground": false
+      },
+      {
+        "pid": 76712,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 37,
+        "is_foreground": false
+      },
+      {
+        "pid": 76791,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 63,
+        "is_foreground": false
+      },
+      {
+        "pid": 157,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 2,
+        "is_foreground": false
+      },
+      {
+        "pid": 79681,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 6,
+        "is_foreground": false
+      },
+      {
+        "pid": 79685,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 6,
+        "is_foreground": false
+      },
+      {
+        "pid": 76595,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 134,
+        "is_foreground": false
+      },
+      {
+        "pid": 76573,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 1,
+        "is_foreground": false
+      },
+      {
+        "pid": 278,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 2,
+        "is_foreground": false
+      },
+      {
+        "pid": 76654,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 130,
+        "is_foreground": false
+      },
+      {
+        "pid": 264,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 9,
+        "is_foreground": false
+      },
+      {
+        "pid": 76653,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 130,
+        "is_foreground": false
+      },
+      {
+        "pid": 76725,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 37,
+        "is_foreground": false
+      },
+      {
+        "pid": 76640,
+        "name": "<redacted>",
+        "cpu_usage_percent": 0.0,
+        "memory_mb": 62,
+        "is_foreground": false
+      }
+    ],
+    "applications": []
+  },
+  "capabilities": [
+    {
+      "name": "cpu.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "memory.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "disk.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "network.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.priority.read",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.priority.write",
+      "status": "conditional",
+      "detail": "limited to processes permitted by the current UID and OS policy"
+    },
+    {
+      "name": "power.profile",
+      "status": "unsupported",
+      "detail": "no platform_profile or cpufreq governor available"
+    },
+    {
+      "name": "temperature.telemetry",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "gpu.telemetry",
+      "status": "partial",
+      "detail": "best effort via /sys/class/drm; vendor coverage varies"
+    },
+    {
+      "name": "gpu.control",
+      "status": "unsupported",
+      "detail": "no generic GPU control path detected"
+    },
+    {
+      "name": "npu.telemetry",
+      "status": "unsupported",
+      "detail": "no /sys/class/accel device"
+    },
+    {
+      "name": "npu.control",
+      "status": "unsupported",
+      "detail": "vendor runtime required; Linux has no portable cross-vendor NPU control ABI"
+    },
+    {
+      "name": "foreground.telemetry",
+      "status": "unsupported",
+      "detail": "xdotool not installed or Wayland session"
+    },
+    {
+      "name": "process.affinity.read",
+      "status": "supported",
+      "detail": null
+    },
+    {
+      "name": "process.affinity.write",
+      "status": "conditional",
+      "detail": "limited to processes permitted by the current UID, cpuset and OS policy"
+    }
+  ],
+  "processes": {
+    "157": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "264": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "278": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76573": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76595": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76596": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76625": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76640": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76646": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76653": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76654": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76668": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76671": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76712": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76725": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76788": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "76791": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "79376": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "79681": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    "79685": {
+      "priority": "normal",
+      "affinity_cores": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    }
+  },
+  "power_profile": null,
+  "gpu_samples": [],
+  "npu_samples": [],
+  "hardware_matrices": []
+}

@@ -68,12 +68,15 @@ impl IpcListener {
             io::Error::new(io::ErrorKind::PermissionDenied, "IPC peer PID unavailable")
         })?;
         let start_time_ticks = read_process_start_time(pid)?;
+        let (executable_dev, executable_ino) = read_process_executable_identity(pid)?;
         Ok(IpcStream::from_stream(
             stream,
             ClientIdentity::Linux {
                 uid: credentials.uid(),
                 pid,
                 start_time_ticks,
+                executable_dev,
+                executable_ino,
             },
         ))
     }
@@ -147,7 +150,13 @@ pub async fn client_connect(path: impl AsRef<Path>) -> io::Result<IpcStream> {
     ))
 }
 
-fn read_process_start_time(pid: i32) -> io::Result<u64> {
+pub(crate) fn read_process_executable_identity(pid: i32) -> io::Result<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(format!("/proc/{pid}/exe"))?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+pub(crate) fn read_process_start_time(pid: i32) -> io::Result<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     parse_process_start_time(&stat).ok_or_else(|| {
         io::Error::new(

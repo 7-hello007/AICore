@@ -9,6 +9,7 @@ use aicore_memory::InMemoryStore;
 
 fn rec(id: &str, w: WorkloadType, mode: PowerMode) -> HistoricalRecord {
     HistoricalRecord {
+        application_id: None,
         record_id: id.to_string(),
         timestamp_unix_ms: 1_700_000_000,
         workload_type: w,

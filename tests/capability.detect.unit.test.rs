@@ -90,12 +90,16 @@ fn capability_lookup_by_name_works() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn linux_declares_process_write_supported() {
+fn linux_declares_process_write_conditional_on_current_permissions() {
     let p = PlatformCapabilityProvider::new();
     let cap = p
         .capability("process.priority.write")
         .expect("linux process.priority.write present");
-    assert_eq!(cap.status, CapabilityStatus::Supported);
+    assert_eq!(cap.status, CapabilityStatus::Conditional);
+    assert!(cap
+        .detail
+        .as_deref()
+        .is_some_and(|detail| detail.contains("UID")));
 }
 
 #[cfg(target_os = "windows")]

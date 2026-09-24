@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use aicore_contracts::runtime::metrics::LoopMetrics;
 
@@ -20,6 +20,10 @@ pub struct MetricsCollector {
     ai_inference_count: AtomicU64,
     ai_fallback_count: AtomicU64,
     safe_mode_entries: AtomicU64,
+    last_fast_control_us: AtomicU64,
+    last_slow_prepare_us: AtomicU64,
+    has_fast_control: AtomicBool,
+    has_slow_prepare: AtomicBool,
 }
 
 impl MetricsCollector {
@@ -42,6 +46,31 @@ impl MetricsCollector {
 
     pub fn record_noop_tick(&self) {
         self.noop_ticks.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_neutral_tick(&self, duration_ms: u64) {
+        self.total_ticks.fetch_add(1, Ordering::SeqCst);
+        self.last_tick_duration_ms
+            .store(duration_ms, Ordering::SeqCst);
+        self.total_tick_duration_ms
+            .fetch_add(duration_ms, Ordering::SeqCst);
+        self.record_noop_tick();
+    }
+
+    pub fn record_fast_control(&self, duration: std::time::Duration) {
+        self.last_fast_control_us.store(
+            duration.as_micros().min(u64::MAX as u128) as u64,
+            Ordering::Relaxed,
+        );
+        self.has_fast_control.store(true, Ordering::Release);
+    }
+
+    pub fn record_slow_prepare(&self, duration: std::time::Duration) {
+        self.last_slow_prepare_us.store(
+            duration.as_micros().min(u64::MAX as u128) as u64,
+            Ordering::Relaxed,
+        );
+        self.has_slow_prepare.store(true, Ordering::Release);
     }
 
     pub fn record_ai_inference(&self) {
@@ -87,6 +116,14 @@ impl MetricsCollector {
             ai_inference_count: self.ai_inference_count.load(Ordering::Relaxed),
             ai_fallback_count: self.ai_fallback_count.load(Ordering::Relaxed),
             safe_mode_entries: self.safe_mode_entries.load(Ordering::Relaxed),
+            last_fast_control_us: self
+                .has_fast_control
+                .load(Ordering::Acquire)
+                .then(|| self.last_fast_control_us.load(Ordering::Relaxed)),
+            last_slow_prepare_us: self
+                .has_slow_prepare
+                .load(Ordering::Acquire)
+                .then(|| self.last_slow_prepare_us.load(Ordering::Relaxed)),
         }
     }
 }

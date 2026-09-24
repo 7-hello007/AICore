@@ -15,3 +15,4 @@ tracing-subscriber.workspace = true
 memchr = { workspace = true }
 aicore-tier = { path = "../tier" }
 aicore-memory = { path = "../memory" }
+aicore-ai-runtime = { path = "../ai-runtime" }

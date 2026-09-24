@@ -35,6 +35,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aicore-adapter-simulated-platform"
+version = "0.4.0"
+dependencies = [
+ "aicore-adapter-linux",
+ "aicore-contracts",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aicore-adapter-windows"
 version = "0.4.0"
 dependencies = [
@@ -130,6 +140,7 @@ name = "aicore-daemon"
 version = "0.4.0"
 dependencies = [
  "aicore-adapter-linux",
+ "aicore-adapter-simulated-platform",
  "aicore-adapter-windows",
  "aicore-ai",
  "aicore-ai-runtime",
@@ -234,6 +245,7 @@ dependencies = [
 name = "aicore-runtime"
 version = "0.4.0"
 dependencies = [
+ "aicore-ai-runtime",
  "aicore-contracts",
  "aicore-core",
  "aicore-memory",

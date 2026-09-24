@@ -1,5 +1,270 @@
 # AICore destination implementation and verification report
 
+## Continuation: 2026-09-24 (captured Platform Simulator)
+
+Destination completion remains **NO / NOT VERIFIED**. This continuation added
+`adapters/simulated-platform` and selected it with
+`AICORE_EXECUTION_MODE=simulated-platform`. The adapter implements the existing
+platform contracts with shared in-memory state, not host setters. Its Linux/WSL
+fixture was produced by actual read-only Adapter calls and redacts identifying
+strings; see `docs/platform/PLATFORM_SIMULATOR.md` for provenance and SHA-256.
+The daemon's continuous Platform Mode uses `PlatformTickDriver` with simulated
+telemetry, policy execution, postcondition readback and runtime binding. Plugin
+subprocess activation is disabled in this mode. The one-tick daemon path is
+still synchronous.
+
+Four daemon integration tests passed for captured PID readback, a 250 ms slow
+provider with a prompt neutral fast tick and expired-plan rejection, fresh
+prepared-policy application, stale readback causing rollback without a false
+success, and repeated write failures entering SafeMode. Three simulator unit
+tests passed for affinity restoration, absent hardware/power and fixture
+identity checks. `PluginActivationManager::replace_active` now asks the
+registry to validate replacement *before* stopping the old process; registry
+commit and old-process stop share the registry lock. The existing mock
+upgrade/rollback test passed after this correction.
+
+| Check | Result and scope |
+|---|---|
+| `cargo check --workspace --all-targets --locked` | **PASS**, exit 0, Linux workspace |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | **PASS**, exit 0 |
+| `cargo fmt --all -- --check` | **PASS**, exit 0 |
+| `bash scripts/verify/model_safe_workspace_tests.sh` | **PASS**, exit 0: 139 targets, 697 passed, 0 failed, 0 ignored, 43 filtered native-control/host tests |
+| `cargo test -p aicore-adapter-simulated-platform --all-targets --locked` | **PASS**, exit 0: 3 unit tests, capture example compiles |
+| `cargo test -p aicore-daemon simulated_platform_tests -- --test-threads=1` | **PASS**, exit 0: 4 isolated integration tests |
+| `bash scripts/verify/simulated_platform_smoke.sh` | **PASS**, exit 0: one `--once` tick and 30 continuous ticks in a temporary directory; final run had 17 successful in-memory executions, 0 failed, remaining ticks neutral/NoOp (an earlier run had 16 successes; timing affects the count) |
+| Isolated `AICORE_EXECUTION_MODE=model target/debug/aicored --once ...` | **PASS**, exit 0: local JSON model loaded, one model tick, no host control |
+| Read-only Linux telemetry, capability, hardware telemetry and hardware capability targets | **PASS**, exit 0: 20 tests across four targets; the fixture capture was a separate read-only Adapter run |
+| `cargo check -p aicore-adapter-simulated-platform -p aicore-plugin --all-targets --locked --target x86_64-pc-windows-msvc` | **PASS**, exit 0: source compilation only |
+| `cargo check -p aicore-daemon --all-targets --locked --target x86_64-pc-windows-msvc` | **FAIL**, exit 1 in WSL: bundled `libsqlite3-sys` requires MSVC `lib.exe`, absent here; no Windows daemon behavior inferred |
+| `bash scripts/audit_v4_static.sh`, `bash scripts/audit_v32_static.sh`, `bash -n scripts/verify/simulated_platform_smoke.sh`, `git diff --check` | **PASS**, exit 0; V4 audit parsed 110 declared Rust test files |
+| Unfiltered `cargo test --workspace --all-targets --locked` | **SKIPPED**: 43 reviewed tests may invoke native controls or host-sensitive paths; tests remain enabled |
+
+The seven named protected residual files retain their pre-change SHA-256
+hashes, and `git ls-files --deleted` is empty. The initial full file list was
+captured under `/tmp`, but that temporary file was no longer present at final
+comparison; therefore a literal whole-tree before/after diff is **NOT
+VERIFIED**. No tracked file was deleted. The new crate, fixture, smoke script
+and simulator document are additions. No host configuration change was
+requested or approved; no installer or service was run. A Windows-local Rust
+version probe unexpectedly invoked `rustup`'s partially installed toolchain
+repair/download path, so Windows-native build execution was stopped; the WSL
+MSVC-target compile result above is the only Windows code evidence here.
+
+The remaining destination gaps are the same substantive product acceptance
+gaps in the table below: no actual local LLM model/provider or GPU/NPU model
+backend, no operator-approved application artifact/SID policy, no paired
+observed workload benefit or policy feedback, no advanced native GPU/NPU/power
+actuation evidence, and no native Windows IPC/service or real-control deadline
+certification. The WSL fixture has no controllable GPU/NPU or power profile;
+simulator success cannot replace those observations. A future real-control
+request must list a stable PID/name, target device, exact change, before-state,
+scope and rollback and await explicit approval.
+
+## Current continuation: 2026-09-24 (fail-closed input and read-only validation)
+
+Destination completion is **NO / NOT VERIFIED**. The Linux hardware executor
+now accepts only `drm:card<digits>` device IDs and known workload hints.
+Unknown hints and power caps return NotSupported before any GPU write. Linux
+and Windows power adapters no longer interpret an unfamiliar OS power scheme
+as Balanced: readback reports CapabilityUnavailable. The typed plugin priority
+bridge rejects PID 0 before sending a request, because PID 0 has special
+process-control meaning on some platforms. These are contract/safety fixes;
+they add no product capability. Linux IPC now also captures the peer
+executable device/inode and rechecks it on every application-scoped request.
+A replaced executable loses authorization, while an unreadable identity is
+denied for that request without transferring ownership to another peer.
+This is a process-artifact continuity check, not an operator-approved
+application signing/SID policy. An isolated observed-workload helper now
+measures successful caller-owned work with a monotonic clock and leaves
+throughput/energy absent. Its CPU fixture is an actual local computation,
+but no policy intervention or paired control was run; benefit remains
+unverified. Personal-memory consent/retention and SQLite tests used only
+in-memory or isolated fixtures, not personal user data.
+
+| Current check | Result and scope |
+|---|---|
+| `cargo test -p aicore-adapter-linux --lib --locked` | PASS, exit 0: 5 tests, including three new pure fail-closed tests; no control call |
+| `cargo test -p aicore-plugin activation::tests::typed_priority_control_requires_exact_operator_pin_and_fails_closed --locked` | PASS, exit 0: 1 mock test; PID 0 causes no host request |
+| `cargo check -p aicore-adapter-windows --all-targets --locked --offline --target x86_64-pc-windows-msvc` | PASS, exit 0: code compilation only |
+| `cargo test -p aicore-ipc --lib --locked` | PASS, exit 0: 9 tests, including changed-executable identity and per-request rejection |
+| `cargo test -p aicore-daemon --bin aicored --locked ipc_handler::tests::` | PASS, exit 0: 6 isolated IPC task/owner tests |
+| `cargo test -p aicore-core effect::tests:: --locked` | PASS, exit 0: 4 effect tests, including a measured isolated CPU workload and failed-workload rejection |
+| `cargo test -p aicore-memory personal::tests --locked` plus SQLite/retention targets | PASS, exit 0: 15 consent, retention and store tests using isolated data |
+| `cargo check --workspace --all-targets --locked` | PASS, exit 0 |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | PASS, exit 0 |
+| `cargo fmt --all -- --check` | PASS, exit 0 |
+| `bash scripts/verify/model_safe_workspace_tests.sh` | PASS, exit 0: 137 targets, 690 passed, 0 failed, 0 ignored, 43 filtered after all source changes |
+| `AICORE_EXECUTION_MODE=model cargo run -p aicore-daemon --bin aicored --locked -- --once ...` | PASS, exit 0: local JSON model loaded, 7 simulated outcomes in the latest isolated run; no hardware control |
+| Selected read-only Linux capability, telemetry, hardware and power-query targets | PASS: 21 tests across five targets; no platform setter invoked |
+| Real Platform Mode control tick, native Windows pipe and real benefit | SKIPPED / NOT VERIFIED; see preflight below |
+
+Platform control preflight: **no approval requested and no host configuration
+changed**. A normal Platform Mode tick may call `setpriority` for detected
+foreground PIDs, `sched_setaffinity` for foreground/background PIDs if a
+policy provides a core mask, `setpriority(..., nice=19)` for throttled
+background PIDs, Linux power-profile sysfs writes, and AMD GPU performance
+sysfs writes if available. This WSL host currently has no DRM card, ACPI
+platform-profile or CPU governor path, but process targets come from a live
+telemetry snapshot and can change between ticks. No stable, isolated PID/name
+has been selected, so the user's exact-target approval condition is not yet
+met. A controlled test must first freeze an isolated target PID and its
+baseline priority/affinity; it must also capture any present device and power
+state, specify requested values, scope and rollback, then request explicit
+approval before invoking a setter. Existing policy rollback is not evidence
+that the host's exact original settings were restored. Platform Mode deadline
+and effect acceptance remain open.
+
+
+## Current continuation: 2026-09-24 (read-only native evidence)
+
+Destination completion remains **NO / NOT VERIFIED**. This continuation used
+the newer authorization for read-only Linux host observation. It did not run
+an installer, service or platform control tick.
+
+- Continuous Platform Mode now uses a bounded slow preparation worker. Its
+  telemetry/history/prediction/policy path no longer blocks polling; the
+  platform Binder stays after the plan expiry and SafeMode check because it
+  can write GPU/NPU state. Mock tests show a 250 ms slow telemetry call does
+  not block a fast poll and an expired plan never invokes the Binder. The
+  platform Binder, executor, event publishing and state file can still delay
+  the execution side; no hard deadline or real-control pass is claimed.
+- Linux process priority, affinity, power-profile and AMD GPU write capability
+  declarations now state the required runtime permission/driver conditions.
+  A present sysfs path alone is not reported as unconditional write support.
+  CPU/AI Binder routes without inference input now report `executed=false`;
+  GPU/NPU device IDs have no synthetic OS-specific fallback.
+- A periodic daemon reaper checks confirmed dead/reused IPC peers on a blocking
+  worker, cancels their active tasks and clears L1/registry bindings. The
+  prepared-policy apply path rechecks task revocation before binding. This
+  remains process identity, not operator-approved application artifact identity.
+- Plugin `process.priority_v1` now has a typed request/response and an exact
+  `Adapter`/`process.control`/operator `allow_control` pin gate. Platform Mode
+  binds a unique active plugin through `ProcessSelection`; its failure does
+  not trigger a native write. The independent platform controller supplies
+  postcondition readback. This path has mock tests only; no external control
+  plugin was executed and GPU/NPU/power plugin control remains unbound.
+- Read-only Linux adapter, hardware capability and telemetry/context tests
+  passed on this WSL host. These confirm readings are available and structurally
+  valid; they are not independent sensor calibration. A Model Mode `--once`
+  run loaded the local JSON model and applied seven simulated outcomes.
+- Source review confirmed the existing isolation filter already excluded the
+  GPU `release()` test, which may write AMD sysfs. A read-only check found no
+  corresponding GPU write path on this WSL host. No real-device control result
+  is inferred from the filtered run.
+
+| Check in this continuation | Result and scope |
+|---|---|
+| `cargo check --workspace --all-targets --locked` | PASS, exit 0, Linux workspace |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | PASS, exit 0, Linux workspace |
+| `cargo fmt --all -- --check` | PASS, exit 0 after formatting the new capability assertion |
+| `bash scripts/verify/model_safe_workspace_tests.sh` | PASS, exit 0: 137 targets, 684 passed, 0 failed, 0 ignored, 43 filtered. The pre-existing filter already excluded GPU `release()` |
+| `cargo test -p aicore-runtime dual_loop --locked` | PASS: 7 targeted tests, including Platform Mode slow-provider and expiry mocks |
+| `cargo test -p aicore-daemon --bin aicored --locked ipc_handler::tests::` | PASS: 6 targeted tests, including stale-owner task cleanup |
+| Plugin activation and daemon process-selection mock tests | PASS: 8 plugin activation tests and 1 selection fail-closed test; no real process priority changed |
+| Linux read-only adapter, hardware and capability targets | PASS: 27 selected tests across eight separately invoked targets; no controller call |
+| `cargo check -p aicore-ipc -p aicore-contracts -p aicore-plugin --all-targets --locked --offline --target x86_64-pc-windows-msvc` | PASS, exit 0: Windows-target code compilation only; no native pipe runtime evidence |
+| `AICORE_EXECUTION_MODE=model cargo run -p aicore-daemon --bin aicored --locked -- --once ...` | PASS, exit 0, local JSON model loaded; 7 **simulated** outcomes; no host control |
+| Unfiltered workspace `cargo test` and real Platform Mode tick | SKIPPED: direct process, GPU or power control may change host configuration; separate authorization required |
+| Native Windows named-pipe runtime | NOT VERIFIED: local Rust 1.75 toolchain was absent; an offline check began a toolchain download and was immediately interrupted; no test binary or installer was run |
+| `bash scripts/audit_v4_static.sh`, `bash scripts/audit_v32_static.sh`, shell `bash -n`, `git diff --check` | PASS, exit 0; 110 declared Rust test files and 18 discovered shell scripts |
+| Seven protected residual SHA-256 hashes and before/after file manifest | PASS: all hashes unchanged; no pre-existing non-`target/` file removed or new source file added |
+
+The earlier section below records the prior code-only continuation and must
+not be read as a current Windows or hardware certification. Remaining items
+include independently verified plugin control postconditions, operator-pinned
+application artifacts, paired real workload effect observations, local LLM
+and GPU/NPU model backends, native Windows IPC, and measured Platform Mode
+deadline/rollback. These are destination work, not V4 defect closure claims.
+
+No system configuration change was authorized or deliberately executed in this
+continuation. A real Platform Mode tick is still **SKIPPED** pending explicit
+permission because its existing adapters may change process priority/affinity,
+power profile or GPU performance state. Native Windows named-pipe runtime is
+**NOT VERIFIED**; Linux/WSL read-only observation does not substitute for it.
+An attempted Windows-host offline compile triggered rustup's missing Rust 1.75
+component download and was immediately interrupted; WSL Windows-target code
+compilation subsequently passed without running Windows binaries.
+
+## Latest continuation: 2026-09-24 (Model Mode/code only)
+
+Destination completion remains **NO / NOT VERIFIED**. This continuation
+advances several code paths but does not replace product or hardware acceptance.
+
+- Continuous Model Mode daemon scheduling now uses one bounded slow preparation
+  worker and a fresh validated policy handoff. The slow side owns telemetry,
+  historical reads, prediction and model runtime binding; the fast side applies
+  model execution, verification and SafeMode, or records a neutral NoOp.
+  Discarded plans fail dequeued tasks rather than leave them Running. A mock
+  250 ms telemetry provider did not block the fast call; an isolated daemon
+  test applied a prepared policy and shut down. `--once` and Platform Mode
+  retain the synchronous path. Actual fast/slow durations are separately
+  measured in microseconds, but these are **not** performance benefits.
+- Model Mode retention runs on a bounded background worker. The scheduler's
+  retention timestamp was corrected from seconds to the scheduler's millisecond
+  contract. NoOp no longer increments runtime failure metrics.
+- A typed read-only `telemetry.snapshot_v1` plugin binding requires a Telemetry
+  manifest, `telemetry.read` permission and an operator pin. Explicit restart
+  after failure and staged `replace_active` support mock-tested upgrade and
+  rollback: a failed candidate leaves the old process active. Platform Mode
+  selects a unique active typed telemetry plugin and falls back to platform
+  observation on failure. Model Mode never starts it; daemon selection has
+  mock/code evidence only.
+- IPC registration can reclaim a confirmed dead/reused process binding and
+  clear its L1 declaration (Linux mock/runtime evidence, Windows code compile
+  only). The bound identity remains process-level;
+  operator-approved application artifact identity and queued-task cleanup are
+  still missing. A handshake can explicitly negotiate the sole implemented
+  1.0 protocol; later versions are not operationally supported.
+- Opt-in history can store an explicit registered application ID. Aggregation
+  derives same-app/UTC-hour patterns after at least three samples; prediction
+  consumes them only with a matching task identity. Old records deserialize
+  without the new field. A mock integration test covers the resulting policy
+  path and history record. This is not prospective scheduling benefit.
+- The daemon enables the conservative thermal/power guard. The shared local
+  JSON model is registered as a CPU entry in `DeviceRuntimeCatalog` and used
+  by the Model Mode binder. Platform Mode populates read-only vendor/OS matrix
+  declarations from detected devices; these are not actuator proof. No GPU/NPU model backend or local LLM model is
+  installed or claimed. The effect comparison framework still has no paired
+  observed workload/energy source, so it cannot claim improvement.
+
+| Current check | Result and scope |
+|---|---|
+| `cargo check --workspace --all-targets --locked` | PASS, exit 0, Linux workspace |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | PASS, exit 0, Linux workspace |
+| `bash scripts/verify/model_safe_workspace_tests.sh` | PASS, exit 0: 137 targets, 679 passed, 0 failed, 0 ignored, 43 filtered by the reviewed live-control/host list |
+| `AICORE_EXECUTION_MODE=model cargo run -p aicore-daemon --bin aicored --locked -- --once ...` | PASS, exit 0: one model tick, seven simulated outcomes, native route and no runtime binding action; local JSON model loaded |
+| Isolated continuous daemon Model Mode test | PASS: prepared policy applied and daemon shut down; this is not a native service test |
+| `cargo check -p aicore-contracts -p aicore-core -p aicore-ipc -p aicore-plugin -p aicore-ai-runtime --all-targets --locked --target x86_64-pc-windows-msvc` | PASS, exit 0; code compilation only |
+| Windows target including `aicore-runtime` | FAIL in WSL: bundled SQLite build cannot find MSVC `lib.exe`; no Windows runtime conclusion |
+| `bash scripts/audit_v4_static.sh`, `bash scripts/audit_v32_static.sh`, shell `bash -n` | PASS, exit 0 |
+| Unfiltered `cargo test --workspace --all-targets --locked` | SKIPPED: 43 listed tests can use live controls/host capabilities |
+| Real hardware, service/package installation and native Windows behavior | NOT VERIFIED by task boundary |
+
+The latest continuation touched the files in the final working-tree diff,
+including `apps/aicored`, `runtime`, `plugin`, `ipc`, `contracts`, `core`,
+`memory`, `tests` and this documentation. No source or protected residual was
+deleted. The before/after file manifests under `/tmp/aicore-destination3-files-*.txt`
+showed no removed or added non-`target/` paths; Cargo replaced 4,607 generated
+`target/` paths. The seven protected residual SHA-256 checks all passed.
+`cargo fmt --all -- --check`, shell syntax, `git diff --check` and static
+audits exited 0 in the final regression.
+
+### Remaining code and acceptance gaps
+
+The typed plugin telemetry path still needs native process evidence and a
+safe control-interface design; automatic restart/update policy is unimplemented.
+Application identity needs an operator-approved executable/signing policy,
+Windows native cleanup and operational compatibility beyond the single 1.0
+schema. Effect assessment needs independently observed paired workload metrics
+before feedback can influence policy. There is no local LLM model/runtime,
+intent API or GPU/NPU inference provider. The populated vendor/OS matrix is
+not yet bound to safe actuators or verified on target hosts. Fast
+execution/event/state writes and Platform Mode do not have a demonstrated
+deadline. No measured personalization, thermal or power benefit exists. These
+remain open destination requirements, not V4 defect claims.
+
+## Prior batch record (2026-09-23)
+
 Date: 2026-09-23. Source of scope: root `destination.md` and the current
 request. This is **destination completion work in progress**, not a V4
 defect-only closure or a claim of hardware certification. The item-by-item

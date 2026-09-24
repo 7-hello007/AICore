@@ -39,7 +39,10 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             CapabilityEntry::supported("network.telemetry"),
             CapabilityEntry::supported("process.telemetry"),
             CapabilityEntry::supported("process.priority.read"),
-            CapabilityEntry::supported("process.priority.write"),
+            CapabilityEntry::conditional(
+                "process.priority.write",
+                "limited to processes permitted by the current UID and OS policy",
+            ),
         ];
 
         // 电源：运行时探测
@@ -47,10 +50,16 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
         let has_cpufreq = Path::new(CPUFREQ_GOVERNOR_PATH).exists();
 
         if has_platform_profile {
-            caps.push(CapabilityEntry::supported("power.profile.platform_profile"));
+            caps.push(CapabilityEntry::conditional(
+                "power.profile.platform_profile",
+                "interface detected; write permission and profile support vary",
+            ));
         }
         if has_cpufreq {
-            caps.push(CapabilityEntry::supported("power.profile.cpufreq"));
+            caps.push(CapabilityEntry::conditional(
+                "power.profile.cpufreq",
+                "interface detected; governor and write permission vary",
+            ));
         }
         if !has_platform_profile && !has_cpufreq {
             caps.push(CapabilityEntry::unsupported(
@@ -97,9 +106,9 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             })
             .unwrap_or(false);
         if amd_gpu_control {
-            caps.push(CapabilityEntry::partial(
+            caps.push(CapabilityEntry::conditional(
                 "gpu.control",
-                "AMD amdgpu performance-level control available",
+                "AMD amdgpu performance-level path detected; write permission unverified",
             ));
         } else {
             caps.push(CapabilityEntry::unsupported(
@@ -146,7 +155,10 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
 
         // CPU affinity：当前实现 后，需要权限
         caps.push(CapabilityEntry::supported("process.affinity.read"));
-        caps.push(CapabilityEntry::supported("process.affinity.write"));
+        caps.push(CapabilityEntry::conditional(
+            "process.affinity.write",
+            "limited to processes permitted by the current UID, cpuset and OS policy",
+        ));
 
         caps
     }

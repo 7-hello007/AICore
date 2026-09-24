@@ -17,7 +17,7 @@ pub struct BindingRequest {
 pub struct BindingResult {
     pub route_id: String,
     pub source: RuntimeRouteSource,
-    /// 是否真的执行了（false = 直接走 Native）。
+    /// 是否真的执行了推理或硬件操作；仅模型可用、Native 路由或不支持均为 false。
     pub executed: bool,
     /// 执行输出（若 `executed == true`）。
     pub inference: Option<InferenceResponse>,
@@ -35,8 +35,8 @@ pub struct BindingResult {
 /// - 失败时返回 `Ok(BindingResult { executed: false, ... })`，由上层回退 Native。
 ///
 /// **约束**：
-/// - Binder 不直接调用 OS control API。
-/// - Binder 只做 route → backend 的路由与推理。
+/// - Binder 通过注入的 Adapter executor 执行硬件操作，不包含平台分支。
+/// - 平台 Binder 可能改变设备状态，不能放入不可取消的慢线程。
 /// - 执行失败必须 fallback 到 Native（`executed: false`）。
 pub trait IRuntimeBinder: Send + Sync {
     fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult>;

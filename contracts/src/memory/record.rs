@@ -1,3 +1,4 @@
+use crate::application::id::ApplicationId;
 use serde::{Deserialize, Serialize};
 
 use crate::context::workload::{InteractionLevel, WorkloadType};
@@ -12,6 +13,9 @@ use crate::policy::resource_policy::PowerMode;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HistoricalRecord {
     pub record_id: String,
+    /// Recorded only for an explicitly registered task, under history consent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application_id: Option<ApplicationId>,
     pub timestamp_unix_ms: u64,
     pub workload_type: WorkloadType,
     pub interaction_level: InteractionLevel,

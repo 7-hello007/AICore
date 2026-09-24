@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use aicore_ai_runtime::{DeviceRuntimeCatalog, ModelDevice};
 use aicore_contracts::{
-    ai::runtime::ModelHandle,
+    ai::runtime::{ModelHandle, ModelKind},
     errors::ContractResult,
     runtime::route::RuntimeRouteSource,
     traits::{
@@ -25,6 +26,7 @@ use aicore_contracts::{
 pub struct ModelRuntimeBinder {
     runtime: Option<Arc<dyn IAiRuntime>>,
     model_handle: Option<ModelHandle>,
+    device_catalog: Option<Arc<DeviceRuntimeCatalog>>,
 }
 
 impl ModelRuntimeBinder {
@@ -32,12 +34,18 @@ impl ModelRuntimeBinder {
         Self {
             runtime: None,
             model_handle: None,
+            device_catalog: None,
         }
     }
 
     pub fn with_ai_runtime(mut self, runtime: Arc<dyn IAiRuntime>, handle: ModelHandle) -> Self {
         self.runtime = Some(runtime);
         self.model_handle = Some(handle);
+        self
+    }
+
+    pub fn with_device_catalog(mut self, catalog: Arc<DeviceRuntimeCatalog>) -> Self {
+        self.device_catalog = Some(catalog);
         self
     }
 
@@ -94,7 +102,14 @@ impl ModelRuntimeBinder {
             },
         };
 
-        match runtime.infer(handle, inference) {
+        let result = if let Some(catalog) = &self.device_catalog {
+            catalog
+                .infer(ModelDevice::Cpu, ModelKind::FeatureWeighted, inference)
+                .map(|selected| selected.response)
+        } else {
+            runtime.infer(handle, inference)
+        };
+        match result {
             Ok(response) => Ok(BindingResult {
                 route_id: request.route.route_id.clone(),
                 source: request.route.source,
@@ -199,5 +214,63 @@ impl IRuntimeBinder for ModelRuntimeBinder {
 
     fn loaded_models(&self) -> Vec<ModelHandle> {
         self.model_handle.iter().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aicore_ai_runtime::{DeviceRuntime, PureRustRuntime};
+    use aicore_contracts::{
+        ai::runtime::{InferenceRequest, ModelSource, ModelSpec},
+        context::{snapshot::ContextSnapshot, workload::WorkloadType},
+        runtime::route::RuntimeRoute,
+    };
+
+    #[test]
+    fn cpu_route_uses_registered_local_json_model_without_hardware_backend() {
+        let runtime = Arc::new(PureRustRuntime::new());
+        let handle = runtime
+            .load_model(&ModelSpec {
+                name: "policy_classifier_v1".into(),
+                version: "1.0.0".into(),
+                kind: ModelKind::FeatureWeighted,
+                source: ModelSource::Inline {
+                    json: include_str!("../../models/policy_classifier_v1.json").into(),
+                },
+                onnx_spec: None,
+            })
+            .unwrap();
+        let mut catalog = DeviceRuntimeCatalog::new();
+        catalog
+            .register(DeviceRuntime {
+                device: ModelDevice::Cpu,
+                device_id: "local-cpu".into(),
+                model_kind: ModelKind::FeatureWeighted,
+                handle: handle.clone(),
+                runtime: runtime.clone(),
+            })
+            .unwrap();
+        let binder = ModelRuntimeBinder::new()
+            .with_ai_runtime(runtime, handle)
+            .with_device_catalog(Arc::new(catalog));
+        let response = binder
+            .bind_and_execute(&BindingRequest {
+                route: RuntimeRoute::routed(
+                    WorkloadType::AiInference,
+                    RuntimeRouteSource::Cpu,
+                    "isolated",
+                    1.0,
+                ),
+                context: ContextSnapshot::default(),
+                inference: Some(InferenceRequest {
+                    features: vec![0.2; 4],
+                    tensors: Vec::new(),
+                }),
+            })
+            .unwrap();
+        assert!(response.executed);
+        assert_eq!(response.source, RuntimeRouteSource::Cpu);
+        assert_eq!(response.inference.unwrap().labels.len(), 5);
     }
 }

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reviewed 2026-09-23: keep real-platform tests intact for the final machine
-# stage. All remaining workspace targets run with their normal assertions.
+# Reviewed 2026-09-24: keep platform write tests intact for a separately
+# authorized machine stage. Linux GPU release may write sysfs on AMD hosts.
+# All remaining workspace targets run with their normal assertions.
 cd "$(dirname "$0")/../.."
 
 cargo test --workspace --all-targets --locked -- \

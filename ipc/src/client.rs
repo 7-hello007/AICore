@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use aicore_contracts::ipc::protocol::{
-    Envelope, IpcError, Request, ResponseData, ResponseEnvelope,
+    Envelope, IpcError, Request, ResponseData, ResponseEnvelope, IPC_PROTOCOL_VERSION,
 };
 
 use crate::transport::{client_connect, IpcStream, IpcTransport};
@@ -22,12 +22,13 @@ impl IpcClient {
             &handshake_id,
             Request::Handshake {
                 capabilities: vec!["request_ack".to_string()],
+                supported_versions: vec![IPC_PROTOCOL_VERSION],
             },
         );
         let json = serde_json::to_string(&handshake).map_err(std::io::Error::other)?;
         stream.write_message(&json).await?;
         let response = read_response(&mut stream, Duration::from_secs(5)).await?;
-        if response.request_id != handshake_id {
+        if response.request_id != handshake_id || response.version != IPC_PROTOCOL_VERSION {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "handshake request_id mismatch",
@@ -94,6 +95,12 @@ impl IpcClient {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "IPC response request_id mismatch",
+            ));
+        }
+        if response.version != IPC_PROTOCOL_VERSION {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "IPC response version mismatch",
             ));
         }
         Ok(response)

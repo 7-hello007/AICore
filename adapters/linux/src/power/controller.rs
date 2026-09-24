@@ -25,6 +25,17 @@ impl Default for LinuxPowerController {
     }
 }
 
+fn parse_profile(value: &str, platform_profile: bool) -> ContractResult<PowerMode> {
+    match (platform_profile, value) {
+        (_, "performance") => Ok(PowerMode::Performance),
+        (true, "low-power") | (false, "powersave") => Ok(PowerMode::PowerSave),
+        (true, "balanced") | (false, "schedutil") => Ok(PowerMode::Balanced),
+        _ => Err(ContractError::CapabilityUnavailable(format!(
+            "unrecognized power profile: {value}"
+        ))),
+    }
+}
+
 impl IPowerController for LinuxPowerController {
     fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode> {
         // 路径 1：platform_profile
@@ -102,21 +113,11 @@ impl IPowerController for LinuxPowerController {
     fn get_profile(&self) -> ContractResult<PowerMode> {
         let platform_path = "/sys/firmware/acpi/platform_profile";
         if let Ok(content) = fs::read_to_string(platform_path) {
-            let v = content.trim();
-            return Ok(match v {
-                "low-power" => PowerMode::PowerSave,
-                "performance" => PowerMode::Performance,
-                _ => PowerMode::Balanced,
-            });
+            return parse_profile(content.trim(), true);
         }
         let governor_path = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
         if let Ok(content) = fs::read_to_string(governor_path) {
-            let v = content.trim();
-            return Ok(match v {
-                "powersave" => PowerMode::PowerSave,
-                "performance" => PowerMode::Performance,
-                _ => PowerMode::Balanced,
-            });
+            return parse_profile(content.trim(), false);
         }
         Err(ContractError::NotSupported(
             "no power interface available".to_string(),
@@ -136,5 +137,30 @@ impl IPowerController for LinuxPowerController {
 
     fn platform_name(&self) -> &'static str {
         "linux"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_profile_never_claims_balanced() {
+        assert!(matches!(
+            parse_profile("vendor-custom", true),
+            Err(ContractError::CapabilityUnavailable(_))
+        ));
+        assert!(matches!(
+            parse_profile("ondemand", false),
+            Err(ContractError::CapabilityUnavailable(_))
+        ));
+        assert_eq!(
+            parse_profile("balanced", true).unwrap(),
+            PowerMode::Balanced
+        );
+        assert_eq!(
+            parse_profile("schedutil", false).unwrap(),
+            PowerMode::Balanced
+        );
     }
 }

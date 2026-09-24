@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// - Active → Disabled | Failed
 /// - Disabled → Active
 /// - Failed → Disabled
+/// - Failed / Disabled → Validating (explicit pinned restart)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginState {
@@ -44,7 +45,9 @@ impl PluginState {
                 | (Self::Active, Self::Disabled)
                 | (Self::Active, Self::Failed)
                 | (Self::Disabled, Self::Active)
+                | (Self::Disabled, Self::Validating)
                 | (Self::Failed, Self::Disabled)
+                | (Self::Failed, Self::Validating)
         )
     }
 }

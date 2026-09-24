@@ -1,9 +1,10 @@
 //! ShortHorizonPredictor 单元测试。
 
 use aicore_contracts::{
+    application::id::ApplicationId,
     context::{snapshot::ContextSnapshot, workload::WorkloadType},
     errors::ContractError,
-    memory::context::{HourlyWorkloadPattern, MemoryContext},
+    memory::context::{ApplicationHourlyPattern, HourlyWorkloadPattern, MemoryContext},
     prediction::input::PredictionInput,
     telemetry::snapshot::ComputerSnapshot,
     traits::predictor::IPredictor,
@@ -12,11 +13,41 @@ use aicore_core::prediction::ShortHorizonPredictor;
 
 fn input_with_memory(memory: Option<MemoryContext>) -> PredictionInput {
     PredictionInput {
+        application_id: None,
         snapshot: ComputerSnapshot::default(),
         context: ContextSnapshot::default(),
         memory,
         horizon_ms: 5_000,
     }
+}
+
+#[test]
+fn registered_application_pattern_can_drive_prediction_without_guessing_identity() {
+    let mut input = input_with_memory(Some(MemoryContext {
+        recent_workloads: vec![WorkloadType::Gaming; 3],
+        dominant_workload: Some(WorkloadType::Gaming),
+        preferred_power_mode: None,
+        sample_count: 3,
+        hourly_patterns: Vec::new(),
+        application_patterns: vec![ApplicationHourlyPattern {
+            application_id: ApplicationId::new("app.editor"),
+            hour_utc: 14,
+            dominant_workload: WorkloadType::Development,
+            sample_count: 3,
+            confidence: 1.0,
+        }],
+    }));
+    input.snapshot.collected_at_unix_ms = Some(14 * 3_600_000);
+    let predictor = ShortHorizonPredictor::with_defaults();
+    assert_eq!(
+        predictor.predict(&input).unwrap().predicted_workload,
+        WorkloadType::Gaming
+    );
+    input.application_id = Some(ApplicationId::new("app.editor"));
+    assert_eq!(
+        predictor.predict(&input).unwrap().predicted_workload,
+        WorkloadType::Development
+    );
 }
 
 fn consistent_memory(workload: WorkloadType, samples: usize) -> MemoryContext {
@@ -26,6 +57,7 @@ fn consistent_memory(workload: WorkloadType, samples: usize) -> MemoryContext {
         preferred_power_mode: None,
         sample_count: samples,
         hourly_patterns: Vec::new(),
+        application_patterns: Vec::new(),
     }
 }
 
@@ -45,6 +77,7 @@ fn predict_with_insufficient_samples_fails() {
         preferred_power_mode: None,
         sample_count: 2,
         hourly_patterns: Vec::new(),
+        application_patterns: Vec::new(),
     };
     let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
     let msg = format!("{}", err);
@@ -91,6 +124,7 @@ fn predict_with_mixed_recent_falls_back_to_dominant() {
         preferred_power_mode: None,
         sample_count: 10,
         hourly_patterns: Vec::new(),
+        application_patterns: Vec::new(),
     };
     let pred = p.predict(&input_with_memory(Some(mem))).unwrap();
     assert_eq!(pred.predicted_workload, WorkloadType::Development);
@@ -107,6 +141,7 @@ fn predict_with_unknown_dominant_fails() {
         preferred_power_mode: None,
         sample_count: 5,
         hourly_patterns: Vec::new(),
+        application_patterns: Vec::new(),
     };
     // Unknown 且样本足够 → 一致性检查跳过，多数检查也跳过 → Err
     let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();

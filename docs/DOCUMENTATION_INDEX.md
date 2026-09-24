@@ -10,7 +10,7 @@
 | AI | `ai/AI_ARCHITECTURE.md`, `ai/MODEL_LIFECYCLE.md`, `ai/INFERENCE_POLICY.md` |
 | Policy | `policy/POLICY_SYSTEM.md`, `policy/POLICY_RESOLUTION.md`, `policy/RESOURCE_CONTROL.md` |
 | Runtime | `runtime/RUNTIME_ARCHITECTURE.md`, `runtime/STATE_MACHINE.md`, `runtime/FAILURE_RECOVERY.md` |
-| Platform | `platform/PLATFORM_ARCHITECTURE.md`, `platform/PLATFORM_CAPABILITY_MATRIX.md`, `platform/ADAPTER_RULES.md` |
+| Platform | `platform/PLATFORM_ARCHITECTURE.md`, `platform/PLATFORM_CAPABILITY_MATRIX.md`, `platform/ADAPTER_RULES.md`, `platform/PLATFORM_SIMULATOR.md` |
 | Plugin | `plugin/PLUGIN_ARCHITECTURE.md`, `plugin/PLUGIN_SECURITY.md`, `plugin/PLUGIN_LIFECYCLE.md` |
 | UI | `ui/DASHBOARD_ARCHITECTURE.md`, `ui/DASHBOARD_DATA_FLOW.md`, `ui/DASHBOARD_DESIGN.md` |
 | Security | `security/SECURITY_ARCHITECTURE.md`, `security/PERMISSION_MODEL.md`, `security/DATA_PRIVACY.md`, `security/THREAT_MODEL.md` |

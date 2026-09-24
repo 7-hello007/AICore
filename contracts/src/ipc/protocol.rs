@@ -39,6 +39,10 @@ pub enum Request {
     /// 协商当前连接的 IPC 能力；旧客户端可以继续使用单响应流程。
     Handshake {
         capabilities: Vec<String>,
+        /// Versions this client can actually use after negotiation. Old 1.0
+        /// clients omit the field and retain the envelope version behavior.
+        #[serde(default)]
+        supported_versions: Vec<SchemaVersion>,
     },
     /// 注册应用。
     Register {

@@ -99,14 +99,18 @@ mod imp {
             }
             let bytes = std::slice::from_raw_parts(guid_ptr as *const u8, 16);
             let mode = if bytes == GUID_HIGH_PERF {
-                PowerMode::Performance
+                Ok(PowerMode::Performance)
             } else if bytes == GUID_POWER_SAVER {
-                PowerMode::PowerSave
+                Ok(PowerMode::PowerSave)
+            } else if bytes == GUID_BALANCED {
+                Ok(PowerMode::Balanced)
             } else {
-                PowerMode::Balanced
+                Err(ContractError::CapabilityUnavailable(
+                    "active Windows power scheme is not one of the built-in profiles".to_string(),
+                ))
             };
             LocalFree(guid_ptr as *mut core::ffi::c_void);
-            Ok(mode)
+            mode
         }
     }
 }

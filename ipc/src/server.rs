@@ -199,7 +199,10 @@ fn process_envelope(
     envelope: Envelope,
     identity: ClientIdentity,
 ) -> ResponseEnvelope {
-    if envelope.version != IPC_PROTOCOL_VERSION {
+    let negotiable_handshake = matches!(&envelope.payload,
+        Request::Handshake { supported_versions, .. }
+            if supported_versions.contains(&IPC_PROTOCOL_VERSION));
+    if envelope.version != IPC_PROTOCOL_VERSION && !negotiable_handshake {
         return ResponseEnvelope::err(
             envelope.request_id,
             IpcError::protocol_mismatch(envelope.version, IPC_PROTOCOL_VERSION),
@@ -207,8 +210,28 @@ fn process_envelope(
     }
 
     let request_id = envelope.request_id.clone();
+    if matches!(
+        &envelope.payload,
+        Request::Register { .. }
+            | Request::Unregister { .. }
+            | Request::SubmitTask { .. }
+            | Request::DeclareCurrentTask { .. }
+            | Request::ClearCurrentTask { .. }
+            | Request::SubmitNativeTask { .. }
+            | Request::GetNativeTask { .. }
+            | Request::CancelNativeTask { .. }
+    ) && !identity.is_current()
+    {
+        return ResponseEnvelope::err(
+            request_id,
+            IpcError::new(
+                "ERR_PERMISSION_DENIED",
+                "IPC peer identity is no longer current",
+            ),
+        );
+    }
     match envelope.payload {
-        Request::Handshake { capabilities } => {
+        Request::Handshake { capabilities, .. } => {
             let accepted = capabilities
                 .into_iter()
                 .filter(|capability| capability == "request_ack")
@@ -270,6 +293,7 @@ mod tests {
             "handshake",
             Request::Handshake {
                 capabilities: vec!["request_ack".to_string()],
+                supported_versions: vec![IPC_PROTOCOL_VERSION],
             },
         );
         stream
@@ -352,6 +376,36 @@ mod tests {
     }
 
     #[test]
+    fn app_request_rechecks_executable_identity_before_handler() {
+        use std::os::unix::fs::MetadataExt;
+        let pid = std::process::id() as i32;
+        let uid = std::fs::metadata(format!("/proc/{pid}")).unwrap().uid();
+        let start_time_ticks = crate::transport::read_process_start_time(pid).unwrap();
+        let (executable_dev, executable_ino) =
+            crate::transport::read_process_executable_identity(pid).unwrap();
+        let replaced = ClientIdentity::Linux {
+            uid,
+            pid,
+            start_time_ticks,
+            executable_dev,
+            executable_ino: executable_ino.wrapping_add(1),
+        };
+        let handler: Arc<dyn IpcHandler> = Arc::new(StatusHandler);
+        let request = Envelope::new(
+            "register-replaced",
+            Request::Register {
+                application_id: aicore_contracts::application::id::ApplicationId::new("test.app"),
+                name: "test".into(),
+                version: "1.0".into(),
+                capabilities: Vec::new(),
+            },
+        );
+        let result = process_envelope(&handler, request, replaced);
+        assert!(!result.success);
+        assert_eq!(result.error.unwrap().code, "ERR_PERMISSION_DENIED");
+    }
+
+    #[test]
     fn incompatible_protocol_version_is_rejected_before_handler() {
         let handler: Arc<dyn IpcHandler> = Arc::new(StatusHandler);
         let mut envelope = Envelope::new("old-version", Request::GetStatus);
@@ -360,5 +414,37 @@ mod tests {
         assert!(!result.success);
         assert_eq!(result.request_id, "old-version");
         assert_eq!(result.error.unwrap().code, "ERR_PROTOCOL_MISMATCH");
+    }
+
+    #[test]
+    fn handshake_negotiates_only_an_explicitly_supported_current_version() {
+        let handler: Arc<dyn IpcHandler> = Arc::new(StatusHandler);
+        let mut envelope = Envelope::new(
+            "future",
+            Request::Handshake {
+                capabilities: vec!["request_ack".into()],
+                supported_versions: vec![IPC_PROTOCOL_VERSION],
+            },
+        );
+        envelope.version = aicore_contracts::schema::SchemaVersion::new(2, 0);
+        let response = process_envelope(&handler, envelope, ClientIdentity::Internal);
+        assert!(response.success);
+        assert_eq!(response.version, IPC_PROTOCOL_VERSION);
+        let unsupported = Envelope {
+            version: aicore_contracts::schema::SchemaVersion::new(2, 0),
+            request_id: "unsupported".into(),
+            timestamp_unix_ms: 1,
+            payload: Request::Handshake {
+                capabilities: vec![],
+                supported_versions: vec![aicore_contracts::schema::SchemaVersion::new(2, 0)],
+            },
+        };
+        assert_eq!(
+            process_envelope(&handler, unsupported, ClientIdentity::Internal)
+                .error
+                .unwrap()
+                .code,
+            "ERR_PROTOCOL_MISMATCH"
+        );
     }
 }

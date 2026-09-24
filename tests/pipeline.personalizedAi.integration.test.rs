@@ -26,6 +26,7 @@ use aicore_memory::InMemoryStore;
 
 fn rec(id: &str, w: WorkloadType, mode: PowerMode) -> HistoricalRecord {
     HistoricalRecord {
+        application_id: None,
         record_id: id.to_string(),
         timestamp_unix_ms: 1_700_000_000,
         workload_type: w,
@@ -98,6 +99,7 @@ fn memory_context_is_passed_to_ai_provider() {
             preferred_power_mode: Some(PowerMode::Balanced),
             sample_count: 5,
             hourly_patterns: Vec::new(),
+            application_patterns: Vec::new(),
         }),
     };
 
@@ -141,6 +143,7 @@ fn ai_assisted_engine_uses_memory_context() {
         preferred_power_mode: Some(PowerMode::Balanced),
         sample_count: 4,
         hourly_patterns: Vec::new(),
+        application_patterns: Vec::new(),
     });
 
     // generate_with_memory 走 AI + memory 路径

@@ -37,6 +37,60 @@ pub struct DaemonIpcHandler {
 }
 
 impl DaemonIpcHandler {
+    /// Remove only confirmed dead/reused peers. Queue cancellation is done
+    /// before removing the registration so departed apps cannot leave work
+    /// waiting to be applied by a later tick.
+    pub fn reap_stale_applications(&self) -> Result<usize, IpcError> {
+        let mut owners = self
+            .app_owners
+            .lock()
+            .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
+        let stale: Vec<_> = owners
+            .iter()
+            .filter(|(_, identity)| identity.is_stale())
+            .map(|(app, _)| app.clone())
+            .collect();
+        for app in &stale {
+            self.revoke_application(app)?;
+            owners.remove(app);
+        }
+        Ok(stale.len())
+    }
+
+    fn revoke_application(&self, application_id: &ApplicationId) -> Result<(), IpcError> {
+        for task in self
+            .task_queue
+            .snapshot()
+            .map_err(|e| IpcError::internal(format!("task queue: {e}")))?
+        {
+            if task.contract.application_id == *application_id && task.state.is_active() {
+                match self.task_queue.cancel(&task.task_id) {
+                    Ok(()) => {},
+                    Err(error) => {
+                        let now = self
+                            .task_queue
+                            .get(&task.task_id)
+                            .map_err(|e| IpcError::internal(format!("task queue: {e}")))?;
+                        if now.is_some_and(|current| current.state.is_active()) {
+                            return Err(IpcError::internal(format!(
+                                "task cancellation failed: {error}"
+                            )));
+                        }
+                    },
+                }
+            }
+        }
+        if let Some(source) = &self.l1_source {
+            source
+                .clear_for(application_id)
+                .map_err(|e| IpcError::internal(format!("l1 clear: {e}")))?;
+        }
+        self.registry
+            .unregister(application_id)
+            .map_err(|e| IpcError::internal(format!("app registry: {e}")))?;
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         registry: Arc<ApplicationRegistry>,
@@ -104,6 +158,16 @@ impl DaemonIpcHandler {
             .app_owners
             .lock()
             .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
+        if owners
+            .get(&application_id)
+            .copied()
+            .is_some_and(ClientIdentity::is_stale)
+        {
+            // Reclaim only a confirmed dead/reused OS identity. Clearing L1
+            // prevents a departed app's declaration from influencing policy.
+            self.revoke_application(&application_id)?;
+            owners.remove(&application_id);
+        }
         if owners
             .get(&application_id)
             .is_some_and(|owner| *owner != identity)
@@ -176,21 +240,19 @@ impl DaemonIpcHandler {
             Request::Unregister { application_id } => {
                 let id = ApplicationId::new(application_id.0.clone());
                 self.authorize_app(&id, identity)?;
-                if let Some(source) = &self.l1_source {
-                    source
-                        .clear_for(&id)
-                        .map_err(|e| IpcError::internal(format!("l1 clear: {}", e)))?;
+                let mut owners = self
+                    .app_owners
+                    .lock()
+                    .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
+                if owners.get(&id) != Some(&identity) {
+                    return Err(IpcError::new(
+                        "ERR_PERMISSION_DENIED",
+                        "application owner changed during unregister",
+                    ));
                 }
-                match self.registry.unregister(&id) {
-                    Ok(removed) => {
-                        self.app_owners
-                            .lock()
-                            .map_err(|_| IpcError::internal("application owner lock poisoned"))?
-                            .remove(&id);
-                        Ok(ResponseData::Unregistered { removed })
-                    },
-                    Err(e) => Err(IpcError::internal(format!("{}", e))),
-                }
+                self.revoke_application(&id)?;
+                owners.remove(&id);
+                Ok(ResponseData::Unregistered { removed: true })
             },
 
             Request::DeclareCurrentTask { contract } => {
@@ -718,7 +780,132 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn dead_peer_binding_is_reclaimed_and_its_l1_task_cleared() {
+        let source = Arc::new(L1TaskSource::new());
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            Arc::new(InMemoryTaskQueue::new()),
+            Some(source.clone()),
+            None,
+            Vec::new(),
+            "mock".into(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        );
+        let app = ApplicationId::new("app.reconnect");
+        let departed = ClientIdentity::Linux {
+            uid: 1000,
+            pid: i32::MAX,
+            start_time_ticks: 1,
+            executable_dev: 0,
+            executable_ino: 0,
+        };
+        let successor = ClientIdentity::Linux {
+            uid: 1000,
+            pid: i32::MAX - 1,
+            start_time_ticks: 2,
+            executable_dev: 0,
+            executable_ino: 0,
+        };
+        let register = || Request::Register {
+            application_id: app.clone(),
+            name: "reconnect".into(),
+            version: "1.0".into(),
+            capabilities: Vec::new(),
+        };
+        handler.handle_with_identity(register(), departed).unwrap();
+        handler
+            .handle_with_identity(
+                Request::DeclareCurrentTask {
+                    contract: TaskContract::minimal(app.clone()),
+                },
+                departed,
+            )
+            .unwrap();
+        assert!(source.current_task().unwrap().is_some());
+        handler.handle_with_identity(register(), successor).unwrap();
+        assert!(source.current_task().unwrap().is_none());
+        assert!(handler
+            .handle_with_identity(
+                Request::SubmitTask {
+                    contract: TaskContract::minimal(app),
+                },
+                departed
+            )
+            .is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stale_reaper_cancels_departed_app_work_without_new_registration() {
+        let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
+        let source = Arc::new(L1TaskSource::new());
+        let registry = Arc::new(ApplicationRegistry::new());
+        let handler = DaemonIpcHandler::new(
+            registry.clone(),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            queue.clone(),
+            Some(source.clone()),
+            None,
+            Vec::new(),
+            "mock".into(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        );
+        let app = ApplicationId::new("app.departed");
+        let owner = ClientIdentity::Linux {
+            uid: 1000,
+            pid: i32::MAX,
+            start_time_ticks: 1,
+            executable_dev: 0,
+            executable_ino: 0,
+        };
+        handler
+            .handle_with_identity(
+                Request::Register {
+                    application_id: app.clone(),
+                    name: "departed".into(),
+                    version: "1.0".into(),
+                    capabilities: Vec::new(),
+                },
+                owner,
+            )
+            .unwrap();
+        let contract = TaskContract::minimal(app.clone());
+        handler
+            .handle_with_identity(
+                Request::DeclareCurrentTask {
+                    contract: contract.clone(),
+                },
+                owner,
+            )
+            .unwrap();
+        let task_id = match handler
+            .handle_with_identity(Request::SubmitTask { contract }, owner)
+            .unwrap()
+        {
+            ResponseData::TaskSubmitted { task_id, .. } => task_id.unwrap(),
+            other => panic!("unexpected response: {other:?}"),
+        };
+        assert_eq!(handler.reap_stale_applications().unwrap(), 1);
+        assert_eq!(handler.reap_stale_applications().unwrap(), 0);
+        assert_eq!(
+            queue.get(&task_id).unwrap().unwrap().state,
+            aicore_contracts::task::lifecycle::TaskState::Cancelled
+        );
+        assert!(source.current_task().unwrap().is_none());
+        assert!(!registry.is_registered(&app).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn a_second_peer_cannot_claim_or_act_for_registered_application() {
+        use std::os::unix::fs::MetadataExt;
         let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
         let source = Arc::new(L1TaskSource::new());
         let provider = Arc::new(L2NativeTaskProvider::new().with_task_queue(queue.clone()));
@@ -735,15 +922,32 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(None)),
         );
+        let uid = std::fs::metadata("/proc/self").unwrap().uid();
+        let pid = std::process::id() as i32;
+        let start_time_ticks = std::fs::read_to_string("/proc/self/stat")
+            .unwrap()
+            .rsplit_once(") ")
+            .unwrap()
+            .1
+            .split_whitespace()
+            .nth(19)
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        let executable = std::fs::metadata("/proc/self/exe").unwrap();
         let owner = ClientIdentity::Linux {
-            uid: 1000,
-            pid: 21,
-            start_time_ticks: 100,
+            uid,
+            pid,
+            start_time_ticks,
+            executable_dev: executable.dev(),
+            executable_ino: executable.ino(),
         };
         let impostor = ClientIdentity::Linux {
-            uid: 1000,
-            pid: 21,
-            start_time_ticks: 101,
+            uid,
+            pid,
+            start_time_ticks: start_time_ticks + 1,
+            executable_dev: executable.dev(),
+            executable_ino: executable.ino(),
         };
         let app = ApplicationId::new("app.bound");
         let register = || Request::Register {

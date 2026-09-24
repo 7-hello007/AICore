@@ -13,6 +13,7 @@ use aicore_memory::{migrate_json_to_sqlite, JsonFileStore, SqliteMemoryStore};
 
 fn rec(id: &str) -> HistoricalRecord {
     HistoricalRecord {
+        application_id: None,
         record_id: id.to_string(),
         timestamp_unix_ms: 1000,
         workload_type: WorkloadType::Development,

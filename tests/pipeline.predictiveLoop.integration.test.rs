@@ -8,6 +8,7 @@ use aicore_contracts::execution::status::ExecutionOverallStatus as ExecStatus;
 use aicore_contracts::policy::priority::PolicySource;
 use aicore_contracts::policy::resource_policy::PowerMode;
 use aicore_contracts::{
+    application::id::ApplicationId,
     errors::ContractResult,
     execution::{
         result::{ExecutionOutcome, ExecutionResult},
@@ -17,10 +18,12 @@ use aicore_contracts::{
     memory::{profile::UserProfile, record::HistoricalRecord},
     policy::resource_policy::ResourcePolicy,
     runtime::config::AdaptiveLoopConfig,
+    task::{contract::TaskContract, queued::QueuedTask},
     telemetry::snapshot::ComputerSnapshot,
     traits::{
         memory_store::IMemoryStore, policy_engine::IPolicyEngine, policy_executor::IPolicyExecutor,
-        runtime_orchestrator::IRuntimeOrchestrator, telemetry_provider::ITelemetryProvider,
+        runtime_orchestrator::IRuntimeOrchestrator, task_queue::ITaskQueue,
+        telemetry_provider::ITelemetryProvider,
     },
 };
 use aicore_core::{
@@ -30,6 +33,7 @@ use aicore_core::{
 };
 use aicore_memory::InMemoryStore;
 use aicore_runtime::AdaptiveLoop;
+use aicore_task_runtime::InMemoryTaskQueue;
 
 struct MockTelemetry {
     calls: AtomicU64,
@@ -48,6 +52,7 @@ impl ITelemetryProvider for MockTelemetry {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let mut s = ComputerSnapshot::default();
         s.cpu.logical_cores = 8;
+        s.collected_at_unix_ms = Some(14 * 3_600_000);
         Ok(s)
     }
     fn platform_name(&self) -> &'static str {
@@ -56,6 +61,44 @@ impl ITelemetryProvider for MockTelemetry {
     fn capabilities(&self) -> Vec<&'static str> {
         vec![]
     }
+}
+
+#[test]
+fn registered_task_uses_consented_application_pattern_and_records_identity() {
+    let memory = Arc::new(InMemoryStore::new());
+    let app = ApplicationId::new("app.editor");
+    for day in 0..3 {
+        let mut record = rec(
+            &format!("app-{day}"),
+            (day * 24 + 14) * 3_600_000,
+            WorkloadType::Development,
+        );
+        record.application_id = Some(app.clone());
+        memory.append_record(&record).unwrap();
+    }
+    for day in 3..6 {
+        memory
+            .append_record(&rec(
+                &format!("system-{day}"),
+                (day * 24 + 14) * 3_600_000,
+                WorkloadType::Gaming,
+            ))
+            .unwrap();
+    }
+    let queue = Arc::new(InMemoryTaskQueue::new());
+    queue
+        .enqueue(QueuedTask::new(
+            "task-app".into(),
+            TaskContract::minimal(app.clone()),
+            1,
+        ))
+        .unwrap();
+    let loop_ = build_loop(memory.clone()).with_task_queue(queue);
+    let outcome = loop_.tick(&ExecutionTargets::default());
+    assert_eq!(outcome.predicted_workload, Some(WorkloadType::Development));
+    assert!(outcome.validation_accepted);
+    let history = memory.load_records(1).unwrap();
+    assert_eq!(history[0].application_id, Some(app));
 }
 
 struct OkExecutor;
@@ -82,6 +125,7 @@ impl IPolicyExecutor for OkExecutor {
 
 fn rec(id: &str, ts: u64, w: WorkloadType) -> HistoricalRecord {
     HistoricalRecord {
+        application_id: None,
         record_id: id.to_string(),
         timestamp_unix_ms: ts,
         workload_type: w,

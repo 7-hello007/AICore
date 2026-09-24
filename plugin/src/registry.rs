@@ -116,6 +116,45 @@ impl PluginRegistry {
         Ok(())
     }
 
+    /// Commit a verified replacement while the old process remains active.
+    /// Failed staging never changes the registry's visible version.
+    pub fn replace_active_manifest(&self, manifest: PluginManifest) -> Result<(), RegistryError> {
+        self.replace_active_manifest_after(manifest, || Ok(()))
+    }
+
+    /// Keep the registry version unchanged until the old process has stopped.
+    /// Validation and the stop callback run under the same write lock so a
+    /// registry failure cannot occur after a successful stop.
+    pub fn replace_active_manifest_after(
+        &self,
+        manifest: PluginManifest,
+        stop_old: impl FnOnce() -> Result<(), RegistryError>,
+    ) -> Result<(), RegistryError> {
+        manifest
+            .validate()
+            .map_err(|error| RegistryError::InvalidManifest(error.to_string()))?;
+        if !manifest.is_permission_allowed() {
+            return Err(RegistryError::PermissionDenied(manifest.name));
+        }
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|_| RegistryError::LockPoisoned)?;
+        let entry = entries
+            .get_mut(&manifest.name)
+            .ok_or_else(|| RegistryError::NotFound(manifest.name.clone()))?;
+        if entry.state != PluginState::Active {
+            return Err(RegistryError::InvalidTransition {
+                from: entry.state,
+                to: PluginState::Active,
+            });
+        }
+        stop_old()?;
+        entry.manifest = manifest;
+        entry.last_reason = None;
+        Ok(())
+    }
+
     /// 查询单个插件。
     pub fn get(&self, name: &str) -> Result<Option<PluginEntry>, RegistryError> {
         let entries = self
@@ -197,4 +236,6 @@ pub enum RegistryError {
     NotFound(String),
     #[error("invalid transition: {from:?} → {to:?}")]
     InvalidTransition { from: PluginState, to: PluginState },
+    #[error("old plugin stop failed: {0}")]
+    ProcessStopFailed(String),
 }

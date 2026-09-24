@@ -4,15 +4,20 @@
 //! 采集 `ComputerSnapshot`，验证 L0 WorkloadSource 能正确推断。
 //!
 //! 不依赖 daemon；直接使用 TelemetryProvider + WorkloadSource + Fusion。
+#[cfg(target_os = "linux")]
 type Scenario = (&'static str, fn() -> Option<Child>);
 
+#[cfg(target_os = "linux")]
 use std::process::{Child, Command, Stdio};
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 use aicore_contracts::{
     context::workload::WorkloadType,
     traits::{telemetry_provider::ITelemetryProvider, workload_source::IWorkloadSource},
 };
+#[cfg(target_os = "linux")]
 use aicore_tier_l0::L0WorkloadSource;
 
 #[cfg(target_os = "linux")]
@@ -46,16 +51,6 @@ fn spawn_cpu_load() -> Option<Child> {
         .stderr(Stdio::null())
         .spawn()
         .ok()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn spawn_developer_workload() -> Option<Child> {
-    None
-}
-
-#[cfg(not(target_os = "linux"))]
-fn spawn_cpu_load() -> Option<Child> {
-    None
 }
 
 #[cfg(target_os = "linux")]

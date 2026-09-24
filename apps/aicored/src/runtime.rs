@@ -264,8 +264,7 @@ fn build_runtime_for_mode_with_simulation(
      */
 
     let simulated_platform = if !model_mode && simulation {
-        let fixture =
-            include_str!("../../../adapters/simulated-platform/fixtures/linux_wsl_readonly.json");
+        let fixture = bundled_platform_fixture_json();
         match SimulatedPlatform::from_json(fixture) {
             Ok(platform) => Some(Arc::new(platform)),
             Err(error) => panic!("bundled platform simulator fixture invalid: {error}"),
@@ -876,6 +875,16 @@ fn simulated_platform_mode() -> bool {
 }
 
 #[cfg(target_os = "linux")]
+fn bundled_platform_fixture_json() -> &'static str {
+    include_str!("../../../adapters/simulated-platform/fixtures/linux_wsl_readonly.json")
+}
+
+#[cfg(target_os = "windows")]
+fn bundled_platform_fixture_json() -> &'static str {
+    include_str!("../../../adapters/simulated-platform/fixtures/windows_readonly.json")
+}
+
+#[cfg(target_os = "linux")]
 fn build_platform_components() -> PlatformComponents {
     use aicore_adapter_linux::{
         LinuxPowerController, LinuxProcessController, LinuxTelemetryProvider,
@@ -931,7 +940,6 @@ fn build_capabilities() -> Vec<CapabilityEntry> {
 #[cfg(target_os = "windows")]
 fn build_capabilities() -> Vec<CapabilityEntry> {
     use aicore_adapter_windows::WindowsCapabilityProvider;
-    use aicore_contracts::traits::capability_provider::ICapabilityProvider;
 
     WindowsCapabilityProvider::new().capabilities_detailed()
 }
@@ -1176,12 +1184,7 @@ mod simulated_platform_tests {
     use std::time::{Duration, Instant};
 
     fn fixture() -> Arc<SimulatedPlatform> {
-        Arc::new(
-            SimulatedPlatform::from_json(include_str!(
-                "../../../adapters/simulated-platform/fixtures/linux_wsl_readonly.json"
-            ))
-            .unwrap(),
-        )
+        Arc::new(SimulatedPlatform::from_json(bundled_platform_fixture_json()).unwrap())
     }
 
     #[test]

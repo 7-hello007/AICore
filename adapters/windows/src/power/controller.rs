@@ -119,7 +119,7 @@ impl IPowerController for WindowsPowerController {
     fn set_profile(&self, _mode: PowerMode) -> ContractResult<PowerMode> {
         #[cfg(target_os = "windows")]
         {
-            return imp::set_profile_impl(_mode);
+            imp::set_profile_impl(_mode)
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -132,7 +132,7 @@ impl IPowerController for WindowsPowerController {
     fn get_profile(&self) -> ContractResult<PowerMode> {
         #[cfg(target_os = "windows")]
         {
-            return imp::get_profile_impl();
+            imp::get_profile_impl()
         }
         #[cfg(not(target_os = "windows"))]
         {

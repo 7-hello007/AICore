@@ -196,7 +196,7 @@ impl IProcessController for WindowsProcessController {
     fn set_priority(&self, _pid: u32, _priority: PolicyPriority) -> ContractResult<()> {
         #[cfg(target_os = "windows")]
         {
-            return imp::set_priority_impl(_pid, _priority);
+            imp::set_priority_impl(_pid, _priority)
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -209,7 +209,7 @@ impl IProcessController for WindowsProcessController {
     fn get_priority(&self, _pid: u32) -> ContractResult<PolicyPriority> {
         #[cfg(target_os = "windows")]
         {
-            return imp::get_priority_impl(_pid);
+            imp::get_priority_impl(_pid)
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -222,7 +222,7 @@ impl IProcessController for WindowsProcessController {
     fn set_affinity(&self, _pid: u32, _mask: &AffinityMask) -> ContractResult<()> {
         #[cfg(target_os = "windows")]
         {
-            return affinity_imp::set_affinity_impl(_pid, _mask);
+            affinity_imp::set_affinity_impl(_pid, _mask)
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -235,7 +235,7 @@ impl IProcessController for WindowsProcessController {
     fn get_affinity(&self, _pid: u32) -> ContractResult<AffinityMask> {
         #[cfg(target_os = "windows")]
         {
-            return affinity_imp::get_affinity_impl(_pid);
+            affinity_imp::get_affinity_impl(_pid)
         }
         #[cfg(not(target_os = "windows"))]
         {

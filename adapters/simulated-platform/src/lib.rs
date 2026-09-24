@@ -558,4 +558,22 @@ mod tests {
         );
         assert!(SimulatedPlatform::from_fixture(fixture).is_err());
     }
+
+    #[test]
+    fn captured_windows_fixture_has_real_read_only_process_state() {
+        let fixture: PlatformFixture =
+            serde_json::from_str(include_str!("../fixtures/windows_readonly.json")).unwrap();
+        assert!(fixture.source.starts_with("WindowsTelemetryProvider"));
+        assert!(!fixture.processes.is_empty());
+        assert!(fixture.snapshot.applications.is_empty());
+        assert!(fixture
+            .snapshot
+            .top_processes
+            .iter()
+            .all(|process| process.name == "<redacted>"));
+        let platform = SimulatedPlatform::from_fixture(fixture).unwrap();
+        let pid = platform.captured_process_ids()[0];
+        assert!(platform.get_priority(pid).is_ok());
+        assert!(platform.get_affinity(pid).is_ok());
+    }
 }

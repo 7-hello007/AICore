@@ -104,13 +104,16 @@ fn linux_declares_process_write_conditional_on_current_permissions() {
 
 #[cfg(target_os = "windows")]
 #[test]
-fn windows_declares_process_write_unsupported() {
+fn windows_declares_process_write_conditional_on_target_rights() {
     let p = PlatformCapabilityProvider::new();
     let cap = p
         .capability("process.priority.write")
         .expect("windows process.priority.write present");
-    assert_eq!(cap.status, CapabilityStatus::Unsupported);
-    assert!(cap.detail.is_some());
+    assert_eq!(cap.status, CapabilityStatus::Conditional);
+    assert!(cap
+        .detail
+        .as_deref()
+        .is_some_and(|detail| detail.contains("target PID")));
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]

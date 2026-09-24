@@ -20,9 +20,6 @@ cargo test --workspace --all-targets --locked -- \
   --skip history_disabled_by_default_means_no_records \
   --skip history_enabled_records_tick \
   --skip loop_starts_in_normal_mode \
-  --skip smoke_runs_without_panic \
-  --skip smoke_trace_ids_unique \
-  --skip smoke_mode_is_valid_enum_value \
   --skip release_does_not_panic \
   --skip linux_unknown_device_not_supported \
   --skip linux_bad_id_not_supported \

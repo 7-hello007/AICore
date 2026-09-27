@@ -118,6 +118,64 @@ pub(crate) fn process_executable_path(pid: u32) -> Option<PathBuf> {
         .then(|| PathBuf::from(String::from_utf16_lossy(&path[..length as usize])))
 }
 
+pub(crate) fn process_user_sid(pid: u32) -> Option<String> {
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, LocalFree},
+        Security::Authorization::ConvertSidToStringSidW,
+        Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER},
+        System::Threading::{OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION},
+    };
+    // SAFETY: query-only process/token handles; buffers and SID outputs are
+    // valid for each call, and all owned handles/LocalAlloc memory are closed.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return None;
+        }
+        let mut token = std::ptr::null_mut();
+        let opened = OpenProcessToken(process, TOKEN_QUERY, &mut token);
+        CloseHandle(process);
+        if opened == 0 {
+            return None;
+        }
+        let mut length = 0;
+        GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut length);
+        if length == 0 || length > 65_536 {
+            CloseHandle(token);
+            return None;
+        }
+        // usize storage preserves TOKEN_USER alignment.
+        let mut buffer = vec![
+            0usize;
+            (length as usize + std::mem::size_of::<usize>() - 1)
+                / std::mem::size_of::<usize>()
+        ];
+        let read = GetTokenInformation(
+            token,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            length,
+            &mut length,
+        );
+        CloseHandle(token);
+        if read == 0 {
+            return None;
+        }
+        let user = &*buffer.as_ptr().cast::<TOKEN_USER>();
+        let mut sid = std::ptr::null_mut();
+        if ConvertSidToStringSidW(user.User.Sid, &mut sid) == 0 {
+            return None;
+        }
+        let mut count = 0;
+        while *sid.add(count) != 0 {
+            count += 1;
+        }
+        let value = String::from_utf16(std::slice::from_raw_parts(sid, count)).ok();
+        LocalFree(sid.cast());
+        value
+    }
+}
+
 pub(crate) fn process_identity_stale(pid: u32, created_at_100ns: u64) -> bool {
     use windows_sys::Win32::Foundation::{
         CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, WAIT_OBJECT_0,

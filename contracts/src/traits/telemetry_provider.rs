@@ -6,6 +6,17 @@ pub trait ITelemetryProvider: Send + Sync {
     /// 采集一次完整的系统状态快照。
     fn collect(&self) -> ContractResult<ComputerSnapshot>;
 
+    /// Read one explicitly identified process without assuming it appears in
+    /// the bounded top-process list. Unsupported collectors fail explicitly.
+    fn collect_process(
+        &self,
+        _pid: u32,
+    ) -> ContractResult<crate::telemetry::process::ProcessSnapshot> {
+        Err(crate::errors::ContractError::NotSupported(
+            "targeted process telemetry unavailable".into(),
+        ))
+    }
+
     /// 返回该 Provider 的名称。
     fn platform_name(&self) -> &'static str;
 

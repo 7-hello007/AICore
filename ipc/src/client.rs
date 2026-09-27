@@ -11,29 +11,49 @@ use crate::transport::{client_connect, IpcStream, IpcTransport};
 pub struct IpcClient {
     stream: IpcStream,
     ack_enabled: bool,
+    version: aicore_contracts::schema::SchemaVersion,
 }
 
 impl IpcClient {
     /// 连接到 IPC server。
     pub async fn connect(path: impl Into<PathBuf>) -> std::io::Result<Self> {
+        Self::connect_with_versions(path, vec![IPC_PROTOCOL_VERSION]).await
+    }
+
+    pub async fn connect_with_versions(
+        path: impl Into<PathBuf>,
+        versions: Vec<aicore_contracts::schema::SchemaVersion>,
+    ) -> std::io::Result<Self> {
+        if versions.is_empty()
+            || versions
+                .iter()
+                .any(|v| !aicore_contracts::ipc::protocol::IPC_SUPPORTED_VERSIONS.contains(v))
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "unsupported client wire version",
+            ));
+        }
         let mut stream = client_connect(path.into()).await?;
         let handshake_id = format!("aicore-handshake-{}", std::process::id());
-        let handshake = Envelope::new(
+        let mut handshake = Envelope::new(
             &handshake_id,
             Request::Handshake {
                 capabilities: vec!["request_ack".to_string()],
-                supported_versions: vec![IPC_PROTOCOL_VERSION],
+                supported_versions: versions.clone(),
             },
         );
+        handshake.version = versions[0];
         let json = serde_json::to_string(&handshake).map_err(std::io::Error::other)?;
         stream.write_message(&json).await?;
         let response = read_response(&mut stream, Duration::from_secs(5)).await?;
-        if response.request_id != handshake_id || response.version != IPC_PROTOCOL_VERSION {
+        if response.request_id != handshake_id || !versions.contains(&response.version) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "handshake request_id mismatch",
             ));
         }
+        let version = response.version;
         let ack_enabled = match (response.success, response.data, response.error) {
             (
                 true,
@@ -42,7 +62,7 @@ impl IpcClient {
                     selected_version,
                 }),
                 _,
-            ) if selected_version == IPC_PROTOCOL_VERSION => capabilities
+            ) if selected_version == version => capabilities
                 .iter()
                 .any(|capability| capability == "request_ack"),
             (false, _, Some(error)) if error.code == "ERR_NOT_SUPPORTED" => false,
@@ -56,6 +76,7 @@ impl IpcClient {
         Ok(Self {
             stream,
             ack_enabled,
+            version,
         })
     }
 
@@ -78,7 +99,8 @@ impl IpcClient {
                 "handshake is performed by connect",
             ));
         }
-        let envelope = Envelope::new(request_id, request);
+        let mut envelope = Envelope::new(request_id, request);
+        envelope.version = self.version;
         let json = serde_json::to_string(&envelope)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
@@ -88,6 +110,7 @@ impl IpcClient {
         if self.ack_enabled {
             let acknowledgement = read_response_until(&mut self.stream, deadline).await?;
             if acknowledgement.request_id != request_id
+                || acknowledgement.version != self.version
                 || !acknowledgement.success
                 || !matches!(acknowledgement.data, Some(ResponseData::Ack))
             {
@@ -104,13 +127,16 @@ impl IpcClient {
                 "IPC response request_id mismatch",
             ));
         }
-        if response.version != IPC_PROTOCOL_VERSION {
+        if response.version != self.version {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "IPC response version mismatch",
             ));
         }
         Ok(response)
+    }
+    pub fn negotiated_version(&self) -> aicore_contracts::schema::SchemaVersion {
+        self.version
     }
 }
 

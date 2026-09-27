@@ -480,3 +480,7 @@ aicore-adapter-linux = { path = "../adapters/linux" }
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 aicore-adapter-windows = { path = "../adapters/windows" }
+
+[[example]]
+name = "owned_process_probe"
+path = "ownedProcess.probe.example.rs"

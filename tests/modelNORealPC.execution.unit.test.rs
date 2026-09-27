@@ -23,6 +23,20 @@ fn model_target_provider_returns_virtual_targets() {
 }
 
 #[test]
+fn empty_process_only_targets_are_noop_without_global_model_mutation() {
+    let environment = ModelEnvironment::new();
+    let before = environment.snapshot();
+    let executor = ModelPolicyExecutor::new(environment.clone());
+    let targets = ExecutionTargets {
+        process_only: true,
+        ..Default::default()
+    };
+    let result = executor.execute(&ResourcePolicy::default(), &targets);
+    assert_eq!(result.overall_status, ExecutionOverallStatus::NoOp);
+    assert_eq!(environment.snapshot(), before);
+}
+
+#[test]
 fn model_executor_reports_model_success_without_host_execution() {
     let environment = ModelEnvironment::new();
 

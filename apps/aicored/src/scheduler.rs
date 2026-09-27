@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{mpsc as sync_mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use aicore_ai::{BoundedIntentAgent, OllamaIntentAgent, OllamaIntentConfig};
+use aicore_ai::configured_intent_agent;
 use aicore_api::{ApplicationIdentityPolicy, ApplicationRegistry, ApprovedApplication};
 use aicore_contracts::{
     capability::entry::CapabilityEntry,
@@ -265,25 +265,21 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         }
         handler = handler.with_identity_policy(policy, Arc::new(PeerExecutableArtifactResolver));
     }
-    match std::env::var("AICORE_INTENT_BACKEND").as_deref() {
-        Ok("disabled") => {},
-        Ok("ollama") | Err(std::env::VarError::NotPresent) => {
-            let provider = OllamaIntentConfig::from_env()
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let timeout = provider.timeout;
-            let agent = OllamaIntentAgent::new(provider)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let bounded = BoundedIntentAgent::new(Arc::new(agent), timeout)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            handler = handler.with_intent_agent(Arc::new(bounded));
-        },
-        Ok(other) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("unsupported intent backend: {other}"),
-            ))
-        },
-        Err(error) => return Err(std::io::Error::other(error.to_string())),
+    if let Some(memory) = &runtime.memory_store {
+        let model_targets = if runtime.model_mode || runtime.simulated_platform {
+            Some(runtime.execution_targets.clone())
+        } else {
+            None
+        };
+        handler = handler.with_personal_memory(memory.clone(), model_targets);
+    }
+    let project = std::env::var_os("AICORE_PROJECT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    if let Some(agent) =
+        configured_intent_agent(&project).map_err(|e| std::io::Error::other(e.to_string()))?
+    {
+        handler = handler.with_intent_agent(agent);
     }
     let handler = Arc::new(handler);
 

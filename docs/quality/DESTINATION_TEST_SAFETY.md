@@ -1,5 +1,26 @@
 # Destination work: isolated test boundary
 
+## Current desktop authorization (2026-09-27)
+
+The user permits native operations and system changes for this continuation,
+but prohibits installer packages and confines downloads to project `env/`.
+The five Windows filters below remain for the **isolated suite** because those
+tests do not identify a fresh owned process or guarantee exact restoration.
+This is a deliberately filtered pass, not an unfiltered workspace pass.
+`owned_process_probe` is a separate, explicit native example. It changes only
+its freshly spawned Normal-priority child to AboveNormal, verifies readback,
+restores Normal, verifies restoration and terminates/reaps that child. It
+refuses a non-Normal inherited class to avoid a lossy enum restoration. No
+affinity, power, GPU/NPU or service changes are included. Results are recorded
+separately in the current destination verification report.
+
+Pins now also accept `allowed_principals`, resolved from peer token SID on
+Windows or UID on Linux. A configured nonempty list is additive to artifact
+and per-action authorization; missing principal fails closed. Cross-user ACL
+certification is still separate. Intent backend configuration is documented
+in [INTENT_BACKENDS](../ai/INTENT_BACKENDS.md). Historical sections below retain
+the authority and results of earlier runs; they are not current instructions.
+
 ## Windows desktop code continuation (2026-09-24)
 
 Use the Windows desktop checkout only. The reviewed Windows-safe workspace run

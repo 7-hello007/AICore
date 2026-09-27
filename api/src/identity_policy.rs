@@ -21,6 +21,7 @@ pub enum ApplicationAction {
     ReadNativeTask,
     CancelNativeTask,
     ProposeIntent,
+    PrepareTask,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +29,10 @@ pub struct ApprovedApplication {
     pub application_id: ApplicationId,
     /// SHA-256 of a platform-resolved executable artifact, never client input.
     pub artifact_sha256: String,
+    /// Transport-resolved OS principal: Windows SID or `uid:<number>`.
+    /// Empty preserves legacy artifact-only policies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_principals: Vec<String>,
     pub allowed_actions: Vec<ApplicationAction>,
 }
 
@@ -50,6 +55,10 @@ impl ApplicationIdentityPolicy {
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit())
             || approval.allowed_actions.is_empty()
+            || approval
+                .allowed_principals
+                .iter()
+                .any(|p| p.trim().is_empty() || p.len() > 184)
         {
             return Err(ContractError::ContractInvalid(
                 "invalid application pin".into(),
@@ -77,6 +86,16 @@ impl ApplicationIdentityPolicy {
         artifact_sha256: &str,
         action: ApplicationAction,
     ) -> ContractResult<()> {
+        self.authorize_identity(application_id, artifact_sha256, None, action)
+    }
+
+    pub fn authorize_identity(
+        &self,
+        application_id: &ApplicationId,
+        artifact_sha256: &str,
+        principal: Option<&str>,
+        action: ApplicationAction,
+    ) -> ContractResult<()> {
         let pins = self
             .pins
             .read()
@@ -88,6 +107,13 @@ impl ApplicationIdentityPolicy {
             .artifact_sha256
             .eq_ignore_ascii_case(artifact_sha256)
             || !approved.allowed_actions.contains(&action)
+            || (!approved.allowed_principals.is_empty()
+                && !principal.is_some_and(|p| {
+                    approved
+                        .allowed_principals
+                        .iter()
+                        .any(|allowed| allowed == p)
+                }))
         {
             return Err(ContractError::PermissionDenied(
                 "application artifact or action is not approved".into(),
@@ -102,6 +128,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn principal_restriction_is_additive_and_missing_principal_denied() {
+        let policy = ApplicationIdentityPolicy::new();
+        let id = ApplicationId::new("test.sid");
+        let digest = "b".repeat(64);
+        policy
+            .pin(ApprovedApplication {
+                application_id: id.clone(),
+                artifact_sha256: digest.clone(),
+                allowed_principals: vec!["S-1-5-21-123".into()],
+                allowed_actions: vec![ApplicationAction::Register],
+            })
+            .unwrap();
+        assert!(policy
+            .authorize(&id, &digest, ApplicationAction::Register)
+            .is_err());
+        assert!(policy
+            .authorize_identity(
+                &id,
+                &digest,
+                Some("S-1-5-21-999"),
+                ApplicationAction::Register
+            )
+            .is_err());
+        assert!(policy
+            .authorize_identity(
+                &id,
+                &digest,
+                Some("S-1-5-21-123"),
+                ApplicationAction::Register
+            )
+            .is_ok());
+        assert!(policy
+            .authorize_identity(
+                &id,
+                &"c".repeat(64),
+                Some("S-1-5-21-123"),
+                ApplicationAction::Register
+            )
+            .is_err());
+    }
+
+    #[test]
     fn artifact_and_action_are_both_required_and_revocable() {
         let policy = ApplicationIdentityPolicy::new();
         let id = ApplicationId::new("app.editor");
@@ -113,6 +181,7 @@ mod tests {
             .pin(ApprovedApplication {
                 application_id: id.clone(),
                 artifact_sha256: digest.clone(),
+                allowed_principals: Vec::new(),
                 allowed_actions: vec![ApplicationAction::Register, ApplicationAction::SubmitTask],
             })
             .unwrap();

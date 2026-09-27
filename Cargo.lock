@@ -61,6 +61,7 @@ dependencies = [
 name = "aicore-ai"
 version = "0.4.0"
 dependencies = [
+ "aicore-ai-runtime",
  "aicore-contracts",
  "serde",
  "serde_json",

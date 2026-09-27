@@ -43,7 +43,14 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
         let mut outcomes: Vec<ExecutionOutcome> = Vec::new();
 
         // 1. 电源模式（系统级）
-        if let Some(power) = &self.power {
+        if targets.process_only {
+            outcomes.push(ExecutionOutcome {
+                resource: "power.profile".into(),
+                target: "system".into(),
+                status: ExecutionStatus::Skipped,
+                message: "application preparation is process-only".into(),
+            });
+        } else if let Some(power) = &self.power {
             match power.set_profile(policy.power.mode) {
                 Ok(applied) => outcomes.push(ExecutionOutcome {
                     resource: "power.profile".to_string(),

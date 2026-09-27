@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use aicore_contracts::{
     errors::{ContractError, ContractResult},
     task::{lifecycle::TaskState, queued::QueuedTask},
-    traits::task_queue::{transition, ITaskQueue},
+    traits::task_queue::{transition, IPreparationAuthorization, ITaskQueue},
 };
 
 /// 内存 Task 队列。
@@ -24,6 +24,7 @@ struct QueueState {
     tasks: HashMap<String, QueuedTask>,
     /// 顺序 id 计数器（用于生成 task_id）。
     next_seq: AtomicU64,
+    preparations: HashMap<String, (u64, Arc<dyn IPreparationAuthorization>)>,
 }
 
 impl InMemoryTaskQueue {
@@ -47,25 +48,43 @@ impl Default for InMemoryTaskQueue {
 }
 
 impl ITaskQueue for InMemoryTaskQueue {
-    fn enqueue(&self, mut task: QueuedTask) -> ContractResult<String> {
+    fn enqueue(&self, task: QueuedTask) -> ContractResult<String> {
         let mut state = self.lock()?;
-
-        // 若 task_id 为空，生成一个
-        if task.task_id.trim().is_empty() {
-            let seq = state.next_seq.fetch_add(1, Ordering::Relaxed) + 1;
-            task.task_id = format!("task-{}-{}", now_unix_secs(), seq);
+        insert_task(&mut state, task)
+    }
+    fn enqueue_preparation(
+        &self,
+        task: QueuedTask,
+        ready_at_unix_ms: u64,
+        authorization: Arc<dyn IPreparationAuthorization>,
+    ) -> ContractResult<String> {
+        if task.contract.deadline_unix_secs.is_none()
+            || task
+                .contract
+                .deadline_unix_secs
+                .is_some_and(|deadline| ready_at_unix_ms >= deadline.saturating_mul(1000))
+        {
+            return Err(ContractError::InvalidRequest(
+                "preparation requires a ready time before expiry".into(),
+            ));
         }
-
-        let id = task.task_id.clone();
-        if state.tasks.contains_key(&id) {
-            return Err(ContractError::InvalidRequest(format!(
-                "duplicate task_id: {}",
-                id
-            )));
-        }
-
-        state.tasks.insert(id.clone(), task);
+        let mut state = self.lock()?;
+        let id = insert_task(&mut state, task)?;
+        state
+            .preparations
+            .insert(id.clone(), (ready_at_unix_ms, authorization));
         Ok(id)
+    }
+    fn preparation_targets(
+        &self,
+        task_id: &str,
+    ) -> ContractResult<Option<aicore_contracts::execution::targets::ExecutionTargets>> {
+        let authorization = self
+            .lock()?
+            .preparations
+            .get(task_id)
+            .map(|(_, guard)| guard.clone());
+        authorization.map(|guard| guard.targets()).transpose()
     }
 
     fn dequeue(&self) -> ContractResult<Option<QueuedTask>> {
@@ -87,6 +106,7 @@ impl ITaskQueue for InMemoryTaskQueue {
                 task.finished_at_unix_ms = Some(now_ms);
                 task.result_message = Some("deadline expired before execution".to_string());
             }
+            state.preparations.remove(&id);
         }
 
         // 2. 找最高优先级的 Queued
@@ -94,6 +114,13 @@ impl ITaskQueue for InMemoryTaskQueue {
             .tasks
             .values()
             .filter(|t| t.state == TaskState::Queued)
+            .filter(|t| {
+                state
+                    .preparations
+                    .get(&t.task_id)
+                    .map(|(ready, _)| *ready <= now_ms)
+                    .unwrap_or(true)
+            })
             .max_by_key(|t| t.effective_priority(now_secs))
             .map(|t| t.task_id.clone());
 
@@ -171,6 +198,7 @@ impl InMemoryTaskQueue {
                     count += 1;
                 }
             }
+            state.preparations.remove(&id);
         }
         Ok(count)
     }
@@ -179,6 +207,7 @@ impl InMemoryTaskQueue {
     pub fn clear(&self) -> ContractResult<()> {
         let mut state = self.lock()?;
         state.tasks.clear();
+        state.preparations.clear();
         Ok(())
     }
 
@@ -198,8 +227,24 @@ impl InMemoryTaskQueue {
         task.state = target;
         task.finished_at_unix_ms = Some(now);
         task.result_message = message;
+        state.preparations.remove(task_id);
         Ok(())
     }
+}
+
+fn insert_task(state: &mut QueueState, mut task: QueuedTask) -> ContractResult<String> {
+    if task.task_id.trim().is_empty() {
+        let seq = state.next_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        task.task_id = format!("task-{}-{}", now_unix_secs(), seq);
+    }
+    let id = task.task_id.clone();
+    if state.tasks.contains_key(&id) {
+        return Err(ContractError::InvalidRequest(format!(
+            "duplicate task_id: {id}"
+        )));
+    }
+    state.tasks.insert(id.clone(), task);
+    Ok(id)
 }
 
 /// 共享包装，便于同时给 daemon 和 AdaptiveLoop 使用。
@@ -217,4 +262,64 @@ fn now_unix_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod preparation_tests {
+    use super::*;
+    use aicore_contracts::{
+        application::id::ApplicationId, execution::targets::ExecutionTargets,
+        task::contract::TaskContract,
+    };
+    struct Guard;
+    impl IPreparationAuthorization for Guard {
+        fn targets(&self) -> ContractResult<ExecutionTargets> {
+            Ok(ExecutionTargets {
+                process_only: true,
+                foreground_pids: vec![42],
+                background_pids: vec![],
+            })
+        }
+    }
+    #[test]
+    fn delayed_preparation_cancellation_expiry_release_authorization() {
+        let q = InMemoryTaskQueue::new();
+        let make = |id: &str, deadline| {
+            let mut contract = TaskContract::minimal(ApplicationId::new("app.test"));
+            contract.deadline_unix_secs = Some(deadline);
+            QueuedTask::new(id.into(), contract, now_unix_ms())
+        };
+        let guard = Arc::new(Guard);
+        q.enqueue_preparation(
+            make("later", now_unix_secs() + 60),
+            now_unix_ms() + 30_000,
+            guard.clone(),
+        )
+        .unwrap();
+        assert!(q.dequeue().unwrap().is_none());
+        q.cancel("later").unwrap();
+        assert_eq!(q.get("later").unwrap().unwrap().state, TaskState::Cancelled);
+        assert!(q.preparation_targets("later").unwrap().is_none());
+        q.enqueue_preparation(make("expired", 1), 0, guard.clone())
+            .unwrap();
+        assert!(q.dequeue().unwrap().is_none());
+        assert_eq!(q.get("expired").unwrap().unwrap().state, TaskState::Expired);
+        assert!(q.preparation_targets("expired").unwrap().is_none());
+        q.enqueue_preparation(
+            make("ready", now_unix_secs() + 60),
+            now_unix_ms(),
+            guard.clone(),
+        )
+        .unwrap();
+        assert_eq!(q.dequeue().unwrap().unwrap().task_id, "ready");
+        assert!(
+            q.preparation_targets("ready")
+                .unwrap()
+                .unwrap()
+                .process_only
+        );
+        assert_eq!(q.cancel_all().unwrap(), 1);
+        assert!(q.preparation_targets("ready").unwrap().is_none());
+        assert_eq!(Arc::strong_count(&guard), 1);
+    }
 }

@@ -1,5 +1,12 @@
 use crate::errors::ContractResult;
+use crate::execution::targets::ExecutionTargets;
 use crate::task::{lifecycle::TaskState, queued::QueuedTask};
+
+/// Rechecked immediately before preparation actuation. Implemented by the
+/// application boundary; queue and Core never resolve OS identity themselves.
+pub trait IPreparationAuthorization: Send + Sync {
+    fn targets(&self) -> ContractResult<ExecutionTargets>;
+}
 
 /// Task 队列抽象。
 ///
@@ -10,6 +17,19 @@ use crate::task::{lifecycle::TaskState, queued::QueuedTask};
 pub trait ITaskQueue: Send + Sync {
     /// 入队。返回系统分配的 task_id。
     fn enqueue(&self, task: QueuedTask) -> ContractResult<String>;
+    fn enqueue_preparation(
+        &self,
+        _task: QueuedTask,
+        _ready_at_unix_ms: u64,
+        _authorization: std::sync::Arc<dyn IPreparationAuthorization>,
+    ) -> ContractResult<String> {
+        Err(crate::errors::ContractError::NotSupported(
+            "scheduled preparation queue unavailable".into(),
+        ))
+    }
+    fn preparation_targets(&self, _task_id: &str) -> ContractResult<Option<ExecutionTargets>> {
+        Ok(None)
+    }
 
     /// 取下一个最高优先级的 Queued task，原子地将状态置为 Running。
     ///

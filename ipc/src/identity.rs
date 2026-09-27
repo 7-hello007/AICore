@@ -21,6 +21,33 @@ pub enum ClientIdentity {
 }
 
 impl ClientIdentity {
+    pub fn process_id(self) -> Option<u32> {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux { pid, .. } => u32::try_from(pid).ok().filter(|p| *p > 0),
+            #[cfg(target_os = "windows")]
+            Self::Windows { pid, .. } => Some(pid).filter(|p| *p > 0),
+            Self::Unauthenticated | Self::Internal => None,
+        }
+    }
+    /// The authenticated OS principal, never a field supplied by a client.
+    pub fn principal(self) -> Option<String> {
+        if !self.is_current() {
+            return None;
+        }
+        let principal = match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux { uid, .. } => Some(format!("uid:{uid}")),
+            #[cfg(target_os = "windows")]
+            Self::Windows { pid, .. } => crate::transport::process_user_sid(pid),
+            Self::Unauthenticated | Self::Internal => None,
+        };
+        if self.is_current() {
+            principal
+        } else {
+            None
+        }
+    }
     /// Read-only executable digest for an operator-pinned application policy.
     /// A missing/inaccessible executable fails closed. This is not a code
     /// signing or Windows ACL certification claim.
@@ -148,6 +175,7 @@ mod windows_artifact_tests {
             created_at_100ns,
         };
         let digest = peer.artifact_sha256().unwrap();
+        assert!(peer.principal().unwrap().starts_with("S-1-"));
         assert_eq!(digest.len(), 64);
         assert!(digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert_eq!(ClientIdentity::Unauthenticated.artifact_sha256(), None);

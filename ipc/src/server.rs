@@ -69,7 +69,7 @@ mod windows_pipe_tests {
     }
 
     #[test]
-    fn newer_major_handshake_selects_one_wire_without_accepting_two_requests() {
+    fn newer_major_handshake_selects_two_but_standalone_requests_need_session() {
         let handler: Arc<dyn IpcHandler> = Arc::new(IdentityStatusHandler {
             saw_current_peer: AtomicBool::new(false),
         });
@@ -87,7 +87,7 @@ mod windows_pipe_tests {
         let accepted = process_envelope(&handler, handshake, ClientIdentity::Internal);
         assert!(
             matches!(accepted.data, Some(ResponseData::HandshakeAck { selected_version, .. })
-            if selected_version == IPC_PROTOCOL_VERSION)
+            if selected_version == aicore_contracts::ipc::protocol::IPC_PROTOCOL_V2)
         );
         let mut wrong_wire = Envelope::new("wrong", Request::GetStatus);
         wrong_wire.version = aicore_contracts::schema::SchemaVersion::new(2, 0);
@@ -137,6 +137,26 @@ mod windows_pipe_tests {
             .unwrap();
         assert!(matches!(response.data, Some(ResponseData::Status { .. })));
         assert!(handler.saw_current_peer.load(Ordering::SeqCst));
+        let mut v2 = IpcClient::connect_with_versions(
+            &path,
+            vec![
+                aicore_contracts::ipc::protocol::IPC_PROTOCOL_V2,
+                IPC_PROTOCOL_VERSION,
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(v2.negotiated_version().major, 2);
+        let response = v2
+            .call(
+                "v2-status",
+                Request::GetStatus,
+                std::time::Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.version.major, 2);
+        assert!(matches!(response.data, Some(ResponseData::Status { .. })));
         shutdown.send(()).await.unwrap();
         task.await.unwrap();
     }
@@ -243,6 +263,7 @@ async fn handle_connection(
     let identity = stream.peer_identity();
     let mut seen = HashSet::<String>::new();
     let mut acknowledgements = false;
+    let mut selected_version = IPC_PROTOCOL_VERSION;
     loop {
         let line = match tokio::time::timeout(CONNECTION_IDLE_TIMEOUT, stream.read_message()).await
         {
@@ -266,6 +287,13 @@ async fn handle_connection(
                     )
                 } else if matches!(envelope.payload, Request::Handshake { .. }) {
                     let response = dispatch_blocking(handler.clone(), envelope, identity).await;
+                    if let Some(ResponseData::HandshakeAck {
+                        selected_version: version,
+                        ..
+                    }) = &response.data
+                    {
+                        selected_version = *version;
+                    }
                     acknowledgements = matches!(
                         &response.data,
                         Some(ResponseData::HandshakeAck { capabilities, .. })
@@ -273,8 +301,24 @@ async fn handle_connection(
                     );
                     response
                 } else {
-                    send_ack = acknowledgements && envelope.version == IPC_PROTOCOL_VERSION;
-                    dispatch_blocking(handler.clone(), envelope, identity).await
+                    send_ack = acknowledgements;
+                    if envelope.version != selected_version {
+                        let mut response = ResponseEnvelope::err(
+                            envelope.request_id,
+                            IpcError::protocol_mismatch(envelope.version, selected_version),
+                        );
+                        response.version = selected_version;
+                        response
+                    } else {
+                        // Both supported wire dialects have the same typed
+                        // payload, while V2 is accepted only on this session.
+                        let mut canonical = envelope;
+                        canonical.version = IPC_PROTOCOL_VERSION;
+                        let mut response =
+                            dispatch_blocking(handler.clone(), canonical, identity).await;
+                        response.version = selected_version;
+                        response
+                    }
                 }
             },
             Err(e) => ResponseEnvelope::err(
@@ -284,7 +328,8 @@ async fn handle_connection(
         };
 
         if send_ack {
-            let ack = ResponseEnvelope::ok(response.request_id.clone(), ResponseData::Ack);
+            let mut ack = ResponseEnvelope::ok(response.request_id.clone(), ResponseData::Ack);
+            ack.version = selected_version;
             write_response(&mut stream, &ack).await?;
         }
         write_response(&mut stream, &response).await?;
@@ -342,6 +387,7 @@ fn process_envelope(
             | Request::DeclareCurrentTask { .. }
             | Request::ClearCurrentTask { .. }
             | Request::ProposeIntent { .. }
+            | Request::PrepareUpcomingTask { .. }
             | Request::SubmitNativeTask { .. }
             | Request::GetNativeTask { .. }
             | Request::CancelNativeTask { .. }
@@ -356,18 +402,36 @@ fn process_envelope(
         );
     }
     match envelope.payload {
-        Request::Handshake { capabilities, .. } => {
+        Request::Handshake {
+            capabilities,
+            supported_versions,
+        } => {
+            let offered = if supported_versions.is_empty() {
+                vec![envelope.version]
+            } else {
+                supported_versions
+            };
+            let Some(selected_version) =
+                aicore_contracts::ipc::protocol::negotiate_version(&offered)
+            else {
+                return ResponseEnvelope::err(
+                    request_id,
+                    IpcError::protocol_mismatch(envelope.version, IPC_PROTOCOL_VERSION),
+                );
+            };
             let accepted = capabilities
                 .into_iter()
                 .filter(|capability| capability == "request_ack")
                 .collect();
-            ResponseEnvelope::ok(
+            let mut response = ResponseEnvelope::ok(
                 request_id,
                 ResponseData::HandshakeAck {
                     capabilities: accepted,
-                    selected_version: IPC_PROTOCOL_VERSION,
+                    selected_version,
                 },
-            )
+            );
+            response.version = selected_version;
+            response
         },
         request => match handler.handle_with_identity(request, identity) {
             Ok(data) => ResponseEnvelope::ok(request_id, data),
@@ -544,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn handshake_negotiates_only_an_explicitly_supported_current_version() {
+    fn handshake_negotiates_explicit_versions_and_rejects_unknown_major() {
         let handler: Arc<dyn IpcHandler> = Arc::new(StatusHandler);
         let mut envelope = Envelope::new(
             "future",
@@ -558,12 +622,12 @@ mod tests {
         assert!(response.success);
         assert_eq!(response.version, IPC_PROTOCOL_VERSION);
         let unsupported = Envelope {
-            version: aicore_contracts::schema::SchemaVersion::new(2, 0),
+            version: aicore_contracts::schema::SchemaVersion::new(3, 0),
             request_id: "unsupported".into(),
             timestamp_unix_ms: 1,
             payload: Request::Handshake {
                 capabilities: vec![],
-                supported_versions: vec![aicore_contracts::schema::SchemaVersion::new(2, 0)],
+                supported_versions: vec![aicore_contracts::schema::SchemaVersion::new(3, 0)],
             },
         };
         assert_eq!(

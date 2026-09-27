@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0", "name": "intent_classifier_v1", "version": "1.0.0",
+  "feature_dim": 8,
+  "vocabulary": ["compile", "compiling", "rust", "editor", "coding", "gaming", "rendering", "inference"],
+  "labels": ["compilation", "development", "gaming", "rendering", "ai_inference"],
+  "weights": [[6,6,3,0,0,0,0,0], [0,0,0,6,6,0,0,0], [0,0,0,0,0,6,0,0], [0,0,0,0,0,0,6,0], [0,0,0,0,0,0,0,6]]
+}

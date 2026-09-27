@@ -414,6 +414,14 @@ fn print_data(data: ResponseData) {
                 serde_json::to_string_pretty(&proposal).unwrap_or_default()
             );
         },
+        ResponseData::PreparationScheduled {
+            preparation_id,
+            workload,
+            ready_at_unix_ms,
+        } => println!(
+            "preparation scheduled: {} workload={:?} ready_at_unix_ms={}",
+            preparation_id, workload, ready_at_unix_ms
+        ),
         ResponseData::NativeTaskSubmitted { handle_id } => {
             println!("native task submitted: {}", handle_id);
         },

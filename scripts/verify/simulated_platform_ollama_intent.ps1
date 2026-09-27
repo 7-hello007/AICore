@@ -1,6 +1,6 @@
 # End-to-end local intent over a simulated Platform Mode daemon and IPC.
 # Uses an already-running Ollama service; neither installer nor host setter is invoked.
-param([string]$Model = 'llama3.2:3b')
+param([string]$Model = 'llama3.2:3b', [ValidateSet('ollama','json','onnx','ensemble')][string]$Backend='ollama', [switch]$RejectSid)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $daemon = Join-Path $projectRoot 'target\debug\aicored.exe'
@@ -18,13 +18,14 @@ $oldPolicy = $env:AICORE_APP_POLICY_PATH
 $oldTemp = $env:TEMP
 $oldTmp = $env:TMP
 $env:AICORE_EXECUTION_MODE = 'simulated-platform'
-$env:AICORE_INTENT_BACKEND = 'ollama'
+$env:AICORE_INTENT_BACKEND = $Backend
 $env:AICORE_OLLAMA_MODEL = $Model
 $pinPath = Join-Path $scratch 'application-pins.json'
 $pins = @(@{
     application_id = 'aicore.intent.smoke'
     artifact_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $cli).Hash.ToLowerInvariant()
     allowed_actions = @('register', 'propose_intent', 'unregister')
+    allowed_principals = @($(if ($RejectSid) { 'S-1-5-18' } else { [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value }))
 })
 ConvertTo-Json -InputObject $pins -Depth 4 | Set-Content -LiteralPath $pinPath -Encoding UTF8
 $env:AICORE_APP_POLICY_PATH = $pinPath
@@ -51,14 +52,29 @@ try {
         if (Test-Path -LiteralPath (Join-Path $scratch 'status.json')) { $ready = $true; break }
     }
     if (-not $ready) { throw 'simulated daemon did not become ready' }
-    $output = & $cli intent --text 'I am compiling a Rust project in my editor' `
-        --application-id 'aicore.intent.smoke' --ipc-path $pipe 2>&1
+    # State publication can precede provider loading and IPC bind. Retry only
+    # connection failures; an actual authorization/inference failure is final.
+    for ($attempt=0; $attempt -lt 100; $attempt++) {
+        $output = & $cli intent --text 'I am compiling a Rust project in my editor' `
+            --application-id 'aicore.intent.smoke' --ipc-path $pipe 2>&1
+        if ($LASTEXITCODE -eq 0 -or ($output | Out-String) -notmatch 'IPC connect failed') {break}
+        if ($process.HasExited) {break}
+        Start-Sleep -Milliseconds 100
+    }
+    if ($RejectSid) {
+        if ($LASTEXITCODE -eq 0 -or ($output | Out-String) -notmatch 'not approved') { throw "SID denial not observed: $output" }
+        Write-Output "PASS: mismatched SID denied over real named pipe with backend=$Backend; artifacts=$scratch"
+        return
+    }
     if ($LASTEXITCODE -ne 0) { throw "intent IPC call failed: $output" }
     $proposal = ($output | Out-String | ConvertFrom-Json)
     if ($proposal.workload_type -ne 'compilation' -or $proposal.confidence -lt 0.6) {
         throw "unusable Ollama proposal: $output"
     }
-    Write-Output "PASS: pinned CLI executable and local Ollama $Model intent over simulated daemon IPC; workload=$($proposal.workload_type); confidence=$($proposal.confidence); artifacts=$scratch"
+    if ($Backend -eq 'ensemble' -and $proposal.reason -notmatch 'consensus contributors=2') {
+        throw "both local agents did not contribute: $output"
+    }
+    Write-Output "PASS: artifact+SID-pinned CLI and local $Backend ($Model) intent over simulated daemon IPC; workload=$($proposal.workload_type); confidence=$($proposal.confidence); artifacts=$scratch"
 }
 finally {
     if ($process -and -not $process.HasExited) {

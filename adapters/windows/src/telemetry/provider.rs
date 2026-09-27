@@ -62,6 +62,25 @@ fn lock_err(what: &str) -> ContractError {
 }
 
 impl ITelemetryProvider for WindowsTelemetryProvider {
+    fn collect_process(&self, pid: u32) -> ContractResult<ProcessSnapshot> {
+        let mut system = self.system.lock().map_err(|_| lock_err("system"))?;
+        let key = sysinfo::Pid::from_u32(pid);
+        if !system.refresh_process(key) {
+            return Err(ContractError::ResourceUnavailable(
+                "process telemetry unavailable".into(),
+            ));
+        }
+        let process = system
+            .process(key)
+            .ok_or_else(|| ContractError::ResourceUnavailable("process disappeared".into()))?;
+        Ok(ProcessSnapshot {
+            pid,
+            name: process.name().to_owned(),
+            cpu_usage_percent: process.cpu_usage(),
+            memory_mb: process.memory() / 1024 / 1024,
+            is_foreground: self.foreground.read().pid == Some(pid),
+        })
+    }
     fn collect(&self) -> ContractResult<ComputerSnapshot> {
         let mut system = self.system.lock().map_err(|_| lock_err("system"))?;
         system.refresh_cpu();

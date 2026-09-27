@@ -66,3 +66,5 @@ pub trait IpcTransport: Send + Sync {
     async fn read_message(&mut self) -> io::Result<Option<String>>;
     async fn write_message(&mut self, msg: &str) -> io::Result<()>;
 }
+#[cfg(target_os = "windows")]
+pub(crate) use windows::process_user_sid;

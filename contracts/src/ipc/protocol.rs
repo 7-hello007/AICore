@@ -12,14 +12,19 @@ use crate::task::lifecycle::TaskState;
 
 /// IPC 协议版本。不兼容变更需递增 major。
 pub const IPC_PROTOCOL_VERSION: SchemaVersion = SchemaVersion::CURRENT;
+/// V2 retains the typed payload schema and requires connection negotiation.
+/// This protocol version is independent from the general persistence schema.
+pub const IPC_PROTOCOL_V2: SchemaVersion = SchemaVersion::new(2, 0);
+pub const IPC_SUPPORTED_VERSIONS: &[SchemaVersion] = &[IPC_PROTOCOL_V2, IPC_PROTOCOL_VERSION];
 
 /// Select a wire format implemented by this server. A client may send a
 /// handshake envelope from another major version only if it also offers the
 /// current wire format; no unimplemented major is silently accepted.
 pub fn negotiate_version(offered: &[SchemaVersion]) -> Option<SchemaVersion> {
-    offered
-        .contains(&IPC_PROTOCOL_VERSION)
-        .then_some(IPC_PROTOCOL_VERSION)
+    IPC_SUPPORTED_VERSIONS
+        .iter()
+        .copied()
+        .find(|version| offered.contains(version))
 }
 
 /// 请求 / 响应 Envelope。
@@ -80,6 +85,11 @@ pub enum Request {
     /// Semantic local intent only; the response is not an executable policy.
     ProposeIntent {
         request: IntentRequest,
+    },
+    /// Resource preparation only; never completes the application's real task.
+    PrepareUpcomingTask {
+        contract: TaskContract,
+        starts_at_unix_ms: u64,
     },
     SubmitNativeTask {
         contract: TaskContract,
@@ -176,6 +186,11 @@ pub enum ResponseData {
     },
     IntentProposed {
         proposal: IntentProposal,
+    },
+    PreparationScheduled {
+        preparation_id: String,
+        workload: crate::context::workload::WorkloadType,
+        ready_at_unix_ms: u64,
     },
     NativeTaskSubmitted {
         handle_id: String,
@@ -280,9 +295,14 @@ mod negotiation_tests {
         let newer = SchemaVersion::new(2, 0);
         assert_eq!(
             negotiate_version(&[newer, IPC_PROTOCOL_VERSION]),
+            Some(IPC_PROTOCOL_V2)
+        );
+        assert_eq!(negotiate_version(&[newer]), Some(IPC_PROTOCOL_V2));
+        assert_eq!(negotiate_version(&[SchemaVersion::new(3, 0)]), None);
+        assert_eq!(
+            negotiate_version(&[IPC_PROTOCOL_VERSION]),
             Some(IPC_PROTOCOL_VERSION)
         );
-        assert_eq!(negotiate_version(&[newer]), None);
         assert_eq!(negotiate_version(&[]), None);
     }
 

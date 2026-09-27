@@ -47,12 +47,28 @@ impl IntentAgentCoordinator {
         profile: &UserProfile,
         now_unix_ms: u64,
     ) -> ContractResult<AgentConsensus> {
+        let started = std::time::Instant::now();
+        // All bounded workers are dispatched together; one slow agent cannot
+        // multiply the caller deadline by the number of providers.
+        let results = std::thread::scope(|scope| {
+            let workers: Vec<_> = self
+                .agents
+                .iter()
+                .filter(|agent| {
+                    agent.deployment() != IntentDeployment::Cloud || profile.can_use_cloud()
+                })
+                .map(|agent| scope.spawn(move || agent.propose(request)))
+                .collect();
+            workers
+                .into_iter()
+                .filter_map(|worker| worker.join().ok())
+                .collect::<Vec<_>>()
+        });
+        let now_unix_ms =
+            now_unix_ms.saturating_add(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
         let mut votes: HashMap<WorkloadType, (f32, usize, IntentProposal)> = HashMap::new();
-        for agent in &self.agents {
-            if agent.deployment() == IntentDeployment::Cloud && !profile.can_use_cloud() {
-                continue;
-            }
-            let proposal = match agent.propose(request) {
+        for result in results {
+            let proposal = match result {
                 Ok(proposal)
                     if proposal.workload_type != WorkloadType::Unknown
                         && proposal.confidence.is_finite()
@@ -68,9 +84,7 @@ impl IntentAgentCoordinator {
                 .or_insert((0.0, 0, proposal.clone()));
             vote.0 += proposal.confidence;
             vote.1 += 1;
-            if proposal.confidence > vote.2.confidence {
-                vote.2 = proposal;
-            }
+            vote.2.expires_at_unix_ms = vote.2.expires_at_unix_ms.min(proposal.expires_at_unix_ms);
         }
         let mut ranked: Vec<_> = votes.into_values().collect();
         ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -88,10 +102,34 @@ impl IntentAgentCoordinator {
             ));
         }
         proposal.confidence = best_score / contributors as f32;
+        proposal
+            .reason
+            .push_str(&format!("; consensus contributors={contributors}"));
         Ok(AgentConsensus {
             proposal,
             contributors,
         })
+    }
+}
+
+/// Daemon provider: local agents cooperate through the existing intent API.
+/// Default privacy policy excludes cloud providers.
+impl IIntentAgent for IntentAgentCoordinator {
+    fn propose(&self, request: &IntentRequest) -> ContractResult<IntentProposal> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| ContractError::AiInferenceFailed(e.to_string()))?
+            .as_millis()
+            .min(u64::MAX as u128) as u64;
+        Ok(self
+            .propose(request, &UserProfile::default(), now)?
+            .proposal)
+    }
+    fn deployment(&self) -> IntentDeployment {
+        IntentDeployment::Local
+    }
+    fn name(&self) -> &'static str {
+        "local_intent_agent_coordinator"
     }
 }
 
@@ -128,6 +166,34 @@ mod tests {
             submitted_at_unix_ms: 10,
         }
     }
+    #[test]
+    fn parallel_deadline_does_not_accumulate_slow_agents() {
+        struct Slow;
+        impl IIntentAgent for Slow {
+            fn propose(&self, _: &IntentRequest) -> ContractResult<IntentProposal> {
+                std::thread::sleep(Duration::from_secs(1));
+                Err(ContractError::AiTimeout("slow".into()))
+            }
+            fn deployment(&self) -> IntentDeployment {
+                IntentDeployment::Local
+            }
+            fn name(&self) -> &'static str {
+                "slow"
+            }
+        }
+        let agents: Vec<Arc<dyn IIntentAgent>> =
+            vec![Arc::new(Slow), Arc::new(Slow), Arc::new(Slow)];
+        let coordinator = IntentAgentCoordinator::new(agents, Duration::from_millis(100)).unwrap();
+        let start = std::time::Instant::now();
+        assert!(coordinator
+            .propose(&request(), &UserProfile::default(), 20)
+            .is_err());
+        assert!(
+            start.elapsed() < Duration::from_millis(250),
+            "sequential agent deadlines accumulated"
+        );
+    }
+
     #[test]
     fn local_agents_agree_without_cloud_consent() {
         let agents: Vec<Arc<dyn IIntentAgent>> = vec![

@@ -73,6 +73,7 @@ pub struct DaemonRuntime {
     pub(crate) process_selection: Arc<ProcessSelection>,
     /// Read-only platform declarations; empty in Model Mode.
     pub hardware_matrices: Vec<DeviceCapabilityMatrix>,
+    pub(crate) memory_store: Option<Arc<dyn aicore_contracts::traits::memory_store::IMemoryStore>>,
 }
 
 /// Selects a verified typed plugin source when configured; a crashed or
@@ -451,8 +452,13 @@ fn build_runtime_for_mode_with_simulation(
 
     let base: Arc<dyn IPolicyEngine> = Arc::new(RuleBasedPolicyEngine::new());
 
-    let primary: Arc<dyn IPolicyEngine> =
+    let proposed: Arc<dyn IPolicyEngine> =
         Arc::new(AiAssistedPolicyEngine::new(base.clone(), ai.clone(), 0.6));
+    let feedback_engine = Arc::new(aicore_core::policy::FeedbackPolicyEngine::new(
+        proposed,
+        base.clone(),
+    ));
+    let primary: Arc<dyn IPolicyEngine> = feedback_engine.clone();
 
     let fallback = base;
 
@@ -495,6 +501,9 @@ fn build_runtime_for_mode_with_simulation(
     .with_event_bus(event_bus)
     .with_transparent_executor(transparent)
     .with_thermal_guard(Arc::new(ThermalPowerGuard::default()));
+    let loop_ = loop_
+        .with_effect_feedback(feedback_engine)
+        .with_observed_effects_enabled(!model_mode && !simulation);
 
     /*
      * ============================================================
@@ -740,6 +749,7 @@ fn build_runtime_for_mode_with_simulation(
      * ============================================================
      */
 
+    let memory_store = memory_for_retention.clone();
     let retention: Option<Arc<RetentionScheduler>> = memory_for_retention.and_then(|store| {
         let policy = RetentionPolicy::default();
 
@@ -780,6 +790,7 @@ fn build_runtime_for_mode_with_simulation(
         ExecutionTargets {
             foreground_pids: ids.first().copied().into_iter().collect(),
             background_pids: ids.iter().skip(1).copied().take(1).collect(),
+            process_only: false,
         }
     } else {
         ExecutionTargets::default()
@@ -806,6 +817,7 @@ fn build_runtime_for_mode_with_simulation(
         telemetry_selection,
         process_selection,
         hardware_matrices,
+        memory_store,
     }
 }
 
@@ -1240,6 +1252,7 @@ mod simulated_platform_tests {
         let targets = ExecutionTargets {
             foreground_pids: vec![pid],
             background_pids: Vec::new(),
+            process_only: false,
         };
         simulator.stale_read_after_next_write().unwrap();
         let trace = transparent.execute_transparent(&proposed, &targets, Some(&previous));

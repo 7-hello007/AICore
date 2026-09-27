@@ -7,6 +7,7 @@ pub mod executor;
 // model - 要删除model.rs
 pub mod model;
 
+pub mod accelerator_scheduler;
 pub mod normalizer;
 pub mod policy;
 pub mod prediction;

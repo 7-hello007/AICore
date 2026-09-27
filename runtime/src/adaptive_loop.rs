@@ -119,6 +119,8 @@ pub struct AdaptiveLoop {
     safe_mode: Arc<SafeModeController>,
     metrics: Arc<MetricsCollector>,
     thermal_guard: Option<Arc<aicore_core::policy::ThermalPowerGuard>>,
+    effect_feedback: Option<Arc<aicore_core::policy::FeedbackPolicyEngine>>,
+    observed_effects_enabled: bool,
     tick_counter: AtomicU64,
 }
 
@@ -152,6 +154,8 @@ impl AdaptiveLoop {
             safe_mode: Arc::new(SafeModeController::new(config)),
             metrics: Arc::new(MetricsCollector::new()),
             thermal_guard: None,
+            effect_feedback: None,
+            observed_effects_enabled: false,
             tick_counter: AtomicU64::new(0),
         }
     }
@@ -418,6 +422,43 @@ impl AdaptiveLoop {
 }
 
 impl AdaptiveLoop {
+    pub fn with_effect_feedback(
+        mut self,
+        engine: Arc<aicore_core::policy::FeedbackPolicyEngine>,
+    ) -> Self {
+        self.effect_feedback = Some(engine);
+        self
+    }
+    pub fn with_observed_effects_enabled(mut self, enabled: bool) -> Self {
+        self.observed_effects_enabled = enabled;
+        self
+    }
+    /// Trusted collector ingestion. Only the last successfully applied policy
+    /// may receive evidence; simulated readings never alter the next policy.
+    pub fn record_effect(
+        &self,
+        comparison: &aicore_contracts::effect::EffectComparison,
+        budget: aicore_contracts::effect::OverheadBudget,
+    ) -> aicore_contracts::errors::ContractResult<aicore_contracts::effect::EffectAssessment> {
+        use aicore_contracts::errors::ContractError;
+        if !self.observed_effects_enabled || self.has_model_only_effects() {
+            return Err(ContractError::NotSupported(
+                "model execution cannot accept observed policy effects".into(),
+            ));
+        }
+        let engine = self
+            .effect_feedback
+            .as_ref()
+            .ok_or_else(|| ContractError::NotSupported("feedback engine not configured".into()))?;
+        let guard = self
+            .last_applied_policy
+            .lock()
+            .map_err(|_| ContractError::LockPoisoned("last policy lock poisoned".into()))?;
+        let policy = guard
+            .as_ref()
+            .ok_or_else(|| ContractError::InvalidRequest("no applied policy".into()))?;
+        engine.record_effect(policy, comparison, budget, Self::now_unix_ms())
+    }
     /// Slow side for model execution: telemetry, history, prediction, policy
     /// validation and model binding. Platform binding can change device state
     /// and must instead be deferred until a fresh plan reaches the apply side.
@@ -729,7 +770,14 @@ impl AdaptiveLoop {
         }
 
         // Policy 已通过 Validator；此后才允许 Runtime Binder 产生推理/硬件副作用。
-        let runtime_binding = if defer_binding {
+        let is_preparation = active_task.is_some_and(|task| {
+            self.task_queue.as_ref().is_some_and(|q| {
+                q.preparation_targets(&task.task_id)
+                    .map(|targets| targets.is_some())
+                    .unwrap_or(true)
+            })
+        });
+        let runtime_binding = if defer_binding || is_preparation {
             None
         } else {
             self.execute_runtime_binding(runtime_route.as_ref(), &state, &context)
@@ -806,7 +854,10 @@ impl AdaptiveLoop {
                 match queue.get(&task.task_id) {
                     Ok(Some(current))
                         if current.state
-                            == aicore_contracts::task::lifecycle::TaskState::Running => {},
+                            == aicore_contracts::task::lifecycle::TaskState::Running
+                            && !current.contract.deadline_unix_secs.is_some_and(|deadline| {
+                                Self::now_unix_ms() >= deadline.saturating_mul(1000)
+                            }) => {},
                     _ => {
                         tasks.armed = false;
                         return self.neutral_tick("prepared task was revoked before apply");
@@ -814,7 +865,19 @@ impl AdaptiveLoop {
                 }
             }
         }
-        let runtime_binding = if binding_deferred {
+        let mut preparation_targets = None;
+        if let Some(queue) = &self.task_queue {
+            if let Some(task) = tasks.tasks.first() {
+                match queue.preparation_targets(&task.task_id) {
+                    Ok(targets) => preparation_targets = targets,
+                    Err(error) => {
+                        return self
+                            .neutral_tick(&format!("preparation authorization revoked: {error}"))
+                    },
+                }
+            }
+        }
+        let runtime_binding = if binding_deferred && preparation_targets.is_none() {
             self.execute_runtime_binding(runtime_route.as_ref(), &state, &context)
         } else {
             runtime_binding
@@ -822,7 +885,8 @@ impl AdaptiveLoop {
         let active_tasks = tasks.tasks.clone();
 
         // Platform mode 可从本 tick 的真实 telemetry 推导 process targets；显式 targets 始终优先。
-        let effective_targets = derive_execution_targets(targets, &state.snapshot);
+        let effective_targets = preparation_targets
+            .unwrap_or_else(|| derive_execution_targets(targets, &state.snapshot));
 
         // 5. Execute（透明执行器优先）
         let prior = self.last_applied_policy.lock().ok().and_then(|g| g.clone());
@@ -1189,6 +1253,7 @@ fn derive_execution_targets(
     ExecutionTargets {
         foreground_pids,
         background_pids,
+        process_only: supplied.process_only,
     }
 }
 

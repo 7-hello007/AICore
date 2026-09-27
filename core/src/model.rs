@@ -198,6 +198,7 @@ impl ModelTargetProvider {
         ExecutionTargets {
             foreground_pids: self.foreground_pids.clone(),
             background_pids: self.background_pids.clone(),
+            process_only: false,
         }
     }
 }
@@ -230,7 +231,10 @@ impl ModelPolicyExecutor {
         // 这样可以保证：
         // runtime.tick(&ExecutionTargets::default())
         // 在模型模式下仍然产生真实 ExecutionOutcome。
-        if targets.foreground_pids.is_empty() && targets.background_pids.is_empty() {
+        if !targets.process_only
+            && targets.foreground_pids.is_empty()
+            && targets.background_pids.is_empty()
+        {
             return ModelTargetProvider::default().execution_targets();
         }
 
@@ -250,13 +254,15 @@ impl IPolicyExecutor for ModelPolicyExecutor {
             /*
              * 1. Power
              */
-            state.power_mode = policy.power.mode;
+            if !effective_targets.process_only {
+                state.power_mode = policy.power.mode;
 
-            outcomes.push(success(
-                "model.power.profile",
-                "model-system",
-                format!("simulated power mode = {:?}", policy.power.mode),
-            ));
+                outcomes.push(success(
+                    "model.power.profile",
+                    "model-system",
+                    format!("simulated power mode = {:?}", policy.power.mode),
+                ));
+            }
 
             /*
              * 2. Foreground process priority
@@ -352,63 +358,68 @@ impl IPolicyExecutor for ModelPolicyExecutor {
             /*
              * 5. GPU policy
              */
-            state.gpu_workload_preference = policy.gpu.workload_preference.clone();
+            if !effective_targets.process_only {
+                state.gpu_workload_preference = policy.gpu.workload_preference.clone();
 
-            if let Some(preference) = &policy.gpu.workload_preference {
+                if let Some(preference) = &policy.gpu.workload_preference {
+                    outcomes.push(success(
+                        "model.gpu.preference",
+                        "model-gpu",
+                        format!("simulated GPU workload preference = {}", preference),
+                    ));
+                } else {
+                    outcomes.push(success(
+                        "model.gpu.preference",
+                        "model-gpu",
+                        "no explicit GPU preference",
+                    ));
+                }
+
+                /*
+                 * 6. NPU policy
+                 */
+                state.npu_preferred = policy.npu.preferred;
+
                 outcomes.push(success(
-                    "model.gpu.preference",
-                    "model-gpu",
-                    format!("simulated GPU workload preference = {}", preference),
+                    "model.npu.preference",
+                    "model-npu",
+                    format!("simulated NPU preferred = {}", policy.npu.preferred),
                 ));
-            } else {
-                outcomes.push(success(
-                    "model.gpu.preference",
-                    "model-gpu",
-                    "no explicit GPU preference",
-                ));
+
+                /*
+                 * 7. Memory policy
+                 */
+                state.memory_max_usage_percent = policy.memory.max_usage_percent;
+
+                if let Some(limit) = policy.memory.max_usage_percent {
+                    outcomes.push(success(
+                        "model.memory.limit",
+                        "model-memory",
+                        format!("simulated memory limit = {:.1}%", limit),
+                    ));
+                } else {
+                    outcomes.push(success(
+                        "model.memory.limit",
+                        "model-memory",
+                        "no explicit memory limit",
+                    ));
+                }
             }
-
-            /*
-             * 6. NPU policy
-             */
-            state.npu_preferred = policy.npu.preferred;
-
-            outcomes.push(success(
-                "model.npu.preference",
-                "model-npu",
-                format!("simulated NPU preferred = {}", policy.npu.preferred),
-            ));
-
-            /*
-             * 7. Memory policy
-             */
-            state.memory_max_usage_percent = policy.memory.max_usage_percent;
-
-            if let Some(limit) = policy.memory.max_usage_percent {
-                outcomes.push(success(
-                    "model.memory.limit",
-                    "model-memory",
-                    format!("simulated memory limit = {:.1}%", limit),
-                ));
-            } else {
-                outcomes.push(success(
-                    "model.memory.limit",
-                    "model-memory",
-                    "no explicit memory limit",
-                ));
-            }
-
             /*
              * 8. Commit model policy
              */
-            state.last_policy_id = Some(policy.policy_id.clone());
-            state.revision = state.revision.saturating_add(1);
-
-            outcomes.push(success(
-                "model.policy.commit",
-                "model-state",
-                format!("model policy committed at revision {}", state.revision),
-            ));
+            if outcomes
+                .iter()
+                .any(|o| o.status == ExecutionStatus::Success)
+            {
+                state.last_policy_id = Some(policy.policy_id.clone());
+                state.revision = state.revision.saturating_add(1);
+                outcomes.push(success(
+                    "model.policy.commit",
+                    "model-state",
+                    format!("model policy committed at revision {}", state.revision),
+                ));
+            }
         });
 
         let overall_status = ExecutionOverallStatus::from_outcomes(&outcomes);
@@ -477,31 +488,45 @@ impl IPostConditionChecker for ModelPostConditionChecker {
             return PostConditionResult::Failed("model state policy id mismatch".to_string());
         }
 
-        if state.power_mode != policy.power.mode {
+        let changed = |resource: &str| {
+            result
+                .outcomes
+                .iter()
+                .any(|o| o.resource == resource && o.status == ExecutionStatus::Success)
+        };
+        if changed("model.power.profile") && state.power_mode != policy.power.mode {
             return PostConditionResult::Failed(format!(
                 "model power mode mismatch: expected={:?} actual={:?}",
                 policy.power.mode, state.power_mode
             ));
         }
 
-        if state.npu_preferred != policy.npu.preferred {
+        if changed("model.npu.preference") && state.npu_preferred != policy.npu.preferred {
             return PostConditionResult::Failed(format!(
                 "model NPU preference mismatch: expected={} actual={}",
                 policy.npu.preferred, state.npu_preferred
             ));
         }
 
-        if state.gpu_workload_preference != policy.gpu.workload_preference {
+        if changed("model.gpu.preference")
+            && state.gpu_workload_preference != policy.gpu.workload_preference
+        {
             return PostConditionResult::Failed(
                 "model GPU workload preference mismatch".to_string(),
             );
         }
 
-        if state.memory_max_usage_percent != policy.memory.max_usage_percent {
+        if changed("model.memory.limit")
+            && state.memory_max_usage_percent != policy.memory.max_usage_percent
+        {
             return PostConditionResult::Failed("model memory policy mismatch".to_string());
         }
 
-        for process in state.processes.values() {
+        for process in state.processes.values().filter(|p| {
+            result.outcomes.iter().any(|o| {
+                o.status == ExecutionStatus::Success && o.target == format!("pid={}", p.pid)
+            })
+        }) {
             if process.name.contains("foreground") && process.priority != policy.cpu.priority {
                 return PostConditionResult::Failed(format!(
                     "model foreground priority mismatch: expected={:?} actual={:?}",

@@ -1,5 +1,230 @@
 # AICore destination implementation and verification report
 
+## Continuation: 2026-09-27 (desktop backends, authorization and scheduling)
+
+This continuation modifies only `C:\Users\12282\Desktop\AICore_V4_Windows`.
+The WSL checkout is not synchronized or modified. This is destination code
+development, not a claim that these additions are V4 defect fixes or that the
+destination product/hardware acceptance gate is complete.
+
+### Delivered code and evidence
+
+| Requirement | Implemented behavior | Verified scope |
+|---|---|---|
+| ONNX / local JSON intent | Configurable runtime-backed vocabulary/typed-label adapter; checked-in weighted JSON and matching real MatMul/Softmax ONNX; isolated CPU-only Python ONNX Runtime factory with schema validation, bounded streams and subprocess timeout | Actual JSON and ONNX CPU inference; simulated-daemon intent IPC |
+| Advanced GPU/NPU scheduling | Bounded admission, priority/earliest deadline/FIFO placement, registered matrix and backend slots, thermal guard, cancellation/expiry and immutable single-dispatch lease through safe actuator | Mock admission/thermal/capacity/dispatch tests; no native device scheduling claim |
+| Agent orchestration | Concurrent bounded provider proposals, privacy filtering, confidence votes, disagreement rejection and minimum expiry; daemon ensemble selects local JSON + Ollama | Three slow mock agents share one wall deadline; actual ensemble IPC asserts both providers contributed |
+| Effect feedback | Shared FeedbackPolicyEngine wraps daemon AI generation and rule fallback; trusted last-applied-policy ingestion rejects model execution; verified regression bypasses matching primary policy for up to one hour | Deterministic regression/model rejection tests and separate observed child-workload probe; no general daemon workload collector or product benefit claim |
+| Cross-major IPC | Explicit 1.0/2.0 negotiation; v2 requires handshake session, uses typed payload parity and selected-version Ack/response; unknown majors and standalone v2 reject | Native same-user Windows named-pipe v2 roundtrip; contracts and Linux-target code check |
+| Artifact/SID policy | Transport-resolved read-only executable SHA-256 and Windows token SID/Linux UID; optional principal list adds to per-action pin checks | Native same-user artifact+SID acceptance and mismatched SID denial; no cross-user ACL/signature attestation |
+| Personal pre-task actuation | Consented retained application/hour pattern creates delayed preparation task; apply rechecks current owner/peer/pins/consent/expiry; process-only targets skip global power and runtime binding | Daemon+Model consent-revocation/apply test; delayed queue, cancellation, expiry and guard cleanup tests; empty process-only targets are NoOp |
+| Documentation | Current requirement inventory, IPC specification, intent configuration, scheduling/feedback and safe test boundary | Synced to source and this report |
+
+The JSON/ONNX asset is a hand-authored classifier, not a trained generative LLM
+or calibrated accuracy model. ONNX subprocess sessions are not persistent.
+A rule fallback may still produce a similar resource shape; choosing it does
+not guarantee reversal of an observed regression. Pipeline latency and model
+effects are not evidence of application performance improvement.
+
+### Project-level verification
+
+All commands use the existing Rust **1.75.0** toolchain, project-local
+`env/cargo-home`, `--locked` and `--offline`. No MSRV upgrade.
+
+| Command/check | Actual result |
+|---|---|
+| `cargo check --workspace --all-targets --locked --offline` | **PASS**, exit 0; `env/validation/desktop-check-final.log` |
+| `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` | **PASS**, exit 0; `env/validation/desktop-clippy-final.log` |
+| `cargo fmt --all -- --check` | **PASS**, exit 0 |
+| Safe workspace test command below | **PASS**, exit 0; 143 executed targets, **719 passed, 0 failed, 0 ignored, 5 filtered**; `env/validation/desktop-safe-tests-final.log` |
+| `aicored --once` with `AICORE_EXECUTION_MODE=model` and isolated paths | **PASS**, exit 0; 1 model tick/1 model success/0 failures; `env/model-final-1790515502945` |
+| `scripts/verify/simulated_platform_windows_smoke.ps1` | **PASS**, exit 0; 10 ticks, 5 in-memory successes, 0 failures, pipe status/ticks; `env/windows-smoke-1790515504398` |
+| `simulated_platform_ollama_intent.ps1 -Backend json/onnx/ollama/ensemble` (each separately) | **PASS** for all four; compilation confidence 0.9522384 / 0.9522384 / 1 / 0.97611916. Ensemble assertion requires two contributors. Actual Ollama model: `llama3.2:3b` |
+| `simulated_platform_ollama_intent.ps1 -Backend json -RejectSid` | **PASS**: mismatched SID rejected over native same-user pipe |
+| PowerShell parser for 9 repository scripts; Python AST for both new model scripts | **PASS**, exit 0; no script installation/control execution |
+| Applicable structural audit | **PASS**: Cargo/docs/license exist, no destination directory/model placeholders/nested tests/stale versioned doc links |
+| `cargo check --workspace --all-targets --target x86_64-unknown-linux-gnu --locked --offline` | **PASS** on final run, exit 0 with project-local portable Zig C cross compiler; `env/validation/linux-cross-check-final.log`. Initial attempt **FAIL**ed with missing compiler (exit 101), retained in `env/validation/linux-cross-check.log` |
+| `cargo clippy --workspace --all-targets --all-features --target x86_64-unknown-linux-gnu --locked --offline -- -D warnings` | **PASS**, exit 0 with the same project-local compiler; `env/validation/linux-cross-clippy-final.log`. Compile/static check only, no native Linux execution |
+| Linux-target check for contracts/core/api/ai/ai-runtime/ipc/task-runtime, all targets | **PASS**, exit 0; `env/validation/linux-cross-code-check.log`. This is not the entire Linux workspace or a Linux execution result |
+
+Exact isolated suite command:
+
+```powershell
+$env:AICORE_SMOKE_SECONDS='1'
+cargo test --workspace --all-targets --locked --offline -- --skip controller_handles_bad_pid_gracefully --skip executor_runs_and_reports_outcomes --skip full_loop_runs_and_records_metrics --skip history_disabled_by_default_means_no_records --skip history_enabled_records_tick
+```
+
+These five tests remain enabled in source; this run is **filtered**, not an
+unfiltered test pass. They can use non-owned process targets or system power
+setters without exact restoration. Installer/service tests present in this
+suite are static or mocks, not package/SCM installation. Linux-only cases have
+no native execution coverage on this Windows host. Shell scripts were reviewed;
+no WSL execution/synchronization was used to run them.
+
+An initial ONNX daemon smoke **FAIL**ed because state publication preceded the
+IPC bind while the provider was loading. The smoke script now retries only
+connection failures during startup, never authorization/inference failures.
+The final ONNX run **PASS**ed. Earlier test/build errors are superseded by the
+final commands above, not hidden as successes.
+
+### Native operations and restoration
+
+User authorization explicitly permits native control in this continuation.
+`cargo run -p aicore-tests --example owned_process_probe --locked --offline`
+is a separately invoked project-built probe, not an installer or automatic unit
+test. It targets only its own freshly spawned child and rejects inherited
+non-Normal classes.
+
+| Target | Modification | Apply/readback | Restoration |
+|---|---|---|---|
+| Child PID 15228, `owned_process_probe.exe --child` | Normal → AboveNormal (PolicyPriority::High) | **PASS** | Normal restored and read back; cleanup also reported Ok(Normal), child terminated/reaped |
+| Child PID 19436, same owned probe | Normal → AboveNormal | **PASS** | Normal restored and read back; cleanup Ok(Normal), child terminated/reaped; `env/validation/owned-process-final.log` |
+
+**Restoration failures: None.** No affinity, system power scheme, GPU/NPU,
+registry, service or persistent host configuration was modified. No installer
+was run. Test daemons were scratch-path simulator processes and were terminated
+by their owning scripts.
+
+The final native probe warms the workload before pairing observations, uses
+actual child completion latency and targeted parent+child memory readings through
+`ITelemetryProvider::collect_process`, then feeds the real comparison to the
+policy wrapper. Endpoint memory delta has MiB resolution and is not a peak-memory
+measurement. Final latencies were 3.8752 ms and 3.8956 ms; assessment was
+**Inconclusive**, not a verified performance gain. Throughput and energy are
+unavailable. No slow AI worker is instantiated in that probe, so it cannot
+certify native dual-loop deadlines.
+
+### Environment downloads
+
+Downloaded packages and caches are confined to `env/onnx-packages` and
+`env/pip-cache`; pip temporary files used project `env/`. Reused the existing
+`C:\Users\12282\anaconda3\python.exe`; no interpreter, Rust toolchain,
+Ollama model, installer or driver was downloaded. Python package inventory:
+
+- onnxruntime 1.23.2, onnx 1.20.1, numpy 2.3.5
+- coloredlogs 15.0.1, flatbuffers 25.12.19, humanfriendly 10.0
+- ml_dtypes 0.6.0, mpmath 1.3.0, packaging 26.3
+- protobuf 7.36.2, pyreadline3 3.5.6, sympy 1.14.0, typing_extensions 4.16.0
+
+These are project-local `pip --target` dependencies. The isolated runner does
+not import user/global site packages. Generated ONNX model and validation logs
+are project artifacts, not downloaded environments.
+
+To resolve the Linux C cross-build blocker, also downloaded the portable
+**Zig 0.12.1 Windows x86_64 ZIP** (76,470,574 bytes) from the
+[official download index](https://ziglang.org/download/index.json) to
+`env/zig-0.12.1-windows.zip`, then extracted into `env/zig-toolchain`.
+SHA-256 was verified against the official index:
+`52459b147c2de4d7c28f6b1a4b3d571c114e96836bf8e31c953a7d2f5e94251c`.
+This is a compiler archive, not an installer. Its global/local cache overrides
+are both project-local (`env/zig-global-cache`, `env/zig-local-cache`). No system
+PATH was changed. The generated `env/zig-linux-cc.cmd` maps cc-rs's Rust target
+spelling to Zig's C target spelling; initial raw/wrapper attempts failed before
+the corrected wrapper succeeded. Final cross-check uses:
+
+```powershell
+$env:CC_x86_64_unknown_linux_gnu="$PWD\env\zig-linux-cc.cmd"
+$env:AR_x86_64_unknown_linux_gnu="$PWD\env\zig-toolchain\zig-windows-x86_64-0.12.1\zig.exe ar"
+$env:ZIG_GLOBAL_CACHE_DIR="$PWD\env\zig-global-cache"
+$env:ZIG_LOCAL_CACHE_DIR="$PWD\env\zig-local-cache"
+cargo check --workspace --all-targets --target x86_64-unknown-linux-gnu --locked --offline
+```
+
+This checks current desktop source for Linux compilation. It does not execute
+Linux programs, modify WSL, or certify native Linux hardware.
+
+### File integrity and changed files
+
+All 591 baseline tracked files remain. The seven protected residual files'
+SHA-256 values are unchanged; before/after inventories and hashes are in
+`env/validation/tracked-files-{before,after}.txt` and
+`env/validation/residual-hashes-{before,after}.json`. Existing untracked
+`docs/assets/` architecture material was preserved. **Deleted original files:
+None.** No tests were deleted, ignored or weakened.
+
+Changed/added source, test, model, configuration and documentation paths (not
+including environment/cache/build output or pre-existing architecture assets):
+
+```text
+Cargo.lock
+README.md
+adapters/windows/src/telemetry/provider.rs
+ai-runtime/src/onnx/mod.rs
+ai-runtime/src/onnx/python.rs
+ai/Cargo.toml
+ai/examples/configured_intent.rs
+ai/src/intent.rs
+ai/src/intent_config.rs
+ai/src/lib.rs
+ai/src/orchestration.rs
+ai/src/runtime_intent.rs
+api/src/identity_policy.rs
+apps/aicore-cli/src/main.rs
+apps/aicored/src/ipc_handler.rs
+apps/aicored/src/runtime.rs
+apps/aicored/src/scheduler.rs
+contracts/src/execution/targets.rs
+contracts/src/ipc/protocol.rs
+contracts/src/traits/task_queue.rs
+contracts/src/traits/telemetry_provider.rs
+core/src/accelerator_scheduler.rs
+core/src/executor/policy_executor.rs
+core/src/lib.rs
+core/src/model.rs
+core/src/policy/feedback.rs
+core/src/policy/mod.rs
+docs/ai/INTENT_BACKENDS.md
+docs/contracts/IPC_PROTOCOL.md
+docs/quality/DESTINATION_REQUIREMENTS.md
+docs/quality/DESTINATION_TEST_SAFETY.md
+docs/quality/DESTINATION_VERIFICATION_REPORT.md
+docs/runtime/SCHEDULING_AND_FEEDBACK.md
+ipc/src/client.rs
+ipc/src/identity.rs
+ipc/src/server.rs
+ipc/src/transport/mod.rs
+ipc/src/transport/windows.rs
+models/intent_classifier_v1.json
+models/intent_classifier_v1.onnx
+runtime/src/adaptive_loop.rs
+scripts/models/export_intent_onnx.py
+scripts/models/onnx_intent_runner.py
+scripts/verify/simulated_platform_ollama_intent.ps1
+task-runtime/src/queue.rs
+tests/Cargo.toml
+tests/modelNORealPC.execution.unit.test.rs
+tests/ownedProcess.probe.example.rs
+```
+
+### Remaining acceptance and blocking dependencies
+
+- **NOT VERIFIED:** native GPU/NPU scheduling, plugin hardware readback and
+  thermal/power optimization; no certified device execution/readback backend is
+  available. The framework is implemented, but daemon hardware-queue binding
+  and real cross-device inference remain dependent on actual backends.
+- **NOT VERIFIED:** Windows cross-user ACL denial, signed/loaded image
+  attestation, complete stale-peer/reconnect matrix, native hard deadlines,
+  real prospective personal-memory accuracy/effect and service lifecycle.
+- **NOT VERIFIED:** representative effect/control cohort, workload-specific
+  trusted collector integration and energy/peak-memory budgets. Single
+  isolated measurements cannot close product effectiveness.
+- The initial Linux C compiler blocker is **resolved** by project-local portable
+  Zig; the final entire Linux workspace compile and Clippy checks passed. Linux
+  native execution/real hardware remains **NOT VERIFIED**.
+- **SKIPPED:** unfiltered native-control tests listed above; package installation
+  remains prohibited and was not attempted.
+- Generic autonomous tool-agent collaboration and generative ONNX LLM adapters
+  are not implemented by the classification ensemble. Adding them requires
+  defined backends/contracts and a separate architectural scope decision.
+- **Pending authorization requests: None** for operations actually performed;
+  the explicit user grant covered the owned-child probe. No restoration is
+  pending. Installer operations remain forbidden.
+
+This batch passes the Windows code/isolated/model/simulator gates. It does
+**not** declare the full destination product or native hardware certification
+complete. The existing requirement inventory deliberately remains PARTIAL where
+real integrations, representative data or platform acceptance are still missing.
+
 ## Continuation: 2026-09-24 (desktop code-layer closure)
 
 This continuation changed only `C:\Users\12282\Desktop\AICore_V4_Windows`.

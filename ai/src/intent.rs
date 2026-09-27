@@ -28,6 +28,11 @@ pub struct BoundedIntentAgent {
 
 impl BoundedIntentAgent {
     pub fn new(agent: Arc<dyn IIntentAgent>, timeout: Duration) -> ContractResult<Self> {
+        if timeout.is_zero() {
+            return Err(ContractError::ContractInvalid(
+                "intent deadline must be positive".into(),
+            ));
+        }
         let deployment = agent.deployment();
         let (tx, rx) = mpsc::sync_channel::<(
             IntentRequest,

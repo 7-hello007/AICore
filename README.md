@@ -58,11 +58,11 @@ daemon 通过 `AICORE_EXECUTION_MODE` 选择运行方式：
 | `simulated-platform` | 采集 fixture 驱动、仅写内存的平台模拟层 |
 | `platform` | 平台适配路径；可能触及宿主机资源控制，需按目标机器单独审查与授权 |
 
-在 Windows 桌面环境，构建 daemon 和 CLI 后，可使用 `scripts/verify/simulated_platform_windows_smoke.ps1` 验证模拟 daemon tick 与 named-pipe 状态查询。该脚本只验证模拟路径，不能用于声称原生控制认证。模型分类器的本地 JSON 资产为 `models/policy_classifier_v1.json`；意图接口可使用本机 Ollama，模型名由 `AICORE_OLLAMA_MODEL` 配置（默认 `llama3.2:3b`），服务不可用时应明确报告失败或使用隔离 mock，不把 mock 结果记为真实模型调用。
+在 Windows 桌面环境，构建 daemon 和 CLI 后，可使用 `scripts/verify/simulated_platform_windows_smoke.ps1` 验证模拟 daemon tick 与 named-pipe 状态查询。该脚本只验证模拟路径，不能用于声称原生控制认证。策略分类器资产为 `models/policy_classifier_v1.json`；意图接口通过 `AICORE_INTENT_BACKEND` 选择 Ollama、本地 JSON、ONNX CPU 或本地 provider 协作，模型与路径通过配置切换。Ollama 模型由 `AICORE_OLLAMA_MODEL` 指定（默认 `llama3.2:3b`）。后端不可用会明确失败，不以 mock 冒充真实推理。配置与范围见 [Intent backends](docs/ai/INTENT_BACKENDS.md)。
 
 ## 实现与验收状态
 
-仓库已经包含策略与执行闭环、回滚/SafeMode、任务与应用接入、插件和 IPC 骨架、个人记忆、Dashboard、本地模型及模拟平台。不同功能的完成程度并不相同：设备与 OS 覆盖、真实效果测量、跨用户 IPC 拒绝、生产插件硬件读回、高级调度和跨设备推理等仍有实现或平台验收缺口。真实 GPU/NPU/电源控制、服务安装及跨硬件认证不能从单元测试、mock 或模拟平台结果推断。
+仓库已经包含策略与执行闭环、回滚/SafeMode、任务与应用接入、插件和版本协商 IPC、个人记忆、Dashboard、本地模型及模拟平台。GPU/NPU admission 调度、应用 pre-task 资源准备和观测反馈策略接线见 [Scheduling and feedback](docs/runtime/SCHEDULING_AND_FEEDBACK.md)。不同功能的完成程度并不相同：设备与 OS 覆盖、代表性效果测量、跨用户 IPC 拒绝、生产插件硬件读回及真实跨设备推理等仍有平台或实现缺口。真实 GPU/NPU/电源控制、服务安装及跨硬件认证不能从单元测试、mock 或模拟平台结果推断。
 
 按目标逐项查看 [要求—现状—缺口—验收清单](docs/quality/DESTINATION_REQUIREMENTS.md)；测试命令、实测证据和限制见 [验证报告](docs/quality/DESTINATION_VERIFICATION_REPORT.md)。长期架构与接口文档从 [docs/README.md](docs/README.md) 开始。历史阶段报告保留在 `docs/quality/`，不作为整个项目的完成声明。
 

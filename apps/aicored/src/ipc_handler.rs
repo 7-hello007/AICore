@@ -24,12 +24,14 @@ use crate::tick_history::TickHistory;
 /// Daemon 的 IPC 请求处理器。
 pub struct DaemonIpcHandler {
     registry: Arc<ApplicationRegistry>,
-    app_owners: Mutex<HashMap<ApplicationId, ClientIdentity>>,
+    app_owners: Arc<Mutex<HashMap<ApplicationId, ClientIdentity>>>,
     identity_policy: Option<(
         Arc<ApplicationIdentityPolicy>,
         Arc<dyn IApplicationArtifactResolver>,
     )>,
     intent_agent: Option<Arc<BoundedIntentAgent>>,
+    personal_memory: Option<Arc<dyn aicore_contracts::traits::memory_store::IMemoryStore>>,
+    preparation_model_targets: Option<aicore_contracts::execution::targets::ExecutionTargets>,
     status: Arc<Mutex<DaemonStatus>>,
     history: Arc<TickHistory>,
     plugins: Arc<PluginRegistry>,
@@ -46,12 +48,100 @@ pub struct DaemonIpcHandler {
 /// The request body and application name are never trusted as artifact proof.
 pub trait IApplicationArtifactResolver: Send + Sync {
     fn artifact_sha256(&self, peer: ClientIdentity) -> Option<String>;
+    fn principal(&self, _peer: ClientIdentity) -> Option<String> {
+        None
+    }
 }
 
 pub struct PeerExecutableArtifactResolver;
 impl IApplicationArtifactResolver for PeerExecutableArtifactResolver {
     fn artifact_sha256(&self, peer: ClientIdentity) -> Option<String> {
         peer.artifact_sha256()
+    }
+    fn principal(&self, peer: ClientIdentity) -> Option<String> {
+        peer.principal()
+    }
+}
+
+fn current_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().min(u64::MAX as u128) as u64)
+        .unwrap_or(0)
+}
+
+struct ApplicationPreparationGuard {
+    identity: ClientIdentity,
+    application_id: ApplicationId,
+    owners: Arc<Mutex<HashMap<ApplicationId, ClientIdentity>>>,
+    memory: Arc<dyn aicore_contracts::traits::memory_store::IMemoryStore>,
+    registry: Arc<ApplicationRegistry>,
+    policy: Option<(
+        Arc<ApplicationIdentityPolicy>,
+        Arc<dyn IApplicationArtifactResolver>,
+    )>,
+    model_targets: Option<aicore_contracts::execution::targets::ExecutionTargets>,
+    expires_at_unix_ms: u64,
+}
+impl aicore_contracts::traits::task_queue::IPreparationAuthorization
+    for ApplicationPreparationGuard
+{
+    fn targets(
+        &self,
+    ) -> aicore_contracts::errors::ContractResult<
+        aicore_contracts::execution::targets::ExecutionTargets,
+    > {
+        use aicore_contracts::errors::ContractError;
+        if self
+            .owners
+            .lock()
+            .map_err(|_| ContractError::LockPoisoned("application owner lock poisoned".into()))?
+            .get(&self.application_id)
+            != Some(&self.identity)
+        {
+            return Err(ContractError::PermissionDenied(
+                "preparation application ownership changed".into(),
+            ));
+        }
+        if !self.identity.is_current()
+            || current_unix_ms() >= self.expires_at_unix_ms
+            || !self.memory.load_profile()?.can_personalize()
+            || !self.registry.is_registered(&self.application_id)?
+        {
+            return Err(ContractError::PermissionDenied(
+                "preparation identity/consent expired or revoked".into(),
+            ));
+        }
+        if let Some((policy, resolver)) = &self.policy {
+            let digest = resolver.artifact_sha256(self.identity).ok_or_else(|| {
+                ContractError::PermissionDenied("preparation artifact unavailable".into())
+            })?;
+            let principal = resolver.principal(self.identity);
+            policy.authorize_identity(
+                &self.application_id,
+                &digest,
+                principal.as_deref(),
+                ApplicationAction::PrepareTask,
+            )?;
+        }
+        let mut targets = match &self.model_targets {
+            Some(targets) => targets.clone(),
+            None => aicore_contracts::execution::targets::ExecutionTargets {
+                foreground_pids: vec![self.identity.process_id().ok_or_else(|| {
+                    ContractError::PermissionDenied("preparation requires a live peer PID".into())
+                })?],
+                background_pids: Vec::new(),
+                process_only: true,
+            },
+        };
+        targets.process_only = true;
+        targets.background_pids.clear();
+        if targets.foreground_pids.is_empty() {
+            return Err(ContractError::ResourceUnavailable(
+                "no preparation process target".into(),
+            ));
+        }
+        Ok(targets)
     }
 }
 
@@ -126,9 +216,11 @@ impl DaemonIpcHandler {
     ) -> Self {
         Self {
             registry,
-            app_owners: Mutex::new(HashMap::new()),
+            app_owners: Arc::new(Mutex::new(HashMap::new())),
             identity_policy: None,
             intent_agent: None,
+            personal_memory: None,
+            preparation_model_targets: None,
             status,
             history,
             plugins,
@@ -155,6 +247,15 @@ impl DaemonIpcHandler {
         self.intent_agent = Some(agent);
         self
     }
+    pub fn with_personal_memory(
+        mut self,
+        memory: Arc<dyn aicore_contracts::traits::memory_store::IMemoryStore>,
+        model_targets: Option<aicore_contracts::execution::targets::ExecutionTargets>,
+    ) -> Self {
+        self.personal_memory = Some(memory);
+        self.preparation_model_targets = model_targets;
+        self
+    }
 
     fn authorize_artifact(
         &self,
@@ -171,8 +272,9 @@ impl DaemonIpcHandler {
                 "application artifact identity unavailable",
             )
         })?;
+        let principal = resolver.principal(identity);
         policy
-            .authorize(application_id, &digest, action)
+            .authorize_identity(application_id, &digest, principal.as_deref(), action)
             .map_err(|error| IpcError::new("ERR_PERMISSION_DENIED", error.to_string()))
     }
 
@@ -285,6 +387,95 @@ impl DaemonIpcHandler {
         identity: ClientIdentity,
     ) -> Result<ResponseData, IpcError> {
         match request {
+            Request::PrepareUpcomingTask {
+                mut contract,
+                starts_at_unix_ms,
+            } => {
+                self.validate_registered_contract(
+                    &contract,
+                    identity,
+                    ApplicationAction::PrepareTask,
+                )?;
+                let memory = self
+                    .personal_memory
+                    .as_ref()
+                    .ok_or_else(|| IpcError::not_supported("personal memory unavailable"))?;
+                let profile = memory
+                    .load_profile()
+                    .map_err(|e| IpcError::internal(e.to_string()))?;
+                if !profile.can_personalize() {
+                    return Err(IpcError::new(
+                        "ERR_PERMISSION_DENIED",
+                        "personalization consent required",
+                    ));
+                }
+                let now = current_unix_ms();
+                if starts_at_unix_ms < now.saturating_add(1000)
+                    || starts_at_unix_ms > now.saturating_add(300_000)
+                {
+                    return Err(IpcError::invalid_request(
+                        "upcoming task must start within 1..300 seconds",
+                    ));
+                }
+                let cutoff = now
+                    .saturating_sub(u64::from(profile.retention_days).saturating_mul(86_400_000));
+                let records: Vec<_> = memory
+                    .load_records(1000)
+                    .map_err(|e| IpcError::internal(e.to_string()))?
+                    .into_iter()
+                    .filter(|r| r.timestamp_unix_ms >= cutoff && r.timestamp_unix_ms <= now)
+                    .collect();
+                let aggregate =
+                    aicore_contracts::memory::context::MemoryContext::from_records(&records);
+                let hour = ((starts_at_unix_ms / 3_600_000) % 24) as u8;
+                let pattern = aggregate
+                    .application_patterns
+                    .iter()
+                    .find(|p| {
+                        p.application_id == contract.application_id
+                            && p.hour_utc == hour
+                            && p.sample_count >= 3
+                            && p.confidence >= 0.8
+                    })
+                    .ok_or_else(|| {
+                        IpcError::not_supported("no reliable application pattern for upcoming time")
+                    })?;
+                if contract
+                    .task
+                    .is_some_and(|workload| workload != pattern.dominant_workload)
+                {
+                    return Err(IpcError::invalid_request(
+                        "explicit task differs from personal prediction",
+                    ));
+                }
+                contract.task = Some(pattern.dominant_workload);
+                static PREPARATION_SEQUENCE: std::sync::atomic::AtomicU64 =
+                    std::sync::atomic::AtomicU64::new(0);
+                let seq = PREPARATION_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let id = format!("preparation-{now}-{seq}");
+                contract.task_id = Some(id.clone());
+                contract.deadline_unix_secs = Some(starts_at_unix_ms / 1000);
+                let ready = starts_at_unix_ms.saturating_sub(30_000).max(now);
+                let guard = ApplicationPreparationGuard {
+                    identity,
+                    application_id: contract.application_id.clone(),
+                    owners: self.app_owners.clone(),
+                    memory: memory.clone(),
+                    registry: self.registry.clone(),
+                    policy: self.identity_policy.clone(),
+                    model_targets: self.preparation_model_targets.clone(),
+                    expires_at_unix_ms: starts_at_unix_ms,
+                };
+                let preparation_id = self
+                    .task_queue
+                    .enqueue_preparation(QueuedTask::new(id, contract, now), ready, Arc::new(guard))
+                    .map_err(|e| IpcError::invalid_request(e.to_string()))?;
+                Ok(ResponseData::PreparationScheduled {
+                    preparation_id,
+                    workload: pattern.dominant_workload,
+                    ready_at_unix_ms: ready,
+                })
+            },
             Request::Handshake { .. } => Err(IpcError::invalid_request(
                 "handshake is handled by the IPC transport",
             )),
@@ -627,6 +818,107 @@ mod tests {
     use aicore_contracts::traits::task_source::ITaskSource;
     use aicore_task_runtime::InMemoryTaskQueue;
 
+    #[test]
+    fn personal_preparation_actuates_model_process_and_rechecks_consent() {
+        use aicore_contracts::{
+            context::workload::{InteractionLevel, WorkloadType},
+            execution::status::ExecutionOverallStatus,
+            memory::{profile::UserProfile, record::HistoricalRecord},
+            policy::{priority::PolicySource, resource_policy::PowerMode},
+            traits::{memory_store::IMemoryStore, runtime_orchestrator::IRuntimeOrchestrator},
+        };
+        let memory = Arc::new(aicore_memory::InMemoryStore::new());
+        let queue = Arc::new(InMemoryTaskQueue::new());
+        let runtime = crate::runtime::build_runtime_for_mode(None, Some(queue.clone()), true);
+        let app = ApplicationId::new("test.preparation");
+        let now = current_unix_ms();
+        let starts = now + 25_000;
+        for day in 1..=3 {
+            memory
+                .append_record(&HistoricalRecord {
+                    application_id: Some(app.clone()),
+                    record_id: format!("prep-{day}"),
+                    timestamp_unix_ms: (starts / 3_600_000) * 3_600_000 - day * 86_400_000,
+                    workload_type: WorkloadType::Development,
+                    interaction_level: InteractionLevel::Interactive,
+                    policy_id: "old".into(),
+                    policy_source: PolicySource::RuleBased,
+                    overall_status: ExecutionOverallStatus::AllSucceeded,
+                    cpu_usage_percent: 1.0,
+                    gpu_usage_percent: None,
+                    npu_usage_percent: None,
+                    memory_usage_percent: 10.0,
+                    power_mode: PowerMode::Balanced,
+                })
+                .unwrap();
+        }
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            Arc::new(Mutex::new(DaemonStatus::new(1))),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            queue.clone(),
+            None,
+            None,
+            Vec::new(),
+            "model".into(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        )
+        .with_personal_memory(memory.clone(), Some(runtime.execution_targets.clone()));
+        handler
+            .handle(Request::Register {
+                application_id: app.clone(),
+                name: "Test".into(),
+                version: "1".into(),
+                capabilities: Vec::new(),
+            })
+            .unwrap();
+        let request = || Request::PrepareUpcomingTask {
+            contract: TaskContract::minimal(app.clone()),
+            starts_at_unix_ms: starts,
+        };
+        assert_eq!(
+            handler.handle(request()).unwrap_err().code,
+            "ERR_PERMISSION_DENIED"
+        );
+        memory
+            .save_profile(&UserProfile {
+                profile_enabled: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let response = handler.handle(request()).unwrap();
+        let ResponseData::PreparationScheduled { preparation_id, .. } = response else {
+            panic!("preparation response required")
+        };
+        memory.save_profile(&UserProfile::default()).unwrap();
+        let denied = runtime.loop_.tick(&runtime.execution_targets);
+        assert!(!denied.success);
+        assert_eq!(
+            queue.get(&preparation_id).unwrap().unwrap().state,
+            aicore_contracts::task::lifecycle::TaskState::Failed
+        );
+        memory
+            .save_profile(&UserProfile {
+                profile_enabled: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let ResponseData::PreparationScheduled { preparation_id, .. } =
+            handler.handle(request()).unwrap()
+        else {
+            panic!("preparation response required")
+        };
+        let applied = runtime.loop_.tick(&runtime.execution_targets);
+        assert!(applied.success, "{}", applied.message);
+        assert_eq!(
+            queue.get(&preparation_id).unwrap().unwrap().state,
+            aicore_contracts::task::lifecycle::TaskState::Completed
+        );
+        assert!(preparation_id.starts_with("preparation-"));
+    }
+
     struct MockArtifactResolver;
     impl IApplicationArtifactResolver for MockArtifactResolver {
         fn artifact_sha256(&self, _peer: ClientIdentity) -> Option<String> {
@@ -664,6 +956,7 @@ mod tests {
             .pin(ApprovedApplication {
                 application_id: app.clone(),
                 artifact_sha256: "a".repeat(64),
+                allowed_principals: Vec::new(),
                 allowed_actions: vec![
                     ApplicationAction::Register,
                     ApplicationAction::ProposeIntent,
@@ -734,6 +1027,7 @@ mod tests {
                 application_id: app.clone(),
                 artifact_sha256: "a".repeat(64),
                 allowed_actions: vec![ApplicationAction::Register],
+                allowed_principals: Vec::new(),
             })
             .unwrap();
         let handler = DaemonIpcHandler::new(
@@ -769,6 +1063,7 @@ mod tests {
                 application_id: app.clone(),
                 artifact_sha256: "a".repeat(64),
                 allowed_actions: vec![ApplicationAction::Register, ApplicationAction::SubmitTask],
+                allowed_principals: Vec::new(),
             })
             .unwrap();
         assert!(matches!(

@@ -79,6 +79,6 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 
-# Personal path
-/mydoc
+# Only known regenerable env caches and temporary workspaces are excluded here.
+# Keep validation logs visible; the general database rule still protects local runtime data.
 /env

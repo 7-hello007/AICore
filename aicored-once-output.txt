@@ -1,1 +1,0 @@
-error: package(s) `aicored` not found in workspace `/home/ubuntu/aicoreV3.2`

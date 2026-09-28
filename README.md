@@ -1,48 +1,48 @@
-[English](README.md) | [Chinese](README.zh-CN.md)
-# AICore — AI Computer Control Layer
+[英文](README.en-US.md) | [中文](README.md)
 
-AICore is a computer control layer for Windows and Linux. It observes platform capabilities, application tasks and system state; combines them with optional local inference and retained history; proposes resource policies; and, when authorized and supported, applies, verifies and records their effects. Its goal is contextual resource coordination, rather than a collection of fixed optimization switches.
+# AICore — AI 原生计算机控制层
 
-The root [destination](destination.md) defines the product goal and phased design. A design goal, implemented code and platform acceptance are separate claims. The repository contains working Model Mode and simulated-platform paths, Windows and Linux adapters, and many closed-loop components. It does not imply certification of every device, OS or destination goal.
+AICore 是面向 Windows 和 Linux 的 AI 原生计算机控制层。它位于应用与操作系统资源接口之间，结合平台状态、应用任务、历史信息和可选的本地 AI 推理，提出资源策略，并在能力与权限允许时执行、验证和记录结果。项目目标是让计算机能够根据上下文协调自身资源，而不是提供一组固定的“优化”开关。
 
-## Control path
+根目录的 [目标设计](destination.zh-CN.md) 描述产品目标及阶段性设计。本文是整个项目的入口；目标设计、已有代码和已通过的平台验收是不同的概念。当前源码包含可运行的模型模式和模拟平台、Windows 与 Linux 适配代码及多项闭环组件，但不表示所有硬件、操作系统和最终产品目标已经认证。
+
+## 系统如何工作
 
 ```text
-Platform capabilities and telemetry → Context / Workload → TierHub / Task
-                                    → Prediction / AI proposal → Policy → Validation
-                                    → Runtime routing / binding → Execution
-                                    → Readback / Verification → Rollback / SafeMode
-                                    → Memory / Feedback / Events / Dashboard
+平台能力与遥测 → Context / Workload → TierHub / Task
+                → Prediction / AI proposal → Policy → Validation
+                → Runtime routing / binding → Execution → Readback / Verification
+                → Rollback / SafeMode → Memory / Feedback / Events / Dashboard
 ```
 
-Core uses shared contracts for context, policy, validation and execution results. Adapters contain platform-specific discovery and control. AI may propose an intent or prediction, but cannot bypass policy validation. The fast control side consumes time-limited policy handoffs; slower telemetry, history and inference work cannot turn an expired or failed result into a successful action. `Success`, `Skipped`, `NotSupported`, `Failed` and `NoOp` have distinct meanings. Model and simulated execution are not evidence of hardware effect.
+核心层通过统一契约处理上下文、策略、验证与执行结果；平台能力由运行时探测，平台差异由适配器及相应传输层和提供者隔离。AI 可以提出预测或意图，但不能绕过策略验证。快控制侧消费有时效的策略，慢侧执行遥测、历史读取和推理；过期、失败或不可用的结果不能被当作成功执行。执行状态区分实际成功、跳过、不支持、失败与无操作，模型或模拟执行也不等同于真实硬件效果。
 
-Application integration has three independent tiers: L0 observes unmodified applications; L1 accepts application-declared task information; L2 uses native task interfaces. IPC is a local, versioned request channel. Plugins enter through trust checks, capability binding and managed process lifecycle. Personal memory is opt-in, subject to retention, and only supports prediction or feedback when evidence is available.
+应用接入有三个独立等级：L0 处理无需改造的应用，L1 接收应用声明的任务信息，L2 使用原生任务接口。IPC 提供本地、版本化的请求通道；插件通过信任检查、能力绑定和受管进程生命周期接入。个人记忆采用主动同意机制和保留策略，相关预测与反馈依赖可验证的数据来源。
 
-## Repository structure
+## 代码结构
 
-| Path | Responsibility |
+| 目录 | 职责 |
 |---|---|
-| `contracts/` | Cross-component data, states, errors and traits |
-| `core/` | Context, policy, validation, execution, verification and safety logic |
-| `runtime/`, `runtime-router/` | Control loops, policy handoff, routing and binding |
-| `adapters/windows/`, `adapters/linux/` | OS telemetry, capability discovery and platform control |
-| `adapters/simulated-platform/` | In-memory platform simulation using captured fixtures |
-| `ai/`, `ai-runtime/`, `models/` | Prediction and intent providers, local runtimes and model assets |
-| `api/`, `ipc/` | Application registration/identity, public API and local transport |
-| `tier/`, `tier-l0/`, `tier-l1/`, `tier-l2/`, `task-runtime/` | Compatibility tiers and task lifecycle |
-| `memory/` | History, personal memory and persistence |
-| `plugin/` | Discovery, trust, activation, isolation and capability binding |
-| `service-host/` | Service-host code |
-| `apps/` | Daemon, CLI, terminal/Web Dashboard and benchmarks |
-| `tests/`, `scripts/`, `examples/` | Tests, verification tools and examples |
-| `deploy/`, `docs/` | Delivery assets and architecture, contract and acceptance documentation |
+| `contracts/` | 跨组件的数据结构、状态、错误及特征接口契约 |
+| `core/` | 上下文、策略、验证、执行、读回与安全控制逻辑 |
+| `runtime/`, `runtime-router/` | 控制循环、策略交接、运行时路由与绑定 |
+| `adapters/windows/`, `adapters/linux/` | 操作系统遥测、能力探测与平台执行适配 |
+| `adapters/simulated-platform/` | 使用采集样本的内存模拟平台；用于隔离验证 |
+| `ai/`, `ai-runtime/`, `models/` | 预测与意图提供者、本地推理运行时、模型资产 |
+| `api/`, `ipc/` | 应用注册/身份策略、对外契约和本地通信 |
+| `tier/`, `tier-l0/`, `tier-l1/`, `tier-l2/`, `task-runtime/` | 兼容等级、任务来源、队列与生命周期 |
+| `memory/` | 历史、个人记忆与持久化 |
+| `plugin/` | 插件发现、信任、激活、进程隔离及能力绑定 |
+| `service-host/` | 服务宿主相关代码；不要求开发时安装服务 |
+| `apps/` | 守护进程、命令行工具、终端与网页仪表盘、基准测试等应用 |
+| `tests/`, `scripts/`, `examples/` | 跨软件包测试、验证脚本与示例 |
+| `deploy/`, `docs/` | 交付资源与项目级架构、接口、验收文档 |
 
-See [Cargo.toml](Cargo.toml) for the authoritative Rust workspace membership.
+Rust 工作区成员及准确路径以 [Cargo.toml](Cargo.toml) 为准。
 
-## Build and validation
+## 构建与安全验证
 
-The declared Rust baseline is 1.75, with dependencies pinned by `Cargo.lock`:
+项目使用 Rust，声明的最低版本为 1.75；工作区使用 `Cargo.lock`。在项目根目录可运行：
 
 ```text
 cargo fmt --all -- --check
@@ -50,24 +50,24 @@ cargo check --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-`cargo test --workspace --all-targets --locked` spans the workspace. Some platform tests exercise actual owned processes or power APIs, so review the [test safety guide](docs/quality/DESTINATION_TEST_SAFETY.md) before running a native suite. Report filtered or isolated test results as such.
+`cargo test --workspace --all-targets --locked` 覆盖项目各层，但部分平台测试可能调用真实进程或电源控制接口。运行完整测试前应按 [测试安全清单](docs/quality/DESTINATION_TEST_SAFETY.zh-CN.md) 审查环境和测试副作用；隔离测试的过滤结果须如实报告，不能写成未筛选全套通过。
 
-The daemon selects its execution path with `AICORE_EXECUTION_MODE`:
+守护进程通过 `AICORE_EXECUTION_MODE` 选择运行方式：
 
-| Value | Scope |
+| 值 | 含义 |
 |---|---|
-| `model` | Local model and model-execution path; no hardware-control claim |
-| `simulated-platform` | Captured-fixture, in-memory platform simulation |
-| `platform` | Native adapter path; may affect host resources and requires target-specific review |
+| `model` | 本地模型与模型执行路径；不代表真实硬件控制 |
+| `simulated-platform` | 采集样本驱动、仅写内存的平台模拟层 |
+| `platform` | 平台适配路径；可能触及宿主机资源控制，需按目标机器单独审查与授权 |
 
-On Windows, `scripts/verify/simulated_platform_windows_smoke.ps1` checks simulated daemon ticks and named-pipe status queries. It is simulation evidence, not native certification. The policy classifier is `models/policy_classifier_v1.json`. Intent inference selects Ollama, local JSON, ONNX or local-provider coordination through `AICORE_INTENT_BACKEND`. The model name and paths are configurable; `AICORE_OLLAMA_MODEL` defaults to `llama3.2:3b`. Unavailable backends fail explicitly rather than pretending a mock inference succeeded. See [intent backends](docs/ai/INTENT_BACKENDS.md).
+在 Windows 桌面环境，构建守护进程和命令行工具后，可使用 `scripts/verify/simulated_platform_windows_smoke.ps1` 验证模拟守护进程的控制周期与命名管道状态查询。该脚本只验证模拟路径，不能用于声称原生控制认证。策略分类器资产为 `models/policy_classifier_v1.json`；意图接口通过 `AICORE_INTENT_BACKEND` 选择 Ollama、本地 JSON、ONNX（默认 CPU，可显式选择设备后端）或本地提供者协作，模型与路径通过配置切换。Ollama 模型由 `AICORE_OLLAMA_MODEL` 指定（默认 `llama3.2:3b`）。后端不可用会明确失败，不以模拟提供者冒充真实推理。配置与范围见 [意图后端](docs/ai/INTENT_BACKENDS.zh-CN.md)。
 
-## Implementation and acceptance
+## 实现与验收状态
 
-The repository includes policy/execution, rollback and SafeMode, application and task integration, plugin and IPC contracts, personal memory, Dashboard, local models and the platform simulator. [Scheduling and feedback](docs/runtime/SCHEDULING_AND_FEEDBACK.md) describes GPU/NPU admission, pre-task preparation and observed feedback wiring. These components have different levels of integration and acceptance. Unit, mock and simulator results do not certify native GPU/NPU/power control, service installation or cross-vendor hardware behavior.
+仓库已经包含策略与执行闭环、回滚与安全模式、任务与应用接入、插件和版本协商 IPC、个人记忆、仪表盘、本地模型及模拟平台。GPU/NPU 准入调度、应用任务前资源准备和观测反馈策略接线见 [调度与反馈](docs/runtime/SCHEDULING_AND_FEEDBACK.zh-CN.md)。各能力的代码实现与产品验收是不同结论；单元测试、模拟提供者和模拟平台结果不能替代真实硬件认证。
 
-Use the [destination requirement matrix](docs/quality/DESTINATION_REQUIREMENTS.md) for the implementation inventory, the [verification report](docs/quality/DESTINATION_VERIFICATION_REPORT.md) for completed evidence, and the separate [outstanding tests](docs/quality/OUTSTANDING_TESTS.md) register for acceptance work that remains open. The [documentation index](docs/DOCUMENTATION_INDEX.md) leads to long-term architecture and interface documents. Historical phase reports in `docs/quality/` do not constitute product-wide completion.
+按目标逐项查看 [要求—现状—缺口—验收清单](docs/quality/DESTINATION_REQUIREMENTS.zh-CN.md)；已完成的测试证据见 [验证报告](docs/quality/DESTINATION_VERIFICATION_REPORT.zh-CN.md)，未完成测试及原因集中记录在 [待验收测试](docs/quality/OUTSTANDING_TESTS.zh-CN.md)。长期架构与接口文档从 [文档索引](docs/DOCUMENTATION_INDEX.zh-CN.md) 开始。历史阶段报告保留在 `docs/quality/`，不作为整个项目的完成声明。
 
-## License
+## 许可证
 
-Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache License 2.0；见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。

@@ -29,13 +29,19 @@ done
 python3 - <<'PY'
 from pathlib import Path
 import re, tomllib, json
+excluded={'.git','env','target'}
 for p in Path('.').rglob('Cargo.toml'):
-    tomllib.loads(p.read_text())
+    if not excluded.intersection(p.parts):
+        tomllib.loads(p.read_text(encoding='utf-8-sig'))
 for p in Path('.').rglob('*.json'):
-    if '.git' not in p.parts:
-        json.loads(p.read_text())
+    if not excluded.intersection(p.parts):
+        json.loads(p.read_text(encoding='utf-8-sig'))
 files={p.name for p in Path('tests').glob('*.rs')}
-paths=set(re.findall(r'^path\s*=\s*"([^"]+\.rs)"', Path('tests/Cargo.toml').read_text(), re.M))
+paths=set(re.findall(r'^path\s*=\s*"([^"]+\.rs)"', Path('tests/Cargo.toml').read_text(encoding='utf-8-sig'), re.M))
+support=set()
+for p in Path('tests').glob('*.rs'):
+    support.update(re.findall(r'#\[path\s*=\s*"([^"]+\.fixture\.rs)"\]',p.read_text(encoding='utf-8-sig')))
+paths.update(support)
 if files != paths:
     raise SystemExit(f'test manifest mismatch: undeclared={sorted(files-paths)} missing={sorted(paths-files)}')
 print(f'[PASS] parsed Cargo.toml/JSON; test manifest complete ({len(files)} Rust test files)')

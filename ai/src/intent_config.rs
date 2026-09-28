@@ -62,10 +62,24 @@ pub fn configured_intent_agent(project: &Path) -> ContractResult<Option<Arc<Boun
                     ContractError::ConfigInvalid("AICORE_ONNX_PYTHON is required".into())
                 })?;
             let timeout = Duration::from_secs(10);
+            let provider = std::env::var("AICORE_ONNX_PROVIDER")
+                .unwrap_or_else(|_| "CPUExecutionProvider".into());
+            let device_id = std::env::var("AICORE_ONNX_DEVICE_ID")
+                .ok()
+                .map(|v| {
+                    v.parse::<u32>()
+                        .map_err(|e| ContractError::ConfigInvalid(e.to_string()))
+                })
+                .transpose()?;
             let factory = PythonOnnxSessionFactory {
                 python,
                 runner: project.join("scripts/models/onnx_intent_runner.py"),
-                packages: project.join("env/onnx-packages"),
+                packages: std::env::var_os("AICORE_ONNX_PACKAGES")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| project.join("env/onnx-packages")),
+                device_id,
+                provider_library: std::env::var_os("AICORE_ONNX_PROVIDER_LIBRARY")
+                    .map(PathBuf::from),
                 timeout,
             };
             let path = std::env::var_os("AICORE_ONNX_MODEL_PATH")
@@ -89,7 +103,7 @@ pub fn configured_intent_agent(project: &Path) -> ContractResult<Option<Arc<Boun
                         shape: vec![1, labels as i64],
                         dtype: TensorDType::F32,
                     }],
-                    preferred_provider: Some("CPUExecutionProvider".into()),
+                    preferred_provider: Some(provider),
                 }),
             };
             let runtime = Arc::new(

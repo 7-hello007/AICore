@@ -13,15 +13,12 @@ use aicore_contracts::{
 };
 use aicore_core::executor::DefaultPolicyExecutor;
 
-#[cfg(target_os = "linux")]
-use aicore_adapter_linux::LinuxPowerController as PlatformPowerController;
-#[cfg(target_os = "linux")]
-use aicore_adapter_linux::LinuxProcessController as PlatformProcessController;
-
-#[cfg(target_os = "windows")]
-use aicore_adapter_windows::WindowsPowerController as PlatformPowerController;
-#[cfg(target_os = "windows")]
-use aicore_adapter_windows::WindowsProcessController as PlatformProcessController;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[path = "native.fixture.rs"]
+mod native_fixture;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[path = "native.power.fixture.rs"]
+mod native_power_fixture;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 fn make_policy() -> ResourcePolicy {
@@ -60,22 +57,30 @@ fn make_policy() -> ResourcePolicy {
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 #[test]
 fn executor_runs_and_reports_outcomes() {
-    let process = Arc::new(PlatformProcessController::new());
-    let power = Arc::new(PlatformPowerController::new());
+    let process = Arc::new(native_fixture::OwnedProcess::new());
 
-    let exec = DefaultPolicyExecutor::new(Some(process), Some(power));
+    let power = native_power_fixture::OwnedPowerSnapshot::new()
+        .ok()
+        .map(Arc::new);
+    if power.is_none() {
+        eprintln!("NOT VERIFIED native power snapshot unavailable; no global mutation attempted");
+    }
+    let exec = DefaultPolicyExecutor::new(
+        Some(process.clone()),
+        power.map(|p| p as Arc<dyn aicore_contracts::traits::power_controller::IPowerController>),
+    );
     let policy = make_policy();
-    let targets = ExecutionTargets::default();
+    let targets = ExecutionTargets {
+        process_only: false,
+        ..process.targets()
+    };
 
     let result = exec.execute(&policy, &targets);
 
     assert_eq!(result.policy_id, "policy-test");
     assert!(!result.outcomes.is_empty());
 
-    // 具体状态取决于环境能力：
-    // - 若 power.profile 可用 → AllSucceeded 或 PartiallySucceeded
-    // - 若 power.profile 不可用（NotSupported）→ NoOp
-    // 唯一不能出现的是 AllFailed（因为没有真失败）。
+    // Native control targets only the owned child; global power is separately verified.
     assert_ne!(
         result.overall_status,
         ExecutionOverallStatus::AllFailed,

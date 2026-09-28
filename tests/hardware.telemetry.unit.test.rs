@@ -54,9 +54,21 @@ fn linux_sample_unknown_gpu_fails() {
 fn windows_gpu_telemetry_rejects_unknown_id_without_hardware_assumptions() {
     let p = PlatformProvider::new();
     let devices = p.gpu_devices();
-    assert!(devices
-        .iter()
-        .all(|device| device.id.starts_with("nvidia:")));
+    for device in &devices {
+        assert!(device.id.starts_with("nvidia:") || device.id.starts_with("gpu:dxgi:"));
+        assert!(!device.name.trim().is_empty() && !device.vendor.trim().is_empty());
+        assert!(
+            aicore_adapter_windows::WindowsHardwareCapabilityProvider::new()
+                .gpu_capability(&device.id)
+                .is_supported(
+                    aicore_contracts::hardware::capability::HardwareCapability::DeviceIdentity
+                )
+        );
+    }
+    assert!(matches!(
+        p.sample_gpu("gpu:dxgi:invalid"),
+        Err(aicore_contracts::errors::ContractError::InvalidRequest(_))
+    ));
     let err = p.sample_gpu("drm:card0").unwrap_err();
     assert!(matches!(
         err,

@@ -39,6 +39,11 @@ pub struct BindingResult {
 /// - 平台 Binder 可能改变设备状态，不能放入不可取消的慢线程。
 /// - 执行失败必须 fallback 到 Native（`executed: false`）。
 pub trait IRuntimeBinder: Send + Sync {
+    /// True only for isolated inference sessions with no host state setters.
+    fn preparation_safe(&self) -> bool {
+        false
+    }
+
     fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult>;
 
     /// 返回 binder 名称。

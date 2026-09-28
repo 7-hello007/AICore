@@ -708,7 +708,116 @@ fn build_runtime_for_mode_with_simulation(
             "using selected platform runtime binding"
         );
 
-        Arc::new(platform_binder)
+        let default_binder = Arc::new(platform_binder) as Arc<dyn IRuntimeBinder>;
+        #[cfg(target_os = "windows")]
+        if simulated_platform.is_none() && std::env::var_os("AICORE_ACCELERATOR_PROVIDER").is_some()
+        {
+            use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
+            let configured =
+                (|| -> aicore_contracts::errors::ContractResult<Arc<dyn IRuntimeBinder>> {
+                    let ordinal = std::env::var("AICORE_ACCELERATOR_DEVICE_ID")
+                        .map_err(|e| {
+                            aicore_contracts::errors::ContractError::ConfigInvalid(e.to_string())
+                        })?
+                        .parse::<u32>()
+                        .map_err(|e| {
+                            aicore_contracts::errors::ContractError::ConfigInvalid(e.to_string())
+                        })?;
+                    let telemetry = aicore_adapter_windows::WindowsHardwareTelemetryProvider::new();
+                    let capabilities =
+                        aicore_adapter_windows::WindowsHardwareCapabilityProvider::new();
+                    let provider = std::env::var("AICORE_ACCELERATOR_PROVIDER").unwrap_or_default();
+                    let (device, caps) = match provider.as_str() {
+                        "DmlExecutionProvider" => {
+                            let device = telemetry
+                                .gpu_devices()
+                                .into_iter()
+                                .find(|d| d.id == format!("gpu:dxgi:{ordinal}"))
+                                .ok_or_else(|| {
+                                    aicore_contracts::errors::ContractError::CapabilityUnavailable(
+                                        "configured DXGI GPU absent".into(),
+                                    )
+                                })?;
+                            let caps = capabilities.gpu_capability(&device.id);
+                            (device, caps)
+                        },
+                        "VitisAIExecutionProvider" => {
+                            // PnP and EP ordinals are separate namespaces. Bind
+                            // only the unambiguous single-device case without
+                            // an explicit vendor identity mapping.
+                            let mut devices = telemetry.npu_devices();
+                            if ordinal != 0 || devices.len() != 1 {
+                                return Err(
+                                    aicore_contracts::errors::ContractError::CapabilityUnavailable(
+                                        "NPU identity/EP mapping absent or ambiguous".into(),
+                                    ),
+                                );
+                            }
+                            let device = devices.remove(0);
+                            let caps = capabilities.npu_capability(&device.id);
+                            (device, caps)
+                        },
+                        _ => {
+                            return Err(aicore_contracts::errors::ContractError::ConfigInvalid(
+                                "unsupported accelerator provider".into(),
+                            ))
+                        },
+                    };
+                    let matrix = DeviceCapabilityMatrix::from_discovered(
+                        aicore_contracts::hardware::matrix::HostOs::Windows,
+                        &device,
+                        caps,
+                    )
+                    .ok_or_else(|| {
+                        aicore_contracts::errors::ContractError::ContractInvalid(
+                            "device identity mismatch".into(),
+                        )
+                    })?;
+                    let mut cpu = DefaultRuntimeBinder::new();
+                    if let Some(runtime) = shared_ai_runtime.clone() {
+                        if let Some(handle) = runtime
+                            .loaded_models()
+                            .into_iter()
+                            .find(|h| h.model_name == "policy_classifier_v1")
+                        {
+                            cpu = cpu.with_ai_runtime(runtime, handle);
+                        }
+                    }
+                    let project = std::env::var_os("AICORE_PROJECT_ROOT")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
+                    if !project.is_absolute() {
+                        return Err(aicore_contracts::errors::ContractError::ConfigInvalid(
+                            "AICORE_PROJECT_ROOT must be absolute".into(),
+                        ));
+                    }
+                    aicore_runtime::queued_model_binder::configured_accelerator_binder(
+                        &project,
+                        matrix,
+                        Arc::new(cpu),
+                    )
+                })();
+            match configured {
+                Ok(binder) => {
+                    tracing::info!(
+                        component = "aicored",
+                        binder = binder.name(),
+                        "session accelerator queue registered"
+                    );
+                    binder
+                },
+                Err(error) => {
+                    tracing::warn!(component="aicored",%error,"accelerator unavailable; retaining native fallback");
+                    default_binder
+                },
+            }
+        } else {
+            default_binder
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            default_binder
+        }
     };
 
     let loop_ = loop_.with_runtime_binder(binder);

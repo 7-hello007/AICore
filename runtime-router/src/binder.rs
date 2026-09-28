@@ -103,6 +103,10 @@ impl Default for DefaultRuntimeBinder {
 }
 
 impl IRuntimeBinder for DefaultRuntimeBinder {
+    fn preparation_safe(&self) -> bool {
+        self.gpu_executor.is_none() && self.npu_executor.is_none()
+    }
+
     fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult> {
         let start = Instant::now();
 

@@ -21,6 +21,5 @@ fn controller_handles_bad_pid_gracefully() {
     let c = PlatformProcessController::new();
     // 一个大概率不存在的 PID
     let result = c.set_priority(999_999_999, PolicyPriority::Low);
-    // 无论成功失败，不得 panic；失败必须是 ContractError
-    assert!(result.is_ok() || result.is_err());
+    assert!(result.is_err(), "invalid PID must not succeed");
 }

@@ -14,3 +14,6 @@ pub use safe_mode::SafeModeController;
 
 // model
 pub use model_binder::ModelRuntimeBinder;
+
+pub mod queued_model_binder;
+pub use queued_model_binder::QueuedModelBinder;

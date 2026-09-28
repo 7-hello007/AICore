@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use aicore_ai::MockAiProvider;
 use aicore_contracts::{
-    execution::targets::ExecutionTargets,
     memory::profile::UserProfile,
     runtime::config::AdaptiveLoopConfig,
     traits::{
@@ -18,14 +17,15 @@ use aicore_core::{
 use aicore_memory::InMemoryStore;
 use aicore_runtime::AdaptiveLoop;
 
-#[cfg(target_os = "linux")]
-use aicore_adapter_linux::{LinuxPowerController, LinuxProcessController};
-
-#[cfg(target_os = "windows")]
-use aicore_adapter_windows::{WindowsPowerController, WindowsProcessController};
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[path = "native.fixture.rs"]
+mod native_fixture;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-fn build_full_loop(memory: Arc<InMemoryStore>) -> AdaptiveLoop {
+fn build_full_loop(
+    memory: Arc<InMemoryStore>,
+    process: Arc<native_fixture::OwnedProcess>,
+) -> AdaptiveLoop {
     let telemetry: Arc<dyn ITelemetryProvider> = {
         #[cfg(target_os = "linux")]
         {
@@ -46,20 +46,8 @@ fn build_full_loop(memory: Arc<InMemoryStore>) -> AdaptiveLoop {
         Arc::new(AiAssistedPolicyEngine::new(base.clone(), Some(ai), 0.6));
     let fallback = base;
 
-    let executor: Arc<dyn IPolicyExecutor> = {
-        #[cfg(target_os = "linux")]
-        {
-            let process = Arc::new(LinuxProcessController::new());
-            let power = Arc::new(LinuxPowerController::new());
-            Arc::new(DefaultPolicyExecutor::new(Some(process), Some(power)))
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let process = Arc::new(WindowsProcessController::new());
-            let power = Arc::new(WindowsPowerController::new());
-            Arc::new(DefaultPolicyExecutor::new(Some(process), Some(power)))
-        }
-    };
+    let executor: Arc<dyn IPolicyExecutor> =
+        Arc::new(DefaultPolicyExecutor::new(Some(process), None));
 
     let validator = Arc::new(DefaultPolicyValidator::new());
 
@@ -80,10 +68,11 @@ fn build_full_loop(memory: Arc<InMemoryStore>) -> AdaptiveLoop {
 #[test]
 fn full_loop_runs_and_records_metrics() {
     let memory = Arc::new(InMemoryStore::new());
-    let loop_ = build_full_loop(memory.clone());
+    let process = Arc::new(native_fixture::OwnedProcess::new());
+    let loop_ = build_full_loop(memory.clone(), process.clone());
 
     for _ in 0..3 {
-        let _outcome = loop_.tick(&ExecutionTargets::default());
+        let _outcome = loop_.tick(&process.targets());
     }
 
     let m = loop_.metrics();
@@ -95,9 +84,10 @@ fn full_loop_runs_and_records_metrics() {
 #[test]
 fn history_disabled_by_default_means_no_records() {
     let memory = Arc::new(InMemoryStore::new());
-    let loop_ = build_full_loop(memory.clone());
+    let process = Arc::new(native_fixture::OwnedProcess::new());
+    let loop_ = build_full_loop(memory.clone(), process.clone());
 
-    loop_.tick(&ExecutionTargets::default());
+    loop_.tick(&process.targets());
 
     // 默认 profile.history_enabled = false，不应写入
     assert_eq!(memory.record_count().unwrap(), 0);
@@ -114,8 +104,9 @@ fn history_enabled_records_tick() {
     };
     memory.save_profile(&profile).unwrap();
 
-    let loop_ = build_full_loop(memory.clone());
-    loop_.tick(&ExecutionTargets::default());
+    let process = Arc::new(native_fixture::OwnedProcess::new());
+    let loop_ = build_full_loop(memory.clone(), process.clone());
+    loop_.tick(&process.targets());
 
     assert_eq!(memory.record_count().unwrap(), 1);
 }
@@ -124,9 +115,65 @@ fn history_enabled_records_tick() {
 #[test]
 fn loop_starts_in_normal_mode() {
     let memory = Arc::new(InMemoryStore::new());
-    let loop_ = build_full_loop(memory);
+    let process = Arc::new(native_fixture::OwnedProcess::new());
+    let loop_ = build_full_loop(memory, process.clone());
     assert_eq!(
         loop_.current_mode(),
         aicore_contracts::runtime::mode::RuntimeMode::Normal
     );
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[test]
+fn native_platform_fast_deadline_measurement() {
+    use aicore_contracts::execution::status::ExecutionOverallStatus;
+    use aicore_runtime::dual_loop::PlatformTickDriver;
+    use std::time::{Duration, Instant};
+    let process = Arc::new(native_fixture::OwnedProcess::new());
+    let loop_ = Arc::new(build_full_loop(
+        Arc::new(InMemoryStore::new()),
+        process.clone(),
+    ));
+    let driver = PlatformTickDriver::new(loop_, process.targets(), Duration::from_secs(3))
+        .expect("native split driver");
+    let mut samples = Vec::new();
+    let mut applied = 0;
+    for _ in 0..200 {
+        let start = Instant::now();
+        let outcome = driver.tick();
+        samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        if matches!(
+            outcome.execution_status.as_ref(),
+            Some(ExecutionOverallStatus::AllSucceeded | ExecutionOverallStatus::PartiallySucceeded)
+        ) {
+            applied += 1;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    samples.sort_by(f64::total_cmp);
+    let misses = samples.iter().filter(|v| **v > 20.0).count();
+    eprintln!("NATIVE DEADLINE samples={} applied={applied} budget_ms=20 p50_ms={} p99_ms={} max_ms={} misses={misses}; finite measurement does not certify hard realtime",samples.len(),samples[100],samples[198],samples[199]);
+    drop(driver);
+    process.finish().expect("native deadline probe restoration");
+    assert!(
+        applied > 0,
+        "native split driver must actually apply a prepared policy"
+    );
+}
+#[cfg(target_os = "windows")]
+#[test]
+fn native_owned_child_affinity_roundtrip() {
+    use aicore_contracts::traits::process_controller::{AffinityMask, IProcessController};
+    let process = native_fixture::OwnedProcess::new();
+    let pid = process.targets().foreground_pids[0];
+    let original = process.get_affinity(pid).expect("native affinity snapshot");
+    let single = AffinityMask::new(vec![original.cores[0]]);
+    process
+        .set_affinity(pid, &single)
+        .expect("owned child affinity write");
+    assert_eq!(
+        process.get_affinity(pid).expect("native affinity readback"),
+        single
+    );
+    process.finish().expect("native affinity restoration");
 }

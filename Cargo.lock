@@ -54,6 +54,7 @@ dependencies = [
  "serde",
  "sysinfo",
  "tracing",
+ "windows",
  "windows-sys",
 ]
 

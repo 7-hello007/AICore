@@ -484,3 +484,18 @@ aicore-adapter-windows = { path = "../adapters/windows" }
 [[example]]
 name = "owned_process_probe"
 path = "ownedProcess.probe.example.rs"
+
+[[example]]
+name = "native_gpu_queue_probe"
+path = "nativeGpu.queue.probe.example.rs"
+[[example]]
+name = "native_power_snapshot_probe"
+path = "nativePower.snapshot.probe.example.rs"
+
+[[example]]
+name = "native_npu_queue_probe"
+path = "nativeNpu.queue.probe.example.rs"
+
+[[example]]
+name = "native_observation_probe"
+path = "nativeObservation.probe.example.rs"

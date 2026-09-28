@@ -33,6 +33,7 @@ mod probe {
     }
     impl Drop for OwnedChild {
         fn drop(&mut self) {
+            eprintln!("NATIVE CLEANUP BEFORE pid={} original_now={:?} proposed={:?} rollback=restore recorded priority",self.child.id(),self.controller.get_priority(self.child.id()),self.original);
             let restoration = self
                 .controller
                 .set_priority(self.child.id(), self.original)
@@ -151,6 +152,7 @@ mod probe {
         };
         let snapshot = ComputerSnapshot::default();
         let policy = engine.generate(&snapshot, &context);
+        eprintln!("NATIVE BEFORE pid={pid} original={:?} proposed={:?} rollback=IProcessController::set_priority({pid}, {original:?})",controller.get_priority(pid)?,policy.cpu.priority);
         let result = DefaultPolicyExecutor::new(Some(controller.clone()), None).execute(
             &policy,
             &ExecutionTargets {
@@ -175,6 +177,7 @@ mod probe {
         if first.trim().is_empty() || first != second {
             return Err("workload completion mismatch".into());
         }
+        eprintln!("NATIVE RESTORE pid={pid} original_now={:?} proposed={original:?} rollback=IProcessController::set_priority({pid}, {original:?})",controller.get_priority(pid)?);
         controller.set_priority(pid, original)?;
         let restored = controller.get_priority(pid)? == original;
         if !restored {
@@ -203,9 +206,94 @@ mod probe {
             now,
         )?;
         let next = engine.generate(&snapshot, &context);
+        // Repeat real observed A/B pairs; never invent historical timestamps.
+        let mut trials = vec![serde_json::to_value(&comparison)?];
+        for trial in 1..12 {
+            let (_, before) = measure()?;
+            eprintln!("NATIVE BEFORE pid={pid} original={:?} proposed=High rollback=IProcessController::set_priority({pid}, {original:?})",controller.get_priority(pid)?);
+            controller.set_priority(pid, PolicyPriority::High)?;
+            if controller.get_priority(pid)? != PolicyPriority::High {
+                return Err("trial priority readback differs".into());
+            }
+            let (_, after) = measure()?;
+            eprintln!("NATIVE RESTORE pid={pid} original_now={:?} proposed={original:?} rollback=IProcessController::set_priority({pid}, {original:?})",controller.get_priority(pid)?);
+            controller.set_priority(pid, original)?;
+            if controller.get_priority(pid)? != original {
+                return Err("trial restoration failed".into());
+            }
+            eprintln!("RESTORATION PASS pid={pid} trial={trial}");
+            trials.push(serde_json::json!({"baseline":before,"intervention":after,"priority_restored":true}));
+        }
+        let evidence = std::env::current_dir()?
+            .join("env")
+            .join(format!("native-effect-{}-{}", pid, now));
+        std::fs::create_dir_all(&evidence)?;
+        std::fs::write(
+            evidence.join("observed-pairs.json"),
+            serde_json::to_vec_pretty(&trials)?,
+        )?;
+        use aicore_contracts::{
+            application::id::ApplicationId,
+            memory::{profile::UserProfile, record::HistoricalRecord},
+            traits::memory_store::IMemoryStore,
+        };
+        let store = aicore_memory::SqliteMemoryStore::open(evidence.join("personal-memory.db"))?;
+        if store.load_profile()?.can_record() || store.record_count()? != 0 {
+            return Err("isolated memory must default to no consent/no history".into());
+        }
+        store.save_profile(&UserProfile {
+            history_enabled: true,
+            profile_enabled: true,
+            retention_days: 7,
+            ..Default::default()
+        })?;
+        for (index, trial) in trials.iter().enumerate() {
+            let observed = trial["intervention"].clone();
+            let timestamp = observed["timestamp_unix_ms"]
+                .as_u64()
+                .ok_or("observed timestamp missing")?;
+            let actual = telemetry.collect()?;
+            if store.load_profile()?.can_record() {
+                store.append_record(&HistoricalRecord {
+                    record_id: format!("owned-{pid}-{timestamp}-{index}"),
+                    application_id: Some(ApplicationId::new("aicore.owned.probe")),
+                    timestamp_unix_ms: actual
+                        .collected_at_unix_ms
+                        .ok_or("native telemetry timestamp unavailable")?,
+                    workload_type: WorkloadType::Development,
+                    interaction_level:
+                        aicore_contracts::context::workload::InteractionLevel::Passive,
+                    policy_id: policy.policy_id.clone(),
+                    policy_source: policy.source,
+                    overall_status: result.overall_status,
+                    cpu_usage_percent: actual.cpu.usage_percent,
+                    gpu_usage_percent: actual.gpu.usage_percent,
+                    npu_usage_percent: actual.npu.usage_percent,
+                    memory_usage_percent: actual.memory.usage_percent,
+                    power_mode: {
+                        use aicore_contracts::traits::power_controller::IPowerController;
+                        aicore_adapter_windows::WindowsPowerController::new().get_profile()?
+                    },
+                })?;
+            }
+        }
+        if store.record_count()? != 12 {
+            return Err("observed app memory count mismatch".into());
+        }
+        if store.apply_retention(7)? != 0 || store.record_count()? != 12 {
+            return Err("retention incorrectly removed recent observed records".into());
+        }
+        // Consent revocation and explicit erasure apply only to this owned DB.
+        store.save_profile(&UserProfile::default())?;
+        store.clear_history()?;
+        if store.load_profile()?.can_record() || store.record_count()? != 0 {
+            return Err("memory consent revocation/clear failed".into());
+        }
+        eprintln!("PASS observed pairs=12 isolated personal memory consent/revocation/clear; artifacts={} (short CPU workload, no energy/long-term prediction certification)",evidence.display());
+
         println!(
             "{}",
-            serde_json::json!({"status":"PASS","pid":pid,"changes":["Normal -> High (ABOVE_NORMAL) -> Normal"],"priority_restored":restored,"affinity_power_gpu_npu":"unchanged","observations":comparison,"feedback":assessment,"next_priority":format!("{:?}",next.cpu.priority),"note":"single paired workload; no product performance certification"})
+            serde_json::json!({"status":"PASS","pid":pid,"changes":["Normal -> High (ABOVE_NORMAL) -> Normal"],"priority_restored":restored,"affinity_power_gpu_npu":"unchanged","observations":comparison,"feedback":assessment,"next_priority":format!("{:?}",next.cpu.priority),"note":"12 observed CPU pairs; no representative product performance or long-term pattern certification"})
         );
         Ok(())
     }

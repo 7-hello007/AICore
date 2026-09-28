@@ -1,5 +1,255 @@
 # AICore destination implementation and verification report
 
+## Continuation: 2026-09-28 (native owned targets and accelerator sessions)
+
+**Decision: code verification PASS; experimental GPU and NPU native execution PASS; destination product closure NOT VERIFIED.**
+Only the desktop checkout `C:\Users\12282\Desktop\AICore_V4_Windows` was
+modified. WSL was not synchronized. Native tests are now authorized and no
+native-control tests were filtered. Installer execution remains prohibited.
+All downloads and generated evidence are project-local under `env/`.
+Earlier sections below are historical and do not describe the current test filters.
+
+### Completed code and actual native evidence
+
+- Windows power API defects: corrected Balanced GUID bytes, aligned native GUID
+  handling, actual API return-code mapping, allocation cleanup, canonical GUID
+  validation, and exact raw scheme snapshot/restore. Custom/unknown scheme IDs
+  can be restored without pretending they are a standard PowerMode.
+- Unified Windows hardware adapter now discovers real DXGI hardware identities
+  and present SetupAPI ComputeAccelerator devices. Software GPUs are excluded.
+  Missing utilization/temperature/control support remains unavailable; device
+  identity does not imply usable telemetry or actuation.
+- Explicit ONNX CPU/DirectML/VitisAI provider bridge, optional preinstalled EP DLL,
+  explicit device ordinal, schema checks, bounded subprocesses, accelerator CPU
+  fallback disabled, and actual node-provider profiling proof. NPU cache and
+  scratch files stay in project env. No automatic Store/EP installation API.
+- Session-only `QueuedModelBinder` connects existing accelerator admission,
+  capability, expiry and dispatch leases to real ONNX inference. Windows daemon
+  composition can inject it from configuration; unsafe state-changing binders
+  remain after validation/expiry/SafeMode checks. NPU multi-device identity
+  ambiguity is rejected. Native GPU/NPU queue probes perform actual device
+  inference on explicit input. The real PlatformTickDriver probe also exercises
+  owned-child control; its forced GPU route now **declines** model inference
+  when GPU/NPU utilization is unavailable. Thus queue placement is verified,
+  but automatic daemon routing from native telemetry is NOT VERIFIED.
+- DirectML policy model inference PASS on AMD Radeon 860M, DXGI ordinal 0.
+  The policy ONNX asset is exported from the existing JSON weights (4 features,
+  5 labels); it is not a trained generative LLM. No global GPU clocks/power settings.
+- Existing AMD WinML NPU EP 1.8.75.0 registers and enumerates an actual AMD NPU.
+  The default FP32 policy graph is assigned wholly to CPU; it fails closed when
+  fallback is disabled. An experimental QDQ candidate (generated from the same
+  weights) ran **all profiled nodes on VitisAI NPU** with a real queue response.
+  Its 1000 deterministic synthetic CPU comparisons found maximum absolute
+  score error 0.00354925 and 16 top-label differences, so it is not promoted
+  as production-equivalent. Production default remains FP32 and fails closed
+  on NPU; production NPU policy acceptance is NOT VERIFIED.
+  Initial failed-session teardown crashed with exit -1073741819; clearing
+  traceback/device references fixes that case. Once an EP session has been
+  created, explicit plugin unregister during Python teardown can crash; the
+  one-request child now exits with process-scoped registration. Two negative
+  and one positive NPU regression exit normally. No global NPU setter runs.
+- All original process/pipeline tests remain active; owned child fixtures capture,
+  print changes, restore/read back priority/affinity, then terminate only their
+  child. Invalid PID test now requires a real error rather than a vacuous assertion.
+  The NVIDIA-only identity assumption was corrected for actual DXGI discovery.
+- Native owner-only named pipe rejects impersonated anonymous SID S-1-5-7 with
+  ACCESS_DENIED (5), then accepts the owner. RevertToSelf is followed by absent
+  thread-token readback (1008). No persistent account/ACL changes. This is **not**
+  certification of another interactive login user.
+- Missing utilization for a discovered GPU/NPU is no longer converted to zero
+  in the AdaptiveLoop model features. Absent hardware may contribute a real
+  zero; present-but-unmeasured hardware causes inference to decline. The
+  ModelRuntimeBinder also returns executed=false when no inference payload
+  exists. This prevents a misleading positive binding result.
+- Twelve real owned-CPU baseline/intervention pairs were saved. Actual adapter
+  timestamps, CPU/memory observations and application identity populated an
+  isolated opt-in SQLite memory store. Default denial, recent retention,
+  consent revocation and logical history clearing passed. This is a short
+  synthetic workload, not representative application benefit, long-term
+  prediction, energy savings or forensic secure deletion. An additional
+  60-second consent-gated read-only native observation used the Windows adapter
+  and recorded one actual foreground process name (window titles omitted),
+  CPU/memory values and explicit null GPU/NPU utilization in project `env/`.
+  It was not written to the personal-memory DB because that contract requires
+  an explicitly registered task; one process/minute is not a representative
+  personal-pattern corpus.
+- Kernel integration necessity analysis is recorded in
+  `docs/architecture/KERNEL_INTEGRATION_ANALYSIS.md`. No measured need for kernel
+  code was established. Generic autonomous tool-agent execution remains a design
+  decision requiring tool permissions, schemas and rollback semantics; existing
+  live local intent consensus is not described as arbitrary tool cooperation.
+
+### Final project-level commands and results
+
+All cargo commands use the existing Rust **1.75.0**, project `env/cargo-home`,
+`--locked --offline`. No MSRV change. Log base:
+`env/validation/native-1790517148896/`.
+
+| Executed command/check | Status / exit / evidence |
+|---|---|
+| `cargo check --workspace --all-targets --locked --offline` | PASS, exit 0; `check-closure.log` |
+| `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` | PASS, exit 0; `clippy-closure.log` |
+| `cargo test --workspace --all-targets --locked --offline -- --nocapture` | PASS, exit 0; 147 test-target summaries, **730 passed / 0 failed / 0 ignored / 0 filtered**; `tests-closure.log` |
+| `cargo fmt --all -- --check` | PASS, exit 0; `fmt-closure.log`; initial newline-style failure in `model_binder.rs` was fixed with `cargo fmt --all` |
+| Linux-target workspace check and Clippy, same flags plus `--target x86_64-unknown-linux-gnu` | PASS, exit 0 each, `linux-check-closure.log`, `linux-clippy-closure.log`; existing env Zig compiler; compile/static evidence only, not Linux execution |
+| `python -I -S scripts/models/test_onnx_bridge.py` with explicit local packages and installed NPU DLL | PASS, exit 0, 4 native regressions: actual CPU, actual DirectML, repeated default-FP32 NPU rejection and experimental NPU execution; `onnx-bridge-final.log` |
+| Direct default-FP32 NPU request | FAIL compatibility, exit 1; `npu-inference-final.log`; expected fail-closed behavior |
+| Direct experimental QDQ NPU inference | PASS, exit 0; all nodes VitisAI, `npu-qdq-final.log`; candidate accuracy not accepted for production |
+| `native_npu_queue_probe.exe` with explicit QDQ candidate | PASS, exit 0; real PnP NPU queue response and child-session release; `npu-closure.log` |
+| `quantize_policy_npu.py` with existing local packages | PASS, exit 0; candidate reproduced identical SHA-256 and 1000 synthetic vector comparison; `quantization-rebuilt.log` |
+| `native_gpu_queue_probe.exe` after unknown-metric fix | PASS, exit 0; separate actual DirectML queue inference and **2000** real ticks / 823 owned-control outcomes. Forced GPU route correctly declined missing telemetry (0 GPU bindings); `native-gpu-2000-safe.log` |
+| Earlier 2000-tick GPU probe | HISTORICAL ONLY; p99 0.3106 ms/max 1.1764 ms but pre-fix treated unknown utilization as zero, so its 38 GPU-route results are withdrawn as current integration evidence; `native-gpu-2000.log` |
+| `native_observation_probe.exe`, consent yes | PASS, 60 read-only 1-second samples, one foreground process, all 60 GPU/NPU utilization unavailable; `native-observation.log` |
+| `cross_user_acl_server.ps1 -Seconds 30` owner self-check | PASS, owner connected and owned test daemon exited; `cross-user-server-selftest.log`; other-login client NOT VERIFIED |
+| Native power clone wrapper `scripts/verify/native_power_snapshot.ps1` | PASS; raw GUID set/readback/restore and scheme-list equality, `native-power.log` |
+| Owned CPU effect/memory `owned_process_probe` | PASS, exit 0; 12 observed pairs and isolated consent/retention/revocation, `native-effect-memory.log` |
+| `aicored --once`, `AICORE_EXECUTION_MODE=model`, isolated config/state/DB/plugins/pipe | PASS, exit 0; one model tick, `model-closure.log`; model execution only |
+| `scripts/verify/simulated_platform_windows_smoke.ps1` | PASS, 10 ticks / 5 in-memory successes / 0 failures, native pipe queries; `simulator-closure.log`; simulated control only |
+| `simulated_platform_ollama_intent.ps1 -Backend ensemble` | PASS; actual local llama3.2:3b plus JSON consensus through pinned CLI and simulated daemon IPC; compilation confidence 0.97611916; `ollama-closure.log` |
+| Source shell syntax, PowerShell parser, Python AST, `audit_v32_static.sh`, `audit_v4_static.sh` | PASS, exit 0; 117 declared Rust test files and 12 PowerShell/5 Python scripts parsed, `static-closure.log` |
+| `git -c core.safecrlf=false diff --check` | PASS, exit 0; `git-diff-check.log`; no whitespace error |
+
+`AICORE_SMOKE_SECONDS=1` bounds the existing smoke duration; no skip/ignore flag.
+The first full suite failed its obsolete NVIDIA-only assertion; the corrected
+platform identity assertion passed in complete subsequent suites. No
+assertions were lowered to unconditional success and no tests were removed.
+
+### Native measurements and scope
+
+Final post-fix native fast-side measurement: **2000 tick calls**, 823
+verified owned-process control outcomes, **0 GPU binding executions** because
+GPU and NPU utilization were unavailable, p99 **1.2307 ms**, max **1.8938 ms**,
+and 0 misses of a 20 ms tick-call budget. The corrected 1000-tick run had
+415 owned outcomes, p99 1.0431 ms and max 2.3898 ms. Separate actual DirectML
+queue inference passed. The historical 2000-tick run before the missing-metric
+fix had 38 GPU bindings, but they depended on unknown utilization filled with
+zero; these are **withdrawn** as current full-route evidence. Native deadline
+measurements cover real owned control, not complete automatic accelerator routing.
+
+Harness sleeps, full daemon IPC/state persistence, long-run contention and thermal
+load are outside this measurement. **Hard real-time deadline NOT VERIFIED**.
+The observed CPU pair's small positive assessment is not a product performance
+claim. Unknown energy/throughput values remain null. Simulator evidence is
+rejected by production observed-effect feedback ingestion.
+
+### Native operations and restoration
+
+Every owned-target operation prints original/proposed/rollback values before
+execution. Restoration readback is required by the fixture and probe. Full
+per-operation PID logs are in `native-tests.log`, `workspace-final.log`,
+`native-gpu-final.log`, `native-effect-memory.log` and `native-power.log`.
+
+| Target / operation | Original -> test change -> restoration | Final state |
+|---|---|---|
+| Final full suite owned children: 3952, 13032, 15596, 16684, 17748, 22876, 24244 | Normal priority / captured allowed affinity -> tested priority or one allowed core -> exact priority/affinity readback; child terminated | RESTORED PASS |
+| Native GPU probe children 18064, 13128, 12960, 14460 (earlier 20804) | Normal/all 16 allowed cores -> Low priority -> Normal/original affinity, readback and termination | RESTORED PASS |
+| Owned CPU effect child 26912 | Normal -> High (ABOVE_NORMAL) -> Normal after each of 12 trials; cleanup readback | RESTORED PASS |
+| First deadline child 6112 | Initial asynchronous reference retained child after test process exit; manually restored Normal, read back and terminated | RESTORED PASS after manual recovery; fixture now explicitly finishes before shutdown |
+| Power controller | Balanced `381b4222-f694-41f0-9685-ff5bb260df2e` -> disposable clone `0c79499a-a1b9-4017-80ab-309e62de2072` -> exact original GUID | RESTORED PASS; only owned clone deleted; scheme list matches original |
+| Test-thread anonymous impersonation | No thread token -> S-1-5-7 -> RevertToSelf + no-thread-token readback | RESTORED PASS |
+| CPU/GPU/NPU model subprocess sessions | No owned session -> isolated inference/registration attempt -> release queue/session and exit child; unregister only before any VitisAI session exists | RELEASED PASS on final probes; first failed-session and QDQ-positive unload crashes retained as failed evidence, then repaired |
+| GPU/NPU clock, global power limit, driver configuration; services/accounts | Not changed | NOT APPLICABLE restoration |
+
+**Restoration failures: None remaining.** Initial delayed-child cleanup and both NPU
+subprocess unload crashes are explicitly recorded above, rather than hidden by final PASS.
+Final power readback remains the original Balanced GUID and the original single
+scheme list. No system/current Codex/IDE/Shell process was a control target.
+
+### Environment downloads
+
+New downloads are 10 project-local Python distributions (DirectML plus nine
+dependencies) under `env/onnx-dml-packages`; cache under `env/pip-cache`.
+No system installer or installer package was run. `pip --target` unpacked
+Python wheels only in project `env/`; no system/global Python location changed:
+
+- onnxruntime-directml 1.23.0; numpy 2.5.3; coloredlogs 15.0.1;
+  flatbuffers 25.12.19; humanfriendly 10.0; mpmath 1.3.0;
+  packaging 26.3; protobuf 7.36.2; pyreadline3 3.5.6; sympy 1.14.0.
+
+Existing Python, Rust, Zig, CPU ONNX packages, Ollama/model, AMD driver and WinML
+EP were reused. No Ollama model download and no NPU SDK/install occurred.
+`downloads.json` records exact local distributions. Unavailable DML 1.23.2 was
+an initial failed version lookup; 1.23.0 is the actual installed local version.
+
+### File integrity and remaining acceptance
+
+Seven specified residual files retain identical SHA-256 hashes
+(`residual-before.json`, `residual-after.json`). All **605 initially tracked
+files** remain present. The inventory uses tracked source files; it does not
+claim hashes of every pre-existing generated env/target file. No source file,
+test, backup or historical report was deleted/moved/renamed. The previous
+report remains verbatim below this new section.
+
+| Remaining item | Status / concrete reason |
+|---|---|
+| Default FP32 policy model on NPU | FAIL compatibility / NOT VERIFIED production NPU inference. Experimental QDQ candidate actual NPU inference is PASS, but 16/1000 synthetic top-label differences require representative accuracy/acceptance before default promotion |
+| Global GPU/NPU clock/power/thermal controls and typed plugin native binding | NOT VERIFIED; no integrated safe independent setter/readback contract for this vendor; typed binding stays fail-closed |
+| Another login user's pipe access denial | NOT VERIFIED; `kenny` is enabled but this token has no credentials/interactive execution in that account. Native anonymous denial and owner self-check passed; reusable different-login client is prepared and awaits a run from that account |
+| Native automatic daemon placement/full latency | NOT VERIFIED; discovered GPU/NPU utilization is missing, so the corrected feature path declines inference. Direct device queues pass; automatic routing and complete persistence/IPC deadline are separate gates |
+| Hard deadline / representative effects / long-term personal prediction | NOT VERIFIED; 1000 finite native ticks, 12 short owned-CPU pairs and 60 read-only foreground samples (one process) are insufficient; representative application/energy/long-term corpus required |
+| Generic autonomous tool agents | SKIPPED implementation decision; unrestricted execution would bypass current typed validation; tool schemas/permissions/rollback must be designed first |
+| Kernel implementation | NOT APPLICABLE now; analysis finds no measured necessity |
+| Package installation | SKIPPED, explicitly prohibited |
+| Service deployment / cross-vendor / native Linux runtime | NOT VERIFIED; not executed, no hardware/platform matrix certification implied |
+
+Pending authorization: **None for executed operations** (current native
+operations were authorized). Missing alternate-user credentials, observed accelerator utilization, a
+representative consented application task, production model equivalence and
+vendor control contracts are concrete blockers, not completed tasks.
+Destination product/native certification is **not closed**.
+
+### Changed/new source and documentation files
+
+| Path | Purpose |
+|---|---|
+| `Cargo.lock` | Existing cached Windows dependency registration; no MSRV upgrade. |
+| `README.md` | Document explicit configurable ONNX backend selection. |
+| `adapters/windows/Cargo.toml` | Enable existing windows crate DXGI and SetupAPI features. |
+| `adapters/windows/src/hardware/capability.rs` | Real identity/capability discovery or exact power native API correctness. |
+| `adapters/windows/src/hardware/telemetry.rs` | Real identity/capability discovery or exact power native API correctness. |
+| `adapters/windows/src/power/controller.rs` | Real identity/capability discovery or exact power native API correctness. |
+| `adapters/windows/src/telemetry/provider.rs` | Real identity/capability discovery or exact power native API correctness. |
+| `ai-runtime/src/onnx/python.rs` | Explicit provider/device and optional DLL protocol. |
+| `ai/src/intent_config.rs` | Environment-injected ONNX provider configuration. |
+| `apps/aicored/src/runtime.rs` | Discover and inject configured native session queue; reject ambiguous NPU binding. |
+| `contracts/src/traits/power_controller.rs` | Exact platform power-state snapshot contract and default restore. |
+| `contracts/src/traits/runtime_binder.rs` | Preparation-safe binder declaration defaults closed. |
+| `docs/ai/INTENT_BACKENDS.md` | Sync current source/acceptance evidence or record kernel necessity analysis. |
+| `docs/architecture/KERNEL_INTEGRATION_ANALYSIS.md` | Sync current source/acceptance evidence or record kernel necessity analysis. |
+| `docs/quality/DESTINATION_REQUIREMENTS.md` | Sync current source/acceptance evidence or record kernel necessity analysis. |
+| `docs/quality/DESTINATION_VERIFICATION_REPORT.md` | Sync current source/acceptance evidence or record kernel necessity analysis. |
+| `ipc/src/transport/windows.rs` | Actual anonymous-principal ACL denial and token restoration readback. |
+| `models/policy_classifier_v1.onnx` | Equivalent existing 4-feature/5-label model export. |
+| `scripts/models/quantize_policy_npu.py` | Reproduce experimental QDQ candidate in env and measure synthetic model drift. |
+| `tests/nativeNpu.queue.probe.example.rs` | Native EP-backed NPU queue, provider-proof and session-release probe. |
+| `tests/nativeObservation.probe.example.rs` | Consent-gated Windows adapter observation, no window title or unregistered memory write. |
+| `scripts/verify/cross_user_acl_client.ps1` | Read-only second-login pipe denial client, distinct SID required. |
+| `scripts/verify/cross_user_acl_server.ps1` | Bounded owner-only test daemon and owner positive check. |
+| `runtime-router/src/binder.rs` | Only session-only binders declare preparation safe. |
+| `runtime/src/adaptive_loop.rs` | Prepare safe session binding on slow side; inference input for accelerator routes. |
+| `runtime/src/lib.rs` | Export queued session binder. |
+| `runtime/src/model_binder.rs` | Declare model-only preparation safe. |
+| `runtime/src/queued_model_binder.rs` | New bounded real model queue implementation using existing scheduler. |
+| `scripts/audit_v4_static.sh` | Exclude dependency artifacts; still check all declared tests/fixture references. |
+| `scripts/models/export_policy_onnx.py` | Export existing policy weights and metadata. |
+| `scripts/models/onnx_intent_runner.py` | Explicit node-proven placement, local EP lifecycle/cache, safe failed-session unload. |
+| `scripts/models/test_onnx_bridge.py` | Actual CPU/GPU/NPU execution and repeated default-model NPU failure cleanup regressions. |
+| `scripts/verify/native_power_snapshot.ps1` | Owned clone power API set/readback/exact restore wrapper. |
+| `tests/Cargo.toml` | Register preserved/new native probes; no test removed. |
+| `tests/hardware.telemetry.unit.test.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/native.fixture.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/native.power.fixture.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/nativeGpu.queue.probe.example.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/nativePower.snapshot.probe.example.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/ownedProcess.probe.example.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/pipeline.adaptiveComputer.integration.test.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/pipeline.executePolicy.integration.test.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+| `tests/process.controller.contract.test.rs` | Owned-target/restoration verification, observed data or corrected hardware/error assertion. |
+
+Deleted/moved/renamed source files: **None**.
+
+---
+
 ## Continuation: 2026-09-27 (desktop backends, authorization and scheduling)
 
 This continuation modifies only `C:\Users\12282\Desktop\AICore_V4_Windows`.

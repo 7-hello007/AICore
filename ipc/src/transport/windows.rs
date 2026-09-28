@@ -311,3 +311,77 @@ pub async fn client_connect(path: impl AsRef<Path>) -> io::Result<IpcStream> {
     let client = ClientOptions::new().open(path.as_ref())?;
     Ok(IpcStream::from_client(client))
 }
+
+#[cfg(test)]
+mod native_acl_tests {
+    use super::*;
+    use windows_sys::Win32::{
+        Security::{ImpersonateAnonymousToken, RevertToSelf, TOKEN_QUERY},
+        System::Threading::{GetCurrentThread, OpenThreadToken},
+    };
+    #[tokio::test]
+    async fn native_anonymous_principal_is_denied_and_owner_can_connect() {
+        let path = PathBuf::from(format!(
+            r"\\.\pipe\aicore-acl-native-{}",
+            std::process::id()
+        ));
+        let listener = server_listen(&path).expect("owned pipe creation");
+        let mut prior_token = std::ptr::null_mut();
+        // SAFETY: query-only handle; this fresh test thread must have no token.
+        assert_eq!(
+            unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut prior_token) },
+            0
+        );
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(1008),
+            "original thread token must be absent"
+        );
+
+        eprintln!("NATIVE BEFORE target=current test thread original=process token proposed=anonymous principal S-1-5-7 rollback=RevertToSelf; no accounts or persistent ACLs changed");
+        // SAFETY: impersonation affects only this thread. There are no await
+        // points until the token is reverted; the RAII guard also covers panic.
+        assert_ne!(
+            unsafe { ImpersonateAnonymousToken(GetCurrentThread()) },
+            0,
+            "anonymous impersonation"
+        );
+        struct Revert;
+        impl Drop for Revert {
+            fn drop(&mut self) {
+                // SAFETY: revert this owned thread's temporary impersonation.
+                let restored = unsafe { RevertToSelf() };
+                eprintln!(
+                    "RESTORATION {} target=test thread anonymous token reverted",
+                    if restored != 0 { "PASS" } else { "FAIL" }
+                );
+                assert_ne!(restored, 0, "thread token restoration failed");
+                let mut token = std::ptr::null_mut();
+                // SAFETY: verify that temporary thread impersonation is absent.
+                let opened =
+                    unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut token) };
+                let error = io::Error::last_os_error().raw_os_error();
+                if opened != 0 {
+                    // SAFETY: close the query handle on an unexpected token.
+                    unsafe { windows_sys::Win32::Foundation::CloseHandle(token) };
+                }
+                assert_eq!(
+                    (opened, error),
+                    (0, Some(1008)),
+                    "restored thread token readback differs"
+                );
+            }
+        }
+        let revert = Revert;
+        let rejected = ClientOptions::new().open(&path).err();
+        drop(revert);
+        assert_eq!(
+            rejected.and_then(|e| e.raw_os_error()),
+            Some(5),
+            "foreign anonymous principal must receive ACCESS_DENIED"
+        );
+        let client = client_connect(&path).await.expect("owner positive control");
+        drop(client);
+        drop(listener);
+    }
+}

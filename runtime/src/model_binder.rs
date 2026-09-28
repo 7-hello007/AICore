@@ -91,10 +91,10 @@ impl ModelRuntimeBinder {
                 return Ok(BindingResult {
                     route_id: request.route.route_id.clone(),
                     source: request.route.source,
-                    executed: true,
+                    executed: false,
                     inference: None,
                     reason: format!(
-                        "model binder attached to {} without inference",
+                        "model binder has no inference payload for {}",
                         runtime.runtime_name()
                     ),
                     latency_ms: start.elapsed().as_millis() as u64,
@@ -147,6 +147,10 @@ impl Default for ModelRuntimeBinder {
 }
 
 impl IRuntimeBinder for ModelRuntimeBinder {
+    fn preparation_safe(&self) -> bool {
+        true
+    }
+
     fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult> {
         let start = Instant::now();
 
@@ -272,5 +276,19 @@ mod tests {
         assert!(response.executed);
         assert_eq!(response.source, RuntimeRouteSource::Cpu);
         assert_eq!(response.inference.unwrap().labels.len(), 5);
+        let unavailable = binder
+            .bind_and_execute(&BindingRequest {
+                route: RuntimeRoute::routed(
+                    WorkloadType::AiInference,
+                    RuntimeRouteSource::Cpu,
+                    "missing observation",
+                    1.0,
+                ),
+                context: ContextSnapshot::default(),
+                inference: None,
+            })
+            .unwrap();
+        assert!(!unavailable.executed);
+        assert!(unavailable.inference.is_none());
     }
 }

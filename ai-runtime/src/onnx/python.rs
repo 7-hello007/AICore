@@ -10,13 +10,17 @@ use std::{
 };
 
 /// Explicit project-local Python ONNX Runtime bridge. It never installs or
-/// downloads dependencies; every invocation is CPU-only and killable.
+/// downloads dependencies; every invocation is bounded and killable.
 #[derive(Clone)]
 pub struct PythonOnnxSessionFactory {
     pub python: PathBuf,
     pub runner: PathBuf,
     pub packages: PathBuf,
     pub timeout: Duration,
+    /// Explicit accelerator ordinal from configuration; never inferred from vendor name.
+    pub device_id: Option<u32>,
+    /// Optional preinstalled EP library; registration is subprocess-local.
+    pub provider_library: Option<PathBuf>,
 }
 
 impl PythonOnnxSessionFactory {
@@ -107,6 +111,7 @@ struct PythonSession {
     factory: PythonOnnxSessionFactory,
     path: PathBuf,
     spec: OnnxModelSpec,
+    provider: &'static str,
 }
 
 impl IOnnxSessionFactory for PythonOnnxSessionFactory {
@@ -120,15 +125,21 @@ impl IOnnxSessionFactory for PythonOnnxSessionFactory {
             inputs: Vec<TensorSchema>,
             outputs: Vec<TensorSchema>,
         }
-        if spec
+        let provider = match spec
             .preferred_provider
             .as_deref()
-            .is_some_and(|p| p != "CPUExecutionProvider")
+            .unwrap_or("CPUExecutionProvider")
         {
-            return Err("Python bridge supports CPUExecutionProvider only".into());
+            "CPUExecutionProvider" => "CPUExecutionProvider",
+            "DmlExecutionProvider" => "DmlExecutionProvider",
+            "VitisAIExecutionProvider" => "VitisAIExecutionProvider",
+            _ => return Err("unsupported explicit ONNX provider".into()),
+        };
+        if provider == "DmlExecutionProvider" && self.device_id.is_none() {
+            return Err("DirectML requires explicit device ordinal".into());
         }
         let path = model_path.canonicalize().map_err(|e| e.to_string())?;
-        let response = self.invoke(&serde_json::json!({"mode":"describe", "model": path}))?;
+        let response = self.invoke(&serde_json::json!({"mode":"describe", "model": path,"provider":provider,"device_id":self.device_id,"provider_library":self.provider_library}))?;
         let description: Description =
             serde_json::from_value(response).map_err(|e| e.to_string())?;
         if description.inputs != spec.input_schema || description.outputs != spec.output_schema {
@@ -138,10 +149,11 @@ impl IOnnxSessionFactory for PythonOnnxSessionFactory {
             factory: self.clone(),
             path,
             spec: spec.clone(),
+            provider,
         }))
     }
     fn factory_name(&self) -> &'static str {
-        "python_onnx_cpu_factory"
+        "python_onnx_explicit_factory"
     }
 }
 
@@ -153,7 +165,7 @@ impl IOnnxSession for PythonSession {
             .collect();
         serde_json::from_value(
             self.factory.invoke(
-                &serde_json::json!({"mode":"infer", "model":self.path, "inputs":tensors}),
+                &serde_json::json!({"mode":"infer", "model":self.path, "inputs":tensors,"provider":self.provider,"device_id":self.factory.device_id,"provider_library":self.factory.provider_library}),
             )?,
         )
         .map_err(|e| e.to_string())
@@ -165,6 +177,6 @@ impl IOnnxSession for PythonSession {
         self.spec.output_schema.clone()
     }
     fn provider_name(&self) -> &'static str {
-        "CPUExecutionProvider"
+        self.provider
     }
 }

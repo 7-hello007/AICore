@@ -389,23 +389,43 @@ impl AdaptiveLoop {
     ) -> Option<BindingResult> {
         let route = route?;
         let binder = self.runtime_binder.as_ref()?;
-        let inference = if matches!(
-            route.source,
-            aicore_contracts::runtime::route::RuntimeRouteSource::AiRuntime
-                | aicore_contracts::runtime::route::RuntimeRouteSource::Cpu
-        ) {
-            Some(aicore_contracts::ai::runtime::InferenceRequest {
-                features: vec![
-                    (state.snapshot.cpu.usage_percent / 100.0).clamp(0.0, 1.0),
-                    (state.snapshot.gpu.usage_percent.unwrap_or(0.0) / 100.0).clamp(0.0, 1.0),
-                    (state.snapshot.npu.usage_percent.unwrap_or(0.0) / 100.0).clamp(0.0, 1.0),
-                    (state.snapshot.memory.usage_percent / 100.0).clamp(0.0, 1.0),
-                ],
-                tensors: Vec::new(),
-            })
-        } else {
-            None
-        };
+        // A missing metric for a discovered device is unknown, not zero.
+        // Zero is meaningful only when that device is actually absent.
+        let inference =
+            if route.source != aicore_contracts::runtime::route::RuntimeRouteSource::Native {
+                (|| {
+                    let utilization = |name: &Option<String>, measured: Option<f32>| {
+                        measured.or_else(|| name.is_none().then_some(0.0))
+                    };
+                    let values = [
+                        state.snapshot.cpu.usage_percent,
+                        utilization(&state.snapshot.gpu.name, state.snapshot.gpu.usage_percent)?,
+                        utilization(&state.snapshot.npu.name, state.snapshot.npu.usage_percent)?,
+                        state.snapshot.memory.usage_percent,
+                    ];
+                    if values.iter().any(|v| !v.is_finite()) {
+                        return None;
+                    }
+                    Some(aicore_contracts::ai::runtime::InferenceRequest {
+                        features: values
+                            .into_iter()
+                            .map(|v| (v / 100.0).clamp(0.0, 1.0))
+                            .collect(),
+                        tensors: Vec::new(),
+                    })
+                })()
+            } else {
+                None
+            };
+        if inference.is_none()
+            && route.source != aicore_contracts::runtime::route::RuntimeRouteSource::Native
+        {
+            tracing::debug!(
+                component = "adaptive_loop",
+                event = "binding_inference_unavailable",
+                "required utilization not observed; binder must decline inference"
+            );
+        }
         let req = BindingRequest {
             route: route.clone(),
             context: context.clone(),
@@ -473,7 +493,13 @@ impl AdaptiveLoop {
         &self,
         max_age: Duration,
     ) -> Result<PreparedTick, Box<TickOutcome>> {
-        self.prepare_tick_inner(Some(max_age), true)
+        self.prepare_tick_inner(
+            Some(max_age),
+            !self
+                .runtime_binder
+                .as_ref()
+                .is_some_and(|b| b.preparation_safe()),
+        )
     }
 
     fn prepare_tick_inner(

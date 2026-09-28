@@ -58,7 +58,7 @@ daemon 通过 `AICORE_EXECUTION_MODE` 选择运行方式：
 | `simulated-platform` | 采集 fixture 驱动、仅写内存的平台模拟层 |
 | `platform` | 平台适配路径；可能触及宿主机资源控制，需按目标机器单独审查与授权 |
 
-在 Windows 桌面环境，构建 daemon 和 CLI 后，可使用 `scripts/verify/simulated_platform_windows_smoke.ps1` 验证模拟 daemon tick 与 named-pipe 状态查询。该脚本只验证模拟路径，不能用于声称原生控制认证。策略分类器资产为 `models/policy_classifier_v1.json`；意图接口通过 `AICORE_INTENT_BACKEND` 选择 Ollama、本地 JSON、ONNX CPU 或本地 provider 协作，模型与路径通过配置切换。Ollama 模型由 `AICORE_OLLAMA_MODEL` 指定（默认 `llama3.2:3b`）。后端不可用会明确失败，不以 mock 冒充真实推理。配置与范围见 [Intent backends](docs/ai/INTENT_BACKENDS.md)。
+在 Windows 桌面环境，构建 daemon 和 CLI 后，可使用 `scripts/verify/simulated_platform_windows_smoke.ps1` 验证模拟 daemon tick 与 named-pipe 状态查询。该脚本只验证模拟路径，不能用于声称原生控制认证。策略分类器资产为 `models/policy_classifier_v1.json`；意图接口通过 `AICORE_INTENT_BACKEND` 选择 Ollama、本地 JSON、ONNX（默认 CPU，可显式选择设备后端）或本地 provider 协作，模型与路径通过配置切换。Ollama 模型由 `AICORE_OLLAMA_MODEL` 指定（默认 `llama3.2:3b`）。后端不可用会明确失败，不以 mock 冒充真实推理。配置与范围见 [Intent backends](docs/ai/INTENT_BACKENDS.md)。
 
 ## 实现与验收状态
 

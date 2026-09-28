@@ -204,35 +204,44 @@ impl ITelemetryProvider for WindowsTelemetryProvider {
             Vec::new()
         };
 
-        let gpu = self
-            .hardware
-            .gpu_devices()
-            .into_iter()
-            .next()
-            .and_then(|d| self.hardware.sample_gpu(&d.id).ok())
-            .map(|g| aicore_contracts::telemetry::gpu::GpuSnapshot {
+        let devices = self.hardware.gpu_devices();
+        let measured = devices
+            .iter()
+            .find_map(|d| self.hardware.sample_gpu(&d.id).ok());
+        let gpu = if let Some(g) = measured {
+            aicore_contracts::telemetry::gpu::GpuSnapshot {
                 name: Some(g.device.name),
+                vendor: Some(g.device.vendor),
                 usage_percent: g.utilization_percent,
                 memory_used_mb: g.memory_used_mb,
                 memory_total_mb: g.memory_total_mb,
                 temperature_celsius: g.temperature_celsius,
-                vendor: Some(g.device.vendor),
-            })
-            .unwrap_or_default();
+            }
+        } else {
+            devices
+                .into_iter()
+                .next()
+                .map(|d| aicore_contracts::telemetry::gpu::GpuSnapshot {
+                    name: Some(d.name),
+                    vendor: Some(d.vendor),
+                    ..Default::default()
+                })
+                .unwrap_or_default()
+        };
         let npu = self
             .hardware
             .npu_devices()
             .into_iter()
             .next()
-            .map(|d| aicore_contracts::telemetry::npu::NpuSnapshot {
-                name: Some(d.name),
-                available: true,
-                vendor: Some(d.vendor),
-                usage_percent: self
-                    .hardware
-                    .sample_npu(&d.id)
-                    .ok()
-                    .and_then(|s| s.utilization_percent),
+            .map(|d| {
+                let sampled = self.hardware.sample_npu(&d.id).ok();
+                // Physical identity is separate from a usable telemetry/runtime path.
+                aicore_contracts::telemetry::npu::NpuSnapshot {
+                    name: Some(d.name),
+                    vendor: Some(d.vendor),
+                    available: sampled.is_some(),
+                    usage_percent: sampled.and_then(|s| s.utilization_percent),
+                }
             })
             .unwrap_or_default();
 

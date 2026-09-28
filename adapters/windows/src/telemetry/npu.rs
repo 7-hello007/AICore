@@ -1,9 +1,9 @@
 use aicore_contracts::telemetry::npu::NpuSnapshot;
 
-/// Windows NPU 探测。
+/// Windows NPU detection.
 ///
-/// Windows 没有统一的跨厂商 NPU telemetry ABI；当 vendor runtime 未接入时，
-/// 返回明确的不可用状态而不是伪造利用率。
+/// Windows does not have a single cross-vendor, NPU telemetry ABI; when vendor runtime is not connected, it is not possible to find a single multi-producer.
+/// Returns a clear state of non-availability rather than falsifying utilization.
 pub fn read_npu() -> NpuSnapshot {
     NpuSnapshot::default()
 }

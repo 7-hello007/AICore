@@ -1,27 +1,28 @@
+[English](TIER_ARCHITECTURE.md) | [Chinese](TIER_ARCHITECTURE.zh-CN.md)
 # Tier Architecture
 
-## 生命周期
+## Life cycle
 
 `Discover → Validate → Register → Active → Degraded → Disabled → Removed`
 
-## Registry 规则
+## Registry Rules
 
-Registry 只负责发现、能力、版本和生命周期，不参与业务决策。
+The registry manages discovery, capabilities, versions, and lifecycle state. It does not make policy decisions.
 
-每个 Tier 必须声明：
+Each Tier must declare:
 
 - `tier_id`
 - `version`
 - `capabilities`
-- `dependencies`（只能指向 Core Contracts / declared capabilities）
+- `dependencies` (only Core contracts or declared capabilities)
 - `permissions`
 
-## 删除规则
+## Removal rules
 
-- 删除 L0 不得修改 L1/L2。
-- 删除 L1 不得修改 L0/L2。
-- 删除 L2 不得修改 L0/L1。
-- Core 不应出现 `match TierLevel` 形式的业务分支来支持某个具体 Tier。
+- Removing L0 does not require changes to L1 or L2.
+- Removing L1 does not require changes to L0 or L2.
+- Removing L2 does not require changes to L0 or L1.
+- Core business logic must not branch on `TierLevel` to support a specific tier.
 
 ## Three-Tier Independence
 

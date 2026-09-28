@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-/// 运行时模式。
+/// Run-time mode.
 ///
-/// - Normal：使用配置的主引擎（AI 辅助）。
-/// - Degraded：跳过 AI，使用规则引擎。
-/// - Safe：跳过 AI，使用规则引擎，并记录高频失败供审计。
-/// - Recovery：连续成功后逐步恢复到 Normal，仅用于状态可观测性。
+/// - Normal: Use the configured main engine (AI support).
+/// - Degraded: Skip AI, use the rule engine.
+/// - Safe: Skip AI, use a rule engine and record high frequency failures for audit.
+/// Recovery: Gradual recovery to Normal after successive success, only for state-observability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeMode {
@@ -13,6 +13,6 @@ pub enum RuntimeMode {
     Normal,
     Degraded,
     Safe,
-    /// 从 Safe/Degraded 向 Normal 恢复的过渡态。
+    /// A transition from Safe/Degraded to Normal.
     Recovery,
 }

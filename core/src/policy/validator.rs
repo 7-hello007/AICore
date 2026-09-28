@@ -3,11 +3,11 @@ use aicore_contracts::{
     traits::policy_validator::{IPolicyValidator, ValidationIssue, ValidationResult},
 };
 
-/// 默认策略验证器。
+/// Default policy certifier.
 ///
-/// 拒绝规则：
-/// - ERR_POLICY_INVALID：policy_id 为空、字段超出合法范围。
-/// - ERR_POLICY_CONFLICT：内部不一致（子资源优先级超过整体、NPU preferred 与 Background 冲突）。
+/// Rule of denial:
+/// - ERR_POLICY_INVALID: policy_id is empty and fields are beyond legal scope.
+/// - ERR_POLICY_CONFLICT: Internal incoherence (sub-resource priorities exceed total, NPU conflict with Background).
 pub struct DefaultPolicyValidator;
 
 impl DefaultPolicyValidator {
@@ -30,7 +30,7 @@ impl IPolicyValidator for DefaultPolicyValidator {
             issues.push(issue("ERR_POLICY_INVALID", "policy_id is empty"));
         }
 
-        // 子资源优先级不得超过整体优先级
+        // Sub-resource priorities should not exceed overall priorities
         let overall = policy.priority;
         for (name, p) in [
             ("cpu", policy.cpu.priority),

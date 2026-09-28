@@ -5,13 +5,13 @@ use aicore_contracts::telemetry::snapshot::ComputerSnapshot;
 use aicore_contracts::traits::hardware_executor::HardwareExecutionHint;
 use serde::{Deserialize, Serialize};
 
-/// 插件进程 IPC 请求。
+/// Plugin process IPC request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HostRequest {
-    /// Ping 探活。
+    /// Ping Detective.
     Ping,
-    /// 执行插件逻辑。
+    /// Execute plugin logic.
     Execute {
         input: u32,
     },
@@ -31,11 +31,11 @@ pub enum HostRequest {
     SetPower {
         mode: PowerMode,
     },
-    /// 请求关闭。
+    /// Request closed.
     Shutdown,
 }
 
-/// 插件进程 IPC 响应。
+/// Plugin process IPC responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HostResponse {

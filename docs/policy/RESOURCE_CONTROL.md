@@ -1,13 +1,14 @@
+[English](RESOURCE_CONTROL.md) | [Chinese](RESOURCE_CONTROL.zh-CN.md)
 # Resource Control
 
-资源控制分三类：
+There are three types of resource control:
 
-| Capability | 说明 |
+| Capability | Description |
 |---|---|
-| Observe | 只读状态 |
-| Recommend | 生成建议 |
-| Control | 允许真实执行 |
+| Observe | read-only status |
+| Recommend | generate recommendations |
+| Control | permit real execution |
 
-支持资源：CPU、GPU、NPU、Memory、Power、Process。
+Resources in scope: CPU, GPU, NPU, memory, power, and processes.
 
-任何 Control 必须先检查：Capability、Permission、Policy、Runtime availability。
+Before control, check capability, permission, policy, and runtime availability.

@@ -35,7 +35,7 @@ pub struct SchedulerConfig {
     pub shutdown_rx: mpsc::Receiver<()>,
 }
 
-/// 运行 daemon 的主循环。
+/// Runs the daemon's main loop.
 pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     let SchedulerConfig {
         runtime,

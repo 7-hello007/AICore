@@ -1,4 +1,4 @@
-//! 验证 DaemonStatus 的记录与序列化。
+//! Verify the recording and sequence of DaemonStatus.
 
 use aicore_contracts::{
     context::workload::WorkloadType,

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// AdaptiveLoop 的累计指标。
+/// Cumulative indicator for AdaptiveLoop.
 ///
-/// 全部为单调递增计数；单次延迟为最后一轮值。
+/// ; single delay is the last round.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct LoopMetrics {
     pub total_ticks: u64,

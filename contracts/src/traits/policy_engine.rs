@@ -3,14 +3,14 @@ use crate::memory::context::MemoryContext;
 use crate::policy::resource_policy::ResourcePolicy;
 use crate::telemetry::ComputerSnapshot;
 
-/// Policy Engine 接口。
+/// Policy Engineering interface.
 pub trait IPolicyEngine: Send + Sync {
     fn generate(&self, snapshot: &ComputerSnapshot, context: &ContextSnapshot) -> ResourcePolicy;
 
-    /// 带 memory 上下文生成策略。
+    /// with memory context generation policy.
     ///
-    /// 默认实现忽略 memory，退化为 `generate`。
-    /// Memory-aware 引擎（例如 `AiAssistedPolicyEngine`）应重写此方法。
+    /// The default implementation ignores memory and falls back to `generate`.
+    /// The Memory-aware engine (e.g. `AiAssistedPolicyEngine`) should rewrite this method.
     fn generate_with_memory(
         &self,
         snapshot: &ComputerSnapshot,

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# AICore daemon 安装脚本（Linux）。
+# AICore daemon installs scripts (Linux).
 #
-# 用法：
-#   sudo ./install.sh                     # 从当前目录的 bin/ 安装
-#   sudo PREFIX=/opt/aicore ./install.sh  # 自定义前缀（默认 /usr/local）
+# Usage:
+#   sido./install.sh #bin/ Install from current directory
+#   Sudo PREFIX=/opt/aicore./install.sh # Custom prefix (default /usr/local)
 #
-# 行为：
-#   - 创建 aicore 系统用户与组。
-#   - 安装二进制到 $PREFIX/bin。
-#   - 安装 systemd unit。
-#   - 创建状态目录 /var/lib/aicore、运行时目录 /run/aicore。
-#   - 若配置不存在，写入默认配置文件。
-#   - 启用并启动 aicored.service。
+# Conduct:
+#   - Creates aicore system users and groups.
+#   - Install binary to $PREFIX/bin.
+#   - Install systemd unit.
+#   - Creates a state directory /var/lib/aicore, a runtime directory /run/aicore.
+#   - Write the default profile if configuration does not exist.
+#   - Enable and start acored.service.
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
@@ -25,13 +25,13 @@ SHARE_DIR="${PREFIX}/share/aicore"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_BIN_DIR="${SOURCE_BIN_DIR:-${SCRIPT_DIR}/bin}"
 
-# 1. 检查 root
+# 1. Inspection root
 if [ "$(id -u)" -ne 0 ]; then
     echo "error: must run as root (use sudo)" >&2
     exit 1
 fi
 
-# 2. 检查二进制
+# 2. Check binary
 for bin in aicored aicore aicore-dashboard; do
     if [ ! -f "${SOURCE_BIN_DIR}/${bin}" ]; then
         echo "error: missing binary ${SOURCE_BIN_DIR}/${bin}" >&2
@@ -44,7 +44,7 @@ if [ ! -f "${SOURCE_BIN_DIR}/models/policy_classifier_v1.json" ]; then
     exit 1
 fi
 
-# 3. 创建用户与组（若不存在）
+# Create users and groups (if they do not exist)
 if ! getent group aicore >/dev/null; then
     groupadd --system aicore
     echo "created group aicore"
@@ -59,7 +59,7 @@ if ! getent passwd aicore >/dev/null; then
     echo "created user aicore"
 fi
 
-# 4. 目录
+# Contents
 install -d -m 0755 "${BIN_DIR}"
 install -d -m 0755 "${BIN_DIR}/models"
 install -d -m 0755 "${UNIT_DIR}"
@@ -68,7 +68,7 @@ install -d -m 0755 "${CONFIG_DIR}"
 install -d -m 0755 "${SHARE_DIR}"
 install -d -m 0755 "${SHARE_DIR}/plugins"
 
-# 5. 二进制
+# Binary
 for bin in aicored aicore aicore-dashboard; do
     install -m 0755 "${SOURCE_BIN_DIR}/${bin}" "${BIN_DIR}/${bin}"
     echo "installed ${BIN_DIR}/${bin}"
@@ -84,7 +84,7 @@ sed \
 chmod 0644 "${UNIT_DIR}/aicored.service"
 echo "installed ${UNIT_DIR}/aicored.service (PREFIX=${PREFIX})"
 
-# 7. 默认配置（若不存在）
+# Default configuration (if not available)
 if [ ! -f "${CONFIG_DIR}/config.json" ]; then
     cat > "${CONFIG_DIR}/config.json" << 'JSON'
 {
@@ -105,7 +105,7 @@ JSON
     echo "wrote default config ${CONFIG_DIR}/config.json"
 fi
 
-# 8. 重载并启动
+# 8. Reload and start
 systemctl daemon-reload
 systemctl enable aicored.service
 systemctl restart aicored.service

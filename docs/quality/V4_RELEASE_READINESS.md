@@ -1,3 +1,4 @@
+[English](V4_RELEASE_READINESS.md) | [Chinese](V4_RELEASE_READINESS.zh-CN.md)
 # AICore V4 Release Readiness
 
 ## Current state

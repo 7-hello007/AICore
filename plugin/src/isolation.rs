@@ -2,12 +2,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use aicore_contracts::plugin::state::PluginState;
 
-/// 单个插件的错误边界。
+/// The wrong border for a single plugin.
 ///
-/// 语义：
-/// - 记录连续失败。
-/// - 超过阈值自动置 Failed。
-/// - 只影响该插件，不影响其他插件或 Core。
+/// Semantics:
+/// - Record failure.
+/// - Auto-set Failed beyond the threshold.
+/// - affect only the plugin and not other plugins or Core.
 #[derive(Debug)]
 pub struct PluginIsolation {
     name: String,
@@ -36,18 +36,18 @@ impl PluginIsolation {
         self.failure_count.load(Ordering::SeqCst)
     }
 
-    /// 记录一次失败。返回是否应隔离（转为 Failed）。
+    /// Record a failure. Should return be isolated (to Failed).
     pub fn record_failure(&self) -> bool {
         let n = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
         n >= self.failure_threshold
     }
 
-    /// 记录一次成功。重置失败计数。
+    /// Record a success. Reset the failure count.
     pub fn record_success(&self) {
         self.failure_count.store(0, Ordering::SeqCst);
     }
 
-    /// 根据当前状态，推荐下一步 PluginState。
+    /// Next PluginState is recommended according to current status.
     pub fn recommended_state(&self, current: PluginState) -> PluginState {
         if current == PluginState::Active && self.failure_count() >= self.failure_threshold {
             PluginState::Failed

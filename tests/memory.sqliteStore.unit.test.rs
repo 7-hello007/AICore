@@ -1,4 +1,4 @@
-//! SqliteMemoryStore 单元测试。
+//! SqliteMemoryStore unit test.
 
 use aicore_contracts::{
     context::workload::{InteractionLevel, WorkloadType},
@@ -72,8 +72,8 @@ fn load_records_respects_limit() {
 
     assert_eq!(loaded.len(), 3);
 
-    // 应返回"最近 3 条"，按时间升序（旧 → 新），
-    // 与 InMemoryStore / JsonFileStore 的语义一致。
+    // Should return "recent 3" in chronological order (old new),
+    // The syntax of InMemoryStore/JsonFileStore.
     assert_eq!(loaded[0].record_id, "r2");
     assert_eq!(loaded[1].record_id, "r3");
     assert_eq!(loaded[2].record_id, "r4");
@@ -107,12 +107,12 @@ fn retention_uses_profile_retention_days() {
 
     let store = SqliteMemoryStore::open_in_memory().unwrap();
 
-    // 一条很老的记录。
+    // A very old record.
     store
         .append_record(&rec("ancient", 1, WorkloadType::Development))
         .unwrap();
 
-    // 一条明显处于未来的记录，用于确保不会被 retention 删除。
+    // A record that is clearly in the future to ensure that it is not deleted.
     store
         .append_record(&rec("recent", u64::MAX / 2, WorkloadType::Gaming))
         .unwrap();

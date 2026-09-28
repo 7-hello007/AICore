@@ -1,4 +1,4 @@
-//! PureRustRuntime 单元测试。
+//! PureRustRuntime unit test.
 
 use aicore_ai_runtime::{ModelWeights, PureRustRuntime};
 use aicore_contracts::{
@@ -149,7 +149,7 @@ fn infer_returns_softmax_scores() {
     let rt = PureRustRuntime::new();
     let handle = rt.load_model(&inline_spec("m", GOOD_MODEL)).unwrap();
 
-    // 高 CPU → boost_cpu 应胜出
+    // High CPU → boost_cpu should win
     let resp = rt
         .infer(
             &handle,
@@ -165,7 +165,7 @@ fn infer_returns_softmax_scores() {
     assert!(resp.labels[0].score > 0.5);
     assert_eq!(resp.model_version, "1.0.0");
 
-    // softmax 归一化
+    // Softmax Normalization
     let total: f32 = resp.labels.iter().map(|l| l.score).sum();
     assert!((total - 1.0).abs() < 0.001);
 }
@@ -217,7 +217,7 @@ fn unload_model_succeeds() {
     rt.unload(&handle).unwrap();
     assert_eq!(rt.loaded_model_count(), 0);
 
-    // 二次卸载失败
+    // Secondary unmounting failed
     assert!(rt.unload(&handle).is_err());
 }
 

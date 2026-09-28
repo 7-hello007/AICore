@@ -1,4 +1,4 @@
-# 回滚到指定备份。
+# Roll back to the specified backup.
 param(
     [Parameter(Mandatory = $true)]
     [string]$Timestamp,

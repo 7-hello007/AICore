@@ -4,14 +4,14 @@ use crate::errors::AicoreError;
 use crate::runtime::daemon_config::DaemonConfig;
 use crate::schema::SchemaVersion;
 
-/// 配置 schema 版本。
+/// Configure the schema version.
 ///
-/// 不兼容变更递增 major；增加 optional 字段递增 minor。
+/// Uncompatible change incremental major; add optional field incremental minor.
 pub const CONFIG_SCHEMA_VERSION: SchemaVersion = SchemaVersion::CURRENT;
 
-/// AICore 顶层配置。
+/// AICore top layer configuration.
 ///
-/// 加载优先级（高覆盖低）：
+/// Load priority (high over low):
 /// 1. Built-in defaults
 /// 2. System config file
 /// 3. User config file
@@ -64,12 +64,12 @@ impl AicoreConfig {
     }
 }
 
-/// 兼容别名：`ConfigError` = `AicoreError`。
+/// Compatible alias: `ConfigError` = `AicoreError`.
 ///
-/// 所有变体已合并：
+/// All variants have been merged:
 /// - `EmptyVersion` / `UnsupportedVersion` / `InvalidDaemonConfig` /
 ///   `InvalidLogLevel` / `ParseError` / `MigrationError`
 ///   → `AicoreError::ConfigInvalid`
 ///
-/// 详见 `docs/decisions/ADR-005-unified-error-type.md`。
+/// See `docs/decisions/ADR-005-unified-error-type.md` for more details.
 pub type ConfigError = crate::errors::AicoreError;

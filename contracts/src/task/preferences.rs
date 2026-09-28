@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 应用的延迟敏感度。
+/// Application of delayed sensitivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LatencySensitivity {
@@ -10,7 +10,7 @@ pub enum LatencySensitivity {
     Critical,
 }
 
-/// 应用的功耗偏好。
+/// Optimal application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PowerPreference {
@@ -19,19 +19,19 @@ pub enum PowerPreference {
     Performance,
 }
 
-/// 应用的数据处理约束。
+/// Application of data-processing constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyRequirement {
-    /// 明确要求本地处理。
+    /// There is a clear demand for local processing.
     LocalOnly,
-    /// 允许云端处理（需用户全局开启）。
+    /// Allows cloud handling (user-wide).
     CloudAllowed,
-    /// 未声明；由 AICore 默认策略决定。
+    /// not stated; determined by default policy for AICore.
     Unspecified,
 }
 
-/// 硬件需求强度。
+/// Hardware demand intensity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HardwareRequirement {

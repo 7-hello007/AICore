@@ -2,18 +2,18 @@ use serde::{Deserialize, Serialize};
 
 use super::{capability::TierCapability, id::TierId, level::TierLevel};
 
-/// Tier 注册信息。
+/// Tier Registration Information.
 ///
-/// 由 Tier 自己声明；Registry 只做校验与索引，不做业务决策。
+/// Declared by Tier; Registry only performs validation and indexing and does not make business decisions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TierRegistration {
     pub id: TierId,
     pub level: TierLevel,
     pub capabilities: Vec<TierCapability>,
-    /// 人类可读描述。
+    /// Humans can read descriptions.
     #[serde(default)]
     pub description: String,
-    /// Tier 版本，例如 "1.0.0"。
+    /// Tier version, for example "1.0.0".
     pub version: String,
 }
 
@@ -51,11 +51,11 @@ impl TierRegistration {
         self.capabilities.contains(&c)
     }
 
-    /// 校验：
-    /// - id 合法。
-    /// - version 非空。
-    /// - 至少声明一个 capability。
-    /// - L0 不得声明 NativeTaskControl。
+    /// Verify:
+    /// - id legal.
+    /// - version is empty.
+    /// - At least declare a Capability.
+    /// - L0 cannot declare NativeTaskControl.
     pub fn validate(&self) -> Result<(), crate::errors::AicoreError> {
         use crate::errors::AicoreError;
 

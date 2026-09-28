@@ -1,4 +1,4 @@
-//! 配置加载与迁移测试。
+//! Configure loading and migration tests.
 
 use std::path::PathBuf;
 

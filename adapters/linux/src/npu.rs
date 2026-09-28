@@ -6,10 +6,10 @@ use std::path::Path;
 
 const ACCEL_BASE: &str = "/sys/class/accel";
 
-/// Linux NPU 控制器。
+/// Linux NPU controller.
 ///
-/// 当前 Linux 没有跨厂商通用 NPU 控制 ABI，因此只暴露设备存在状态；
-/// NPU inference routing 由 Runtime / vendor plugin 负责。
+/// Currently Linux does not have NPU cross-vendor control ABI, thus exposing only the presence of equipment;
+/// NPU inference routing is handled by the runtime or a vendor plugin.
 pub struct LinuxNpuController;
 impl LinuxNpuController {
     pub fn new() -> Self {

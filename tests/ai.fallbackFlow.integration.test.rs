@@ -1,4 +1,4 @@
-//! AI fallback 集成：AI 可用时走 AI，不可用时走规则。
+//! AI fallback integration: AI walk AI when available, and no rules to walk when available.
 
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ fn local_provider_drives_ai_assisted_engine() {
     let snapshot = ComputerSnapshot::default();
     let policy = engine.generate(&snapshot, &ctx(WorkloadType::AiInference));
 
-    // 无论 AI 命中与否，策略必须能通过 Validator
+    // Whether AI hits or not, the strategy must pass Validator.
     let v = DefaultPolicyValidator::new();
     assert!(v.validate(&policy).accepted);
 }

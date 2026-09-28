@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# 构建 .tar.gz 包（用于非 deb 系统）。
+# Builds .tar.gz packages (for non-deb systems).
 #
-# 用法：
-#   ./build_tar.sh                       # 版本从 workspace 读取
-#   AICORE_VERSION=<version> ./build_tar.sh  # 显式覆盖版本
+# Usage:
+#   ./build_tar.sh # version read from workspace
+#   AICORE_VERSION = <version>./build_tar.sh # Visible overlay version
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

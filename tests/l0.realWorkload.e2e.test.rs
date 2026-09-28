@@ -1,9 +1,9 @@
-//! L0 真实 workload 验证。
+//! L0 real workload authentication.
 //!
-//! 在 Linux 上启动真实子进程（`cargo build` / `python3` / `dd`），
-//! 采集 `ComputerSnapshot`，验证 L0 WorkloadSource 能正确推断。
+//! The real subprocess (`cargo build`/`python3`/`dd`) is launched on Linux.
+//! Collect `ComputerSnapshot`, verify that L0 WorkloadSource can be extrapolated correctly.
 //!
-//! 不依赖 daemon；直接使用 TelemetryProvider + WorkloadSource + Fusion。
+//! Do not depend on daemon; use TelemetryProvider + WorkloadSource + Fusion directly.
 #[cfg(target_os = "linux")]
 type Scenario = (&'static str, fn() -> Option<Child>);
 
@@ -23,16 +23,16 @@ use aicore_tier_l0::L0WorkloadSource;
 #[cfg(target_os = "linux")]
 use aicore_adapter_linux::LinuxTelemetryProvider as PlatformProvider;
 
-/// 启动一个"开发类"子进程（`cargo build` 一个空 crate）。
+/// Starts a "development" sub-process (`cargo build` an empty Krate).
 #[cfg(target_os = "linux")]
 fn spawn_developer_workload() -> Option<Child> {
-    // 简单：运行 `sleep` 冒充；但需要真实 workload 名字被识别。
-    // 这里用一个持续运行的 bash loop，进程名为 "bash"；
-    // 我们换个更明确的：启动一个名为 `code` 的假进程？不行。
-    // 用 `cargo build` 的 temp target 太慢。
+    // Simple: Run `sleep` impersonation; but need real workload to be identified.
+    // Here's a running bash loop process called "bash";
+    // Let's get a new one: Start a fake process called `code`? No.
+    // With `cargo build`, temp target is too slow.
     //
-    // 最直接：启动 `bash -c 'exec -a code sleep 30'` 让进程名为 code
-    // Linux 支持 exec -a 修改 argv[0]
+    // Direct: Start `bash -c 'exec -a code sleep 30'`
+    // Linux supports exec-a modify argv [0]
     Command::new("bash")
         .arg("-c")
         .arg("exec -a code sleep 30")
@@ -82,13 +82,13 @@ fn l0_real_developer_workload_inferred() {
         },
     };
 
-    // 给子进程时间启动
+    // Give Child Process Time to Start
     std::thread::sleep(Duration::from_millis(300));
 
     let provider = PlatformProvider::new();
     let snap = provider.collect().expect("collect");
 
-    // 验证 telemetry 至少能看到 `code` 或 `sleep` 进程名
+    // Validate telemetry to see at least `code` or `sleep` process names
     let names: Vec<String> = snap.top_processes.iter().map(|p| p.name.clone()).collect();
     let has_code = names
         .iter()
@@ -96,7 +96,7 @@ fn l0_real_developer_workload_inferred() {
 
     if !has_code {
         eprintln!(
-            "warning: top_processes 未包含 code/sleep；names={:?}",
+            "warning: top_processes does not include code/sleep; names={:?}",
             names
         );
     }
@@ -109,8 +109,8 @@ fn l0_real_developer_workload_inferred() {
     );
     eprintln!("[l0 e2e] evidence={:?}", obs.evidence);
 
-    // 不强制断言特定 workload（容器 sysinfo 行为可能不同）；
-    // 只要求不 panic 且返回合法值
+    // (b) Do not enforce the assertion of a particular workload (container sysinfo may behave differently);
+    // Only ask not to Panic and return the valid value
     assert!(
         obs.confidence >= 0.0 && obs.confidence <= 1.0,
         "invalid confidence: {}",
@@ -143,8 +143,8 @@ fn l0_real_cpu_workload_observed() {
         snap.top_processes.len()
     );
 
-    // 不强制断言 CPU 数值（容器共享 CPU 会漂移）；
-    // 只验证 snapshot 合法
+    // Do not enforce the assertion of CPU (container sharing CPU drifts);
+    // Authenticate snapshot only
     assert!(snap.cpu.usage_percent >= 0.0);
     assert!(snap.cpu.usage_percent <= 100.0);
 
@@ -155,7 +155,7 @@ fn l0_real_cpu_workload_observed() {
 #[cfg(target_os = "linux")]
 #[test]
 fn l0_three_workload_evidence_recorded() {
-    // 三组典型场景，各采集一次，输出证据
+    // Three sets of typical scenes, one for each of them.
     let provider = PlatformProvider::new();
     let source = L0WorkloadSource::new();
 
@@ -182,7 +182,7 @@ fn l0_three_workload_evidence_recorded() {
             name, obs.workload_type, obs.confidence
         );
 
-        // 每个场景都必须产出合法 observation
+        // Every scene must produce legal
         assert!(obs.confidence >= 0.0 && obs.confidence <= 1.0);
 
         let _ = child.kill();

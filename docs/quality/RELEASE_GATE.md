@@ -1,3 +1,4 @@
+[English](RELEASE_GATE.md) | [Chinese](RELEASE_GATE.zh-CN.md)
 # V4 Release Gate
 
 V4 is defect repair and engineering closure. Promotion requires evidence for the current scope; model verification must never be described as hardware certification.

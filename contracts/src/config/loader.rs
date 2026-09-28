@@ -3,9 +3,9 @@ use std::path::Path;
 use crate::errors::AicoreError;
 
 use super::schema::{AicoreConfig, ConfigError};
-/// 从 JSON 文件加载配置。
+/// Loads the configuration from the JSON file.
 ///
-/// 文件不存在返回 `Ok(default)`；解析失败返回 Err。
+/// File does not exist to return `Ok(default)`; resolution failed to return Err.
 pub fn load_from_file(path: impl AsRef<Path>) -> Result<AicoreConfig, ConfigError> {
     let path = path.as_ref();
     if !path.exists() {
@@ -19,7 +19,7 @@ pub fn load_from_file(path: impl AsRef<Path>) -> Result<AicoreConfig, ConfigErro
     Ok(config)
 }
 
-/// 保存配置到 JSON 文件。
+/// Saves the configured JSON file.
 pub fn save_to_file(config: &AicoreConfig, path: impl AsRef<Path>) -> Result<(), ConfigError> {
     config.validate()?;
     let path = path.as_ref();
@@ -33,9 +33,9 @@ pub fn save_to_file(config: &AicoreConfig, path: impl AsRef<Path>) -> Result<(),
     Ok(())
 }
 
-/// 从环境变量覆盖配置。
+/// Overwrites the configuration from the environment variable.
 ///
-/// 支持：
+/// Support:
 /// - `AICORE_LOG_LEVEL`
 /// - `AICORE_LOG_JSON` ("1" / "true")
 /// - `AICORE_PLUGINS_DIR`
@@ -55,7 +55,7 @@ pub fn apply_env_overrides(config: &mut AicoreConfig) {
     }
 }
 
-/// 默认配置路径。
+/// Default configuration path.
 pub fn default_config_path() -> std::path::PathBuf {
     std::env::temp_dir().join("aicore").join("config.json")
 }

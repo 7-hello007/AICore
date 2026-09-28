@@ -1,4 +1,4 @@
-//! Retention 审计日志测试。
+//! Retention Audit Log Test.
 
 use std::sync::Arc;
 
@@ -46,7 +46,7 @@ fn audit_respects_capacity() {
 
     let log = s.audit_log();
     assert_eq!(log.len(), 2, "ring buffer should cap at 2");
-    // 最新的两条
+    // The latest two.
     assert_eq!(log[0].ran_at_unix_ms, 1003);
     assert_eq!(log[1].ran_at_unix_ms, 1004);
 }
@@ -68,7 +68,7 @@ fn audit_entries_are_ordered_oldest_to_newest() {
 
 #[test]
 fn audit_records_failures() {
-    // 用一个永远失败的 store 模拟
+    // Simulate with a permanent failed store
     struct FailStore;
     impl IMemoryStore for FailStore {
         fn append_record(

@@ -7,7 +7,7 @@ use aicore_contracts::hardware::capability::{
 const DRM_BASE: &str = "/sys/class/drm";
 const ACCEL_BASE: &str = "/sys/class/accel";
 
-/// Linux 硬件能力探测。
+/// Linux hardware capability detection.
 pub struct LinuxHardwareCapabilityProvider;
 
 impl LinuxHardwareCapabilityProvider {
@@ -15,7 +15,7 @@ impl LinuxHardwareCapabilityProvider {
         Self
     }
 
-    /// 探测 GPU 能力。
+    /// Detection of GPU capability.
     pub fn gpu_capability(&self, device_id: &str) -> HardwareCapabilitySet {
         let card = match device_id.strip_prefix("drm:") {
             Some(c) => c,
@@ -47,7 +47,7 @@ impl LinuxHardwareCapabilityProvider {
             ));
         }
 
-        // 温度：hwmon 目录存在即视为支持
+        // Temperature: hwmon directory is considered supportive when it exists
         let hwmon_path = format!("{}/hwmon", device_path);
         if Path::new(&hwmon_path).exists() {
             set = set.with(HardwareCapabilityEntry::supported(
@@ -75,7 +75,7 @@ impl LinuxHardwareCapabilityProvider {
         set
     }
 
-    /// 探测 NPU 能力。
+    /// Detection of NPU capability.
     pub fn npu_capability(&self, device_id: &str) -> HardwareCapabilitySet {
         let entry = match device_id.strip_prefix("npu:") {
             Some(e) => e,

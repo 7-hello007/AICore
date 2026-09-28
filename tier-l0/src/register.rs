@@ -9,13 +9,13 @@ use aicore_tier::TierHub;
 use crate::adaptation::L0AdaptationProvider;
 use crate::workload::L0WorkloadSource;
 
-/// 默认 L0 TierId。
+/// Default L0 TierId.
 pub const L0_TIER_ID: &str = "l0.legacy";
 
-/// L0 Tier 版本。
+/// L0 Tier version.
 pub const L0_TIER_VERSION: &str = "1.0.0";
 
-/// 只注册 L0 规则源。
+/// Only register L0 rule source.
 pub fn register_l0(hub: &TierHub) -> Result<TierId, RegisterError> {
     let id = TierId::new(L0_TIER_ID);
 
@@ -38,9 +38,9 @@ pub fn register_l0(hub: &TierHub) -> Result<TierId, RegisterError> {
     }
 }
 
-/// 注册 L0 规则源 + 可选 ML 源，用 `WorkloadFusion` 组合。
+/// Registers the L0 rule source + optional ML source in combination with `WorkloadFusion`.
 ///
-/// `extra_sources` 可以包含 `MlWorkloadSource` 等。
+/// `extra_sources` can contain `MlWorkloadSource` etc.
 pub fn register_l0_with_fusion(
     hub: &TierHub,
     extra_sources: Vec<Arc<dyn aicore_contracts::traits::workload_source::IWorkloadSource>>,
@@ -53,7 +53,7 @@ pub fn register_l0_with_fusion(
         fusion.add_source(s);
     }
 
-    // Fusion 的 priority 设为 1000（顶层），但注册时以 100 声明（L0 优先级）。
+    // The power of Fusion is set to 1000 (top level), but is declared at 100 (L0 priority).
     hub.register_workload_source(id.clone(), 100, Arc::new(fusion))
         .map_err(|e| RegisterError::Capability(e.to_string()))?;
     hub.register_adaptation_provider(id.clone(), 100, Arc::new(L0AdaptationProvider::new()))

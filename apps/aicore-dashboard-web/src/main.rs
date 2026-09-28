@@ -154,7 +154,7 @@ async fn async_main(args: Args) -> ExitCode {
         refresh_ms: args.refresh_ms,
     });
 
-    // 后台任务：周期性拉取快照并广播
+    // Background tasks: periodic snapshotting and broadcasting
     {
         let state = state.clone();
         tokio::spawn(async move {

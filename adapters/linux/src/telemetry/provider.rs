@@ -56,7 +56,7 @@ fn lock_err(what: &str) -> ContractError {
 
 impl ITelemetryProvider for LinuxTelemetryProvider {
     fn collect(&self) -> ContractResult<ComputerSnapshot> {
-        // 1. 刷新 sysinfo
+        // 1. Refresh sysinfo
         let mut system = self.system.lock().map_err(|_| lock_err("system"))?;
         system.refresh_cpu();
         system.refresh_memory();
@@ -82,7 +82,7 @@ impl ITelemetryProvider for LinuxTelemetryProvider {
         // 2. CPU
         let cpu = CpuSnapshot {
             usage_percent: system.global_cpu_info().cpu_usage(),
-            temperature_celsius: None, // 由 temperature 模块统一填
+            temperature_celsius: None, // Uniquely filled by temperature module
             logical_cores: system.cpus().len() as u32,
             physical_cores: None,
             frequency_mhz: Some(system.global_cpu_info().frequency() as u32),
@@ -141,7 +141,7 @@ impl ITelemetryProvider for LinuxTelemetryProvider {
             })
             .collect();
 
-        // 6. Processes；尝试用前台 PID 标记 is_foreground
+        // Processes; attempting PID tag is_foreground
         let fg = self.foreground.read();
         let fg_pid = fg.pid;
 
@@ -166,7 +166,7 @@ impl ITelemetryProvider for LinuxTelemetryProvider {
         });
         processes.truncate(20);
 
-        // 7. Applications：从前台窗口合成一条（如果拿到）
+        // 7. Applications: a composite of a foreground window (if available)
         let applications = if let Some(pid) = fg_pid {
             let name = system
                 .processes()
@@ -185,14 +185,14 @@ impl ITelemetryProvider for LinuxTelemetryProvider {
             Vec::new()
         };
 
-        // 8. 温度 / GPU / NPU
+        // 8. Temperature / GPU / NPU
         let temperature = temperature::read_temperature();
         let cpu_temp = temperature.cpu_celsius;
         let gpu_snap = gpu::read_gpu();
         let npu_snap = npu::read_npu();
         let (battery, power) = power::read_power();
 
-        // CPU 温度回填
+        // CPU temperature backfill
         let mut cpu = cpu;
         cpu.temperature_celsius = cpu_temp;
 
@@ -232,7 +232,7 @@ impl ITelemetryProvider for LinuxTelemetryProvider {
     }
 
     fn sampling_constraints(&self) -> SamplingConstraints {
-        // 100ms 是建议最小间隔，避免前台窗口子进程开销过高
+        // 100ms is the minimum suggested interval to avoid over-costing the foreground window sub-process
         SamplingConstraints::new(100)
     }
 }

@@ -11,7 +11,7 @@ use crate::native_provider::L2NativeTaskProvider;
 pub const L2_TIER_ID: &str = "l2.native";
 pub const L2_TIER_VERSION: &str = "1.0.0";
 
-/// 注册 L2 Tier 并返回 (TierId, L2NativeTaskProvider 句柄)。
+/// Register L2 Tier and return (TierId, L2NativeTaskProvider handle).
 pub fn register_l2(hub: &TierHub) -> Result<(TierId, Arc<L2NativeTaskProvider>), RegisterError> {
     register_l2_provider(hub, Arc::new(L2NativeTaskProvider::new()))
 }

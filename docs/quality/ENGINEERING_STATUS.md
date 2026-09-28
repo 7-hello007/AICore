@@ -1,25 +1,14 @@
-# Engineering Status
+[English](ENGINEERING_STATUS.md) | [Chinese](ENGINEERING_STATUS.zh-CN.md)
+# Engineering status
 
-## Package baseline
+## Scope and decision
 
-AICore `0.4.0` has **V4 code engineering closure**. V4 corrects defects in the existing V3.2 architecture without introducing a new business layer.
+AICore `0.4.0` retains the V4 defect-correction code baseline while destination work continues on the same architecture. The current desktop checkout has a **PASS** code gate at the scopes recorded in the [verification report](DESTINATION_VERIFICATION_REPORT.md). Destination-wide product acceptance remains **NOT VERIFIED**. This distinction applies to model, simulated and native evidence alike.
 
-Work against the broader root `destination.md` is tracked separately in
-`DESTINATION_REQUIREMENTS.md` and `DESTINATION_VERIFICATION_REPORT.md`. Those
-goals are not implied by V4 code closure; the current destination assessment
-remains incomplete.
+The code keeps policy validation ahead of state-changing binding, preserves task expiry and execution-status semantics, and provides rollback/SafeMode paths. Current integration also includes bounded fast/slow handoff, version-negotiated IPC, application identity checks, plugin trust and typed capability contracts, opt-in memory, feedback, and configurable local intent/model providers. Platform-specific behavior remains in adapters and provider implementations.
 
-## Correctness invariants restored
+## Evidence handling
 
-- No runtime hardware binding is executed before policy validation.
-- A dequeued task is not silently completed by another task's policy.
-- Expired tasks remain auditable as `Expired`.
-- GPU and NPU capability sets carry device kind and are bound separately.
-- Transparent execution preserves the real apply result for observability.
-- Trusted plugins require a pinned Ed25519 public key.
-- Memory lock failures are surfaced rather than silently treated as success.
-- Dashboard and IPC transport paths have bounded/safe handling improvements.
+The completed commands and measurements, their actual scopes, and any restoration results are recorded in the [verification report](DESTINATION_VERIFICATION_REPORT.md). The separate [outstanding tests](OUTSTANDING_TESTS.md) file holds every current incomplete acceptance check and its reason. Historical V4 and destination report sections remain dated evidence; they must not be read as a fresh test run or full product certification.
 
-## External verification gate
-
-The 2026-09-23 verification used Rust 1.75 on WSL/Linux. The unfiltered suite passed (nextest 666/666), alongside isolated model execution, Clippy and package builds. See `V4_DEFECT_CORRECTION_REPORT.md` for exact evidence. Windows runtime, service installation and broad hardware certification remain separate release gates in `V4_RELEASE_READINESS.md`.
+This documentation-and-source-language round makes no hardware-control or host-configuration change. It verifies source preservation, bilingual navigation and safe workspace build/static gates; it does not rerun native-control tests.

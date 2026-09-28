@@ -1,12 +1,14 @@
+[English](README.md) | [Chinese](README.zh-CN.md)
+
 # AICore Deployment
 
-## 目录
+## Directories
 
-| 目录 | 内容 |
-|---|---|
-| `linux/` | canonical systemd unit + install/uninstall/upgrade/rollback scripts |
-| `windows/` | PowerShell deployment and Windows Service scripts |
-| `packaging/` | Debian and tar packaging scripts |
+| Directory      | Contents                                                                     |
+| -------------- | ---------------------------------------------------------------------------- |
+| `linux/`     | Canonical systemd unit and install, uninstall, upgrade, and rollback scripts |
+| `windows/`   | PowerShell deployment and Windows Service scripts                            |
+| `packaging/` | Debian and tar archive packaging scripts                                     |
 
 ## Linux
 
@@ -17,7 +19,7 @@ cp target/release/aicored target/release/aicore target/release/aicore-dashboard 
 sudo ./deploy/linux/install.sh
 ```
 
-`install.sh` renders the systemd unit using the selected `PREFIX`; `RuntimeDirectory=aicore` owns `/run/aicore` lifecycle. Resource limits are deployment-specific and should be supplied with a systemd drop-in rather than hard-coded into the canonical unit.
+`install.sh` renders the systemd unit with the selected `PREFIX`. `RuntimeDirectory=aicore` manages the lifecycle of `/run/aicore`. Resource limits depend on the deployment and should be supplied through a systemd drop-in instead of being hard-coded in the canonical unit.
 
 ## Packaging
 
@@ -28,4 +30,4 @@ sudo ./deploy/linux/install.sh
 
 ## Windows
 
-See `windows/README.md`. The repository contains both development launch scripts and explicit Windows Service install/uninstall scripts. Target-host verification is required before release promotion.
+See `windows/README.md`. The repository contains development launch scripts and explicit Windows Service installation and removal scripts. Verification on the target host is required before release promotion.

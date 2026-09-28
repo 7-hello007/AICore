@@ -1,8 +1,9 @@
+[English](ADAPTER_RULES.md) | [Chinese](ADAPTER_RULES.zh-CN.md)
 # Adapter Rules
 
-1. Adapter 不创建 Policy。
-2. Adapter 不持久化 UserProfile。
-3. Adapter 不读取 UI。
-4. Adapter 只能通过 Contract 返回状态、能力或执行结果。
-5. 不支持的能力必须返回明确 `NotSupported/CapabilityUnavailable`，不能伪装成成功。
-6. 每个 Adapter 必须通过同一个 Contract Test 套件。
+1. An adapter does not create policies.
+2. An adapter does not persist user profiles.
+3. An adapter does not read the UI.
+4. An adapter returns state, capabilities, or execution results only through contracts.
+5. An unsupported capability must return clear `NotSupported/CapabilityUnavailable` status; it cannot be presented as success.
+6. Every adapter must pass the same contract-test suite.

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 插件进程状态。
+/// Plugin process state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginHostState {
@@ -23,15 +23,15 @@ impl PluginHostState {
     }
 }
 
-/// 插件进程规格。
+/// Plugin process specifications.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginProcessSpec {
     pub plugin_id: String,
     pub artifact_path: String,
-    /// 最大执行时间（毫秒）。超时后 host 终止进程。
+    /// Maximum execution time (ms). Post-time, host aborting process.
     pub timeout_ms: u64,
-    /// 预留的内存预算（MB），当前仅校验非零；SubprocessPluginHost
-    /// 尚未在 Linux/Windows 强制执行 OS 级内存上限。
+    /// Reserved memory budget (MB), currently only verified non-zero; SubprocessPluginHost
+    /// Linux/Windows has not yet enforced the OS RAM ceiling.
     pub memory_limit_mb: u64,
 }
 
@@ -60,7 +60,7 @@ impl PluginProcessSpec {
     }
 }
 
-/// 插件进程启动结果。
+/// The result of the plugin process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginProcessHandle {
     pub handle_id: String,
@@ -69,7 +69,7 @@ pub struct PluginProcessHandle {
     pub started_at_unix_ms: u64,
 }
 
-/// 插件崩溃事件。
+/// Plugin crash event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginCrashEvent {
     pub plugin_id: String,
@@ -79,25 +79,25 @@ pub struct PluginCrashEvent {
     pub detected_at_unix_ms: u64,
 }
 
-/// 插件 Host 契约（进程级隔离）。
+/// Plugin Host Compact (process level segregation).
 ///
-/// 平台实现：
-/// - Linux：`spawn` + `cgroups`（可选）
-/// - Windows：`CreateProcess` + Job Object（可选）
+/// Platform implementations provide:
+/// - Linux: `spawn` + `cgroups` (optional)
+/// - Windows: `CreateProcess` + Job Object (optional)
 pub trait IPluginHost: Send + Sync {
-    /// 启动插件进程。
+    /// Starts the plugin process.
     fn spawn(&self, spec: &PluginProcessSpec) -> crate::errors::AicoreResult<PluginProcessHandle>;
 
-    /// 停止插件进程（graceful；超时强杀）。
+    /// Stop the plug-in process (graceful; overtime killing).
     fn stop(&self, handle: &PluginProcessHandle) -> crate::errors::AicoreResult<()>;
 
-    /// 查询状态。
+    /// Query status.
     fn state(&self, handle: &PluginProcessHandle) -> PluginHostState;
 
-    /// 拉取最近崩溃事件。
+    /// Pull the recent crash.
     fn recent_crashes(&self) -> Vec<PluginCrashEvent>;
 
-    /// 清空崩溃历史。
+    /// Clear the history of collapse.
     fn clear_crashes(&self);
 
     fn host_name(&self) -> &'static str;

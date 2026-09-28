@@ -4,7 +4,7 @@ pub mod effect;
 pub mod event_bus;
 pub mod executor;
 
-// model - 要删除model.rs
+// Model - to delete model.rs
 pub mod model;
 
 pub mod accelerator_scheduler;

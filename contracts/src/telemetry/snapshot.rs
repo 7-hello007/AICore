@@ -7,17 +7,17 @@ use super::{
     temperature::TemperatureSnapshot,
 };
 
-/// 统一的跨平台计算机状态快照。
+/// Unified cross-platform computer state snapshot.
 ///
 /// V2-A-1：
-/// - 用 `collected_at_unix_ms` 替代 `timestamp: SystemTime`，便于跨进程序列化。
-/// - 新增 `freshness_ms`：由 Normalizer 计算，表示数据距今多久。
+/// - Replace `timestamp: SystemTime` with `collected_at_unix_ms` to facilitate the serialization of processes.
+/// - Add `freshness_ms`: Calculated by Normalizer, indicating how long the data is from today.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ComputerSnapshot {
-    /// 采集时刻，Unix epoch 毫秒。
+    /// Collect time, Unix epoch millisecond.
     pub collected_at_unix_ms: Option<u64>,
 
-    /// 数据新鲜度，毫秒；0 表示刚采集。由 Normalizer 填充。
+    /// Data freshness, milliseconds; 0 indicates that they have just been collected. Filled by Normalizer.
     pub freshness_ms: Option<u64>,
 
     pub cpu: CpuSnapshot,

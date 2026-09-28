@@ -3,10 +3,10 @@ use std::sync::RwLock;
 
 use aicore_contracts::runtime::{config::AdaptiveLoopConfig, mode::RuntimeMode};
 
-/// SafeMode 控制器。
+/// SafeMode controller.
 ///
-/// 根据连续成功 / 失败数决定当前 RuntimeMode。
-/// 线程安全；可在多线程环境中共享。
+/// Determines the current RuntimeMode based on the number of consecutive successes/ failures.
+/// Threads are secure; they can be shared in a multi-wire environment.
 pub struct SafeModeController {
     config: AdaptiveLoopConfig,
     consecutive_failures: AtomicU32,
@@ -28,7 +28,7 @@ impl SafeModeController {
         &self.config
     }
 
-    /// 记录一次成功，返回切换后的模式。
+    /// Record one success and return the transition mode.
     pub fn record_success(&self) -> RuntimeMode {
         self.consecutive_failures.store(0, Ordering::SeqCst);
         let successes = self.consecutive_successes.fetch_add(1, Ordering::SeqCst) + 1;
@@ -56,7 +56,7 @@ impl SafeModeController {
         next
     }
 
-    /// 记录一次失败，返回切换后的模式。
+    /// Record a failure and return the transition mode.
     pub fn record_failure(&self) -> RuntimeMode {
         self.consecutive_successes.store(0, Ordering::SeqCst);
         let failures = self.consecutive_failures.fetch_add(1, Ordering::SeqCst) + 1;
@@ -91,7 +91,7 @@ impl SafeModeController {
         self.consecutive_successes.load(Ordering::SeqCst)
     }
 
-    /// 重置到 Normal，用于人工恢复。
+    /// Reset to Normal for manual recovery.
     pub fn reset(&self) {
         self.consecutive_failures.store(0, Ordering::SeqCst);
         self.consecutive_successes.store(0, Ordering::SeqCst);

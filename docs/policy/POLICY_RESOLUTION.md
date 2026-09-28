@@ -1,6 +1,7 @@
+[English](POLICY_RESOLUTION.md) | [Chinese](POLICY_RESOLUTION.zh-CN.md)
 # Policy Resolution
 
-冲突解析的默认优先级：
+Default priority for conflict resolution:
 
 ```text
 Safety
@@ -13,7 +14,7 @@ Safety
 > Background Optimization
 ```
 
-任何 Policy 组合必须产生可解释的 resolution record：
+Any policy combination must produce an explanatory description:
 
 - input policies
 - conflict set

@@ -1,33 +1,33 @@
 use crate::errors::ContractResult;
 use serde::{Deserialize, Serialize};
 
-/// 硬件执行提示。
+/// Hardware execution hint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HardwareExecutionHint {
-    /// 工作负载偏好，例如 "graphics" / "compute" / "auto"。
+    /// Workload preference, such as "graphics" / "compute" / "auto".
     WorkloadPreference(String),
-    /// 最大功耗瓦特（尽力而为）。
+    /// Maximum power in watts (best effort).
     MaxPowerWatts(f32),
-    /// 仅图形模式。
+    /// Graphics-only mode.
     GraphicsMode,
-    /// 仅计算模式。
+    /// Compute-only mode.
     ComputeMode,
-    /// 自动模式。
+    /// Automatic mode.
     AutoMode,
 }
 
-/// 硬件执行状态。
+/// Hardware execution status.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HardwareExecutionStatus {
-    /// 已应用。
+    /// Applied.
     Applied,
-    /// 已在目标状态（无变化）。
+    /// Already in target status (no change).
     AlreadyInState,
-    /// 被跳过（例如能力可用但用户禁用）。
+    /// Skipped (e.g. capability available but user disabled).
     Skipped { reason: String },
-    /// 平台不支持。
+    /// The platform is not supported.
     NotSupported { reason: String },
-    /// 执行失败。
+    /// Execution failed.
     Failed { reason: String },
 }
 
@@ -37,14 +37,14 @@ impl HardwareExecutionStatus {
     }
 }
 
-/// 硬件执行请求。
+/// Hardware execution request.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HardwareExecutionRequest {
     pub device_id: String,
     pub hint: HardwareExecutionHint,
 }
 
-/// 硬件执行结果。
+/// Hardware execution result.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HardwareExecutionResult {
     pub device_id: String,
@@ -52,18 +52,18 @@ pub struct HardwareExecutionResult {
     pub latency_ms: u64,
 }
 
-/// 硬件执行器。
+/// Hardware executor.
 ///
-/// 职责：
-/// - 把 `HardwareExecutionHint` 应用到具体设备。
-/// - 失败不 panic；通过 `HardwareExecutionStatus` 表达。
-/// - 不直接调用 Executor；由 Binder 调用。
+/// Duties:
+/// - Apply `HardwareExecutionHint` to specific devices.
+/// - Report failures through `HardwareExecutionStatus` without panicking.
+/// - The Binder calls this interface; it does not call the Executor directly.
 ///
-/// 平台：
-/// - Linux：尽力而为、capability-gated 的 sysfs / vendor-runtime 写入。
-/// - Windows：尽力而为、vendor-specific 的控制（例如 NVIDIA），其他路径返回 `NotSupported`。
+/// Platform:
+/// - Linux: best-effort, capability-gated sysfs or vendor-runtime writes.
+/// - Windows: best-effort vendor control (for example NVIDIA); other paths return `NotSupported`.
 ///
-/// 重要：`NotSupported` 是合法的能力缺失，不得伪造成执行成功。
+/// `NotSupported` means the capability is unavailable and must not be reported as success.
 pub trait IHardwareExecutor: Send + Sync {
     fn apply(&self, req: &HardwareExecutionRequest) -> ContractResult<HardwareExecutionResult>;
 

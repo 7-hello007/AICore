@@ -1,3 +1,4 @@
+[English](AI_ARCHITECTURE.md) | [Chinese](AI_ARCHITECTURE.zh-CN.md)
 # AI Architecture
 
 ```mermaid
@@ -18,9 +19,9 @@ flowchart LR
     POLICY --> VALIDATE
 ```
 
-AI 模型是可替换的 Provider/Runtime，不得成为 Core 的硬依赖。
+AI models are replaceable providers or runtimes. Core must not depend on a specific model implementation.
 
-## Model 类别
+## Model categories
 
 - deterministic rules
 - lightweight local feature models
@@ -28,4 +29,4 @@ AI 模型是可替换的 Provider/Runtime，不得成为 Core 的硬依赖。
 - ONNX models
 - vendor-accelerated models
 
-AI 不负责最终执行授权。
+AI does not authorize or perform final execution.

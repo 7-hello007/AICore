@@ -1,32 +1,32 @@
 use serde::{Deserialize, Serialize};
 
-/// 单场景的验证证据。
+/// Proof of the single scene.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScenarioEvidence {
     pub scenario: String,
     pub platform: String,
     pub app_version: String,
 
-    // 观察 / 决策
+    // Observation / Decision-making
     pub expected_workload: String,
     pub inferred_workload: String,
     pub classifier_confidence: f32,
 
-    // 策略
+    // Policy
     pub policy_id: String,
     pub policy_source: String,
     pub policy_reason: String,
 
-    // 执行
+    // Implementation
     pub overall_status: String,
     pub outcomes_count: usize,
 
-    // 判定
+    // Decision
     pub passed: bool,
     pub failures: Vec<String>,
 }
 
-/// 一次 L0 验证运行的完整报告。
+/// A full report of the L0 validation operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RealWorldReport {
     pub version: String,

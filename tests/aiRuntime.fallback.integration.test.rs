@@ -1,4 +1,4 @@
-//! 模型加载失败 / Provider 不可用时的 fallback 测试。
+//! Model failed to load / Provider when fallback test is not available.
 
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ fn missing_model_file_fails_to_load() {
 #[test]
 fn ai_engine_falls_back_to_rule_when_no_provider() {
     let base: Arc<dyn IPolicyEngine> = Arc::new(RuleBasedPolicyEngine::new());
-    // 无 AI provider
+    // No AI provider
     let engine = AiAssistedPolicyEngine::new(base, None, 0.5);
 
     let snapshot = ComputerSnapshot::default();
@@ -57,7 +57,7 @@ fn ai_engine_falls_back_to_rule_when_no_provider() {
 #[test]
 fn invalid_model_does_not_break_runtime() {
     let rt = PureRustRuntime::new();
-    // 先尝试加载一个坏模型
+    // Try loading a bad model first.
     let bad = ModelSpec {
         name: "bad".to_string(),
         version: "1.0.0".to_string(),
@@ -69,7 +69,7 @@ fn invalid_model_does_not_break_runtime() {
     };
     assert!(rt.load_model(&bad).is_err());
 
-    // 之后仍可加载好模型
+    // Then we can load the model.
     const GOOD: &str = r#"{
         "schema_version": "1.0",
         "name": "good",
@@ -100,7 +100,7 @@ fn runtime_health_reflects_state() {
         other => panic!("expected Healthy with 0 models, got {:?}", other),
     }
 
-    // 加载一个模型
+    // Load a model
     const GOOD: &str = r#"{
         "schema_version": "1.0",
         "name": "m",
@@ -151,11 +151,11 @@ fn provider_returns_err_when_runtime_unloaded() {
     let handle = rt.load_model(&spec).unwrap();
     let p = RuntimeBackedProvider::new(rt.clone(), handle.clone(), 4);
 
-    // 卸载后 provider 应该失败
+    // After unmounting provider should fail
     rt.unload(&handle).unwrap();
-    // is_available 检查 Health；health 仍为 Healthy（只是模型数为 0），
-    // 但 infer 会失败，因为 handle 不再有效。
-    // 这里只验证不 panic。
+    // is_available Check Health; Health is still Healthy.
+    // But infer will fail because handle is no longer valid.
+    // Only check here.
     let _ = p.is_available();
 }
 
@@ -179,8 +179,8 @@ fn onnx_failure_falls_back_to_pure_rust() {
     assert_eq!(fallback.primary_name(), "onnx_runtime_backend");
     assert_eq!(fallback.fallback_name(), "pure_rust_runtime");
 
-    // ONNX load 会失败 → fallback 到 PureRust
-    // 但 PureRust 只接受 FeatureWeighted；传入 Onnx spec 也会失败
+    // ONNX The load will fail. PureRust
+    // But PureRust only accepts FeatureWeighted; entry of Onnx spec will fail
     let spec = aicore_contracts::ai::runtime::ModelSpec {
         name: "test".to_string(),
         version: "1.0.0".to_string(),
@@ -195,7 +195,7 @@ fn onnx_failure_falls_back_to_pure_rust() {
         }),
     };
 
-    // 两个 backend 都失败 → 返回合并错误
+    // Both backends have failed.
     let err = fallback.load_model(&spec).unwrap_err();
     let msg = format!("{}", err);
     assert!(msg.contains("primary"));
@@ -217,7 +217,7 @@ fn fallback_counters_track_usage() {
     assert_eq!(fallback.fallback_load_count(), 0);
     assert_eq!(fallback.fallback_infer_count(), 0);
 
-    // 触发一次 load fallback（PureRust 也不接受 Onnx spec，所以最终失败）
+    // Trigger once load fallback()PureRust I don't accept Onnx spec, so I'm not going to make it.
     let spec = aicore_contracts::ai::runtime::ModelSpec {
         name: "test".to_string(),
         version: "1.0.0".to_string(),
@@ -232,7 +232,7 @@ fn fallback_counters_track_usage() {
         }),
     };
     let _ = fallback.load_model(&spec);
-    // 两个 backend 都失败 → 不增加 fallback_load_count
+    // Both backends failed. fallback_load_count
     assert_eq!(fallback.fallback_load_count(), 0);
 }
 

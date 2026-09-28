@@ -1,4 +1,4 @@
-//! OnnxRuntimeBackend 超时测试。
+//! OnnxRuntimeBackend timeout test.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -112,7 +112,7 @@ fn slow_inference_beyond_timeout_returns_timeout_error() {
         err
     );
 
-    // 记录 timeout 指标
+    // Record timeout indicators
     let snap = backend.metrics().snapshot();
     assert_eq!(snap.timeouts, 1);
     assert_eq!(snap.successful, 0);

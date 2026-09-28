@@ -6,12 +6,12 @@ use aicore_contracts::errors::{ContractError, ContractResult};
 
 use super::entry::ModelEntry;
 
-/// 模型注册表。
+/// Model registration form.
 ///
-/// 用途：
-/// - 记录所有可用 AI Provider。
-/// - 按能力 / 隐私等级查询。
-/// - 按延迟预算筛选。
+/// Purpose:
+/// - Record all available AI Provider.
+/// - Query by competency/ privacy level.
+/// - Screening based on delayed budget.
 pub struct ModelRegistry {
     entries: RwLock<HashMap<String, ModelEntry>>,
 }
@@ -23,7 +23,7 @@ impl ModelRegistry {
         }
     }
 
-    /// 注册模型。若 name 已存在则覆盖。
+    /// Register model. Overwrite if name already exists.
     pub fn register(&self, entry: ModelEntry) -> ContractResult<()> {
         if let Err(e) = entry.metadata.validate() {
             return Err(ContractError::InvalidRequest(format!(
@@ -40,7 +40,7 @@ impl ModelRegistry {
         Ok(())
     }
 
-    /// 注销模型。
+    /// Write-off model.
     pub fn unregister(&self, name: &str) -> ContractResult<bool> {
         let mut entries = self
             .entries
@@ -49,7 +49,7 @@ impl ModelRegistry {
         Ok(entries.remove(name).is_some())
     }
 
-    /// 按名称查询。
+    /// Query by name.
     pub fn get(&self, name: &str) -> ContractResult<Option<ModelEntry>> {
         let entries = self
             .entries
@@ -58,7 +58,7 @@ impl ModelRegistry {
         Ok(entries.get(name).cloned())
     }
 
-    /// 列出所有模型。
+    /// List all models.
     pub fn list(&self) -> ContractResult<Vec<ModelEntry>> {
         let entries = self
             .entries
@@ -67,7 +67,7 @@ impl ModelRegistry {
         Ok(entries.values().cloned().collect())
     }
 
-    /// 按隐私等级筛选。
+    /// Screening by level of privacy.
     pub fn list_by_privacy(&self, class: PrivacyClass) -> ContractResult<Vec<ModelEntry>> {
         let entries = self
             .entries
@@ -80,7 +80,7 @@ impl ModelRegistry {
             .collect())
     }
 
-    /// 按能力筛选。
+    /// Screening by ability.
     pub fn list_by_capability(&self, capability: &str) -> ContractResult<Vec<ModelEntry>> {
         let entries = self
             .entries
@@ -93,7 +93,7 @@ impl ModelRegistry {
             .collect())
     }
 
-    /// 统计。
+    /// Statistics.
     pub fn count(&self) -> ContractResult<usize> {
         let entries = self
             .entries

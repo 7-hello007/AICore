@@ -1,9 +1,9 @@
 use aicore_contracts::{ai::input::AiInput, context::workload::InteractionLevel};
 
-/// 特征向量。
+/// Feature vector.
 ///
-/// 维度固定，便于权重计算与后续替换为 ONNX 输入。
-/// 顺序：`[cpu, gpu, npu, mem, interactive, passive, idle, has_memory]`
+/// The dimensions are fixed to allow weight calculation and subsequent replacement with ONNX input.
+/// Order: `[cpu, gpu, npu, mem, interactive, passive, idle, has_memory]`
 pub const FEATURE_DIM: usize = 8;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,9 +12,9 @@ pub struct FeatureVector {
 }
 
 impl FeatureVector {
-    /// 从 AiInput 提取特征。
+    /// Extract feature from AiInput.
     ///
-    /// 所有值归一化到 [0.0, 1.0]。
+    /// All values are consolidated to [0.0, 1.0].
     pub fn from_input(input: &AiInput) -> Self {
         let cpu = clamp01(input.snapshot.cpu.usage_percent / 100.0);
         let gpu = clamp01(input.snapshot.gpu.usage_percent.unwrap_or(0.0) / 100.0);
@@ -34,7 +34,7 @@ impl FeatureVector {
         }
     }
 
-    /// 点积。
+    /// Point of accumulation.
     pub fn dot(&self, weights: &[f32; FEATURE_DIM]) -> f32 {
         self.values
             .iter()

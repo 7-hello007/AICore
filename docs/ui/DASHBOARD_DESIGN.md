@@ -1,20 +1,21 @@
+[English](DASHBOARD_DESIGN.md) | [Chinese](DASHBOARD_DESIGN.zh-CN.md)
 # Dashboard Design
 
-目标：现代、简洁、低噪声、信息层级明确。
+Target: modern, concise, low-noise presentation with a clear information hierarchy.
 
-## 视觉原则
+## Visual principles
 
-| 原则 | 要求 |
+| Principle | Requirement |
 |---|---|
-| Hierarchy | 首屏只突出系统状态与 AI Decision |
-| Density | 高信息密度但不堆文字 |
-| Motion | 仅用于实时变化，不做装饰性动画 |
-| Color | 中性深色底 + 少量语义色 |
-| Typography | 高可读无衬线 + 等宽数字 |
-| Responsive | Desktop / Tablet / Narrow 支持 |
-| Accessibility | 状态不能只通过颜色表达 |
+| Hierarchy | The first screen emphasizes system state and the current AI decision |
+| Density | Present high information density without walls of text |
+| Motion | Use motion only for real-time changes, never as decoration |
+| Color | Use a neutral dark base with restrained semantic colors |
+| Typography | Use readable fonts, line heights, and line widths |
+| Responsive | Support desktop, tablet, and narrow layouts |
+| Accessibility | Never communicate status through color alone |
 
-## 页面结构
+## Page Structure
 
 1. Global Status
 2. Resource Overview

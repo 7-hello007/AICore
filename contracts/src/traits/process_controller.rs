@@ -1,10 +1,10 @@
 use crate::errors::ContractResult;
 use crate::policy::priority::PolicyPriority;
 
-/// CPU 亲和性配置。
+/// CPU accompaniment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AffinityMask {
-    /// 逻辑核心索引列表；索引对应 `0..n-1`。
+    /// Logical core index list; index to `0..n-1`.
     pub cores: Vec<u32>,
 }
 
@@ -18,20 +18,20 @@ impl AffinityMask {
     }
 }
 
-/// 进程级控制抽象。
+/// Process level control is abstract.
 pub trait IProcessController: Send + Sync {
     fn set_priority(&self, pid: u32, priority: PolicyPriority) -> ContractResult<()>;
     fn get_priority(&self, pid: u32) -> ContractResult<PolicyPriority>;
 
-    /// 设置进程 CPU 亲和性。
-    /// 默认返回 CapabilityUnavailable，让不支持的平台无需实现。
+    /// Sets up the CPU relationship.
+    /// Default returns CapabilityUnavailable so that unsupported platforms do not need to be realized.
     fn set_affinity(&self, _pid: u32, _mask: &AffinityMask) -> ContractResult<()> {
         Err(crate::errors::ContractError::CapabilityUnavailable(
             "set_affinity not supported".to_string(),
         ))
     }
 
-    /// 读取进程 CPU 亲和性。默认 CapabilityUnavailable。
+    /// Reads the CPU relationship. Default CapabilityUnavailable.
     fn get_affinity(&self, _pid: u32) -> ContractResult<AffinityMask> {
         Err(crate::errors::ContractError::CapabilityUnavailable(
             "get_affinity not supported".to_string(),

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# AICore daemon 回滚脚本（Linux）。
+# AICore daemon rollback script (Linux).
 #
-# 用法：
-#   sudo ./rollback.sh                 # 列出可用备份
-#   sudo ./rollback.sh <timestamp>     # 回滚到指定备份
+# Usage:
+#   Sudo./rollback.sh# Lists available backups
+#   sudo ./rollback.sh <timestamp>
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"

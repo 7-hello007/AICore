@@ -7,10 +7,10 @@ use aicore_contracts::{
 
 const DRM_BASE: &str = "/sys/class/drm";
 
-/// Linux GPU 控制器。
+/// Linux GPU controller.
 ///
-/// 对 AMD amdgpu 暴露通用的 performance-level 控制；其他厂商保持能力受限，
-/// 不伪造“可控”状态。真正的 vendor-specific 控制由硬件 executor / plugin 提供。
+/// AMD amdgpu exposed generic performance-level controls; other manufacturers are limited in their ability to maintain them, and they are not allowed to use them.
+/// Do not falsify the “controlled” state. Real vendor-specific controls are provided by hardware executor / plugin.
 pub struct LinuxGpuController;
 
 impl LinuxGpuController {

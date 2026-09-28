@@ -1,4 +1,4 @@
-//! Trust Store 测试。
+//! Trust Store Test.
 
 use ed25519_dalek::{Signer, SigningKey};
 
@@ -110,12 +110,12 @@ fn permits_control_semantics() {
     store.register(TrustEntry::local_dev("d")).unwrap();
     store.register(TrustEntry::untrusted("u")).unwrap();
 
-    // read 权限永远允许
+    // read permissions always allowed
     assert!(store
         .permits_control("u", &[PluginPermission::TelemetryRead])
         .unwrap());
 
-    // control 权限：built-in 允许，local-dev / untrusted 拒绝
+    // control permission: built-in allowed, local-dev / rejected
     assert!(store
         .permits_control("b", &[PluginPermission::ProcessControl])
         .unwrap());

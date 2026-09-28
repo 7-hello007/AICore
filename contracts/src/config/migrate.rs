@@ -1,21 +1,21 @@
-//! 配置版本迁移。
+//! Configure version migration.
 //!
-//! 语义：
-//! - 已是最新版本 → 原样返回。
-//! - `1.x` 版本 → 补全为最新 `1.0`。
-//! - 未知主版本 → Err。
+//! Semantics:
+//! - It's the latest version back in the same way.
+//! - `1.x` version completed with the latest `1.0`.
+//! - Unknown main version → Err.
 
 use crate::errors::AicoreError;
 
 use super::schema::{AicoreConfig, CONFIG_SCHEMA_VERSION};
 
-/// 将配置迁移到当前 schema 版本。
+/// Moves the configuration to the current schema version.
 pub fn migrate_to_current(config: AicoreConfig) -> Result<AicoreConfig, AicoreError> {
     if config.version == CONFIG_SCHEMA_VERSION {
         return Ok(config);
     }
     if config.version.major == CONFIG_SCHEMA_VERSION.major {
-        // 1.x → 1.0 无字段变更
+        // 1.x → 1.0 No field changes
         let mut migrated = config;
         migrated.version = CONFIG_SCHEMA_VERSION;
         return Ok(migrated);

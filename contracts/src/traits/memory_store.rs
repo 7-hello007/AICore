@@ -1,13 +1,13 @@
 use crate::errors::{ContractError, ContractResult};
 use crate::memory::{profile::UserProfile, record::HistoricalRecord};
 
-/// 记忆存储抽象。
+/// Memory store abstraction.
 ///
-/// 实现可以是：
-/// - 内存存储（测试 / 短期）
-/// - JSON 文件（V1 兼容）
-/// - SQLite（V2 默认）
-/// - 远端（仅当用户显式允许）
+/// Implementations may use:
+/// - In-memory storage (tests or short-lived state)
+/// - JSON files (V1 compatibility)
+/// - SQLite (V2 default)
+/// - Remote storage (only with explicit user consent)
 pub trait IMemoryStore: Send + Sync {
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()>;
     fn load_records(&self, limit: usize) -> ContractResult<Vec<HistoricalRecord>>;
@@ -17,19 +17,19 @@ pub trait IMemoryStore: Send + Sync {
     fn load_profile(&self) -> ContractResult<UserProfile>;
     fn save_profile(&self, profile: &UserProfile) -> ContractResult<()>;
 
-    /// 删除指定时间戳之前的记录，返回删除数量。
+    /// Delete records before the specified timestamp and return the deletion count.
     ///
-    /// 默认实现返回 `NotSupported`，让旧实现无需改动。
+    /// The default returns `NotSupported` to preserve compatibility with older stores.
     fn delete_records_before(&self, _cutoff_unix_ms: u64) -> ContractResult<usize> {
         Err(ContractError::NotSupported(
             "delete_records_before not supported".to_string(),
         ))
     }
 
-    /// 按 retention_days 应用保留策略，返回删除数量。
+    /// Apply a retention policy and return the deletion count.
     ///
-    /// 默认实现基于 `delete_records_before`。
-    /// `retention_days == 0` 表示"不删除"。
+    /// Default implementation is based on `delete_records_before`.
+    /// `retention_days == 0` means "do not delete".
     fn apply_retention(&self, retention_days: u32) -> ContractResult<usize> {
         if retention_days == 0 {
             return Ok(0);
@@ -40,7 +40,7 @@ pub trait IMemoryStore: Send + Sync {
         self.delete_records_before(cutoff_unix_ms)
     }
 
-    /// 返回 schema version。默认 0 表示无版本管理。
+    /// Returns the schema version. Default 0 means no version management.
     fn schema_version(&self) -> ContractResult<u32> {
         Ok(0)
     }

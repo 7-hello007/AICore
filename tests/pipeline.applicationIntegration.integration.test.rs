@@ -46,7 +46,7 @@ fn contract_overrides_workload() {
 
     let merged = api.merge_context(&base, &contract).unwrap();
     assert_eq!(merged.workload_type, WorkloadType::AiInference);
-    // 应用显式声明 → confidence = 1.0
+    // Apply explicit declaration → confidence = 1.0
     assert!((merged.confidence - 1.0).abs() < f32::EPSILON);
 }
 
@@ -103,7 +103,7 @@ fn unregistered_app_merge_is_rejected() {
 fn full_pipeline_contract_to_validated_policy() {
     let (_reg, api, app) = setup();
 
-    // 1. 应用注册并提交契约
+    // 1. Applications for registration and submission of contracts
     let contract = TaskContract {
         task: Some(WorkloadType::AiInference),
         priority: Some(PolicyPriority::High),
@@ -113,7 +113,7 @@ fn full_pipeline_contract_to_validated_policy() {
     let result = api.submit_task(&contract).unwrap();
     assert!(result.accepted);
 
-    // 2. ContextEngine 的基线上下文（模拟）
+    // Baseline context for ContextEngine (simulation)
     let base = ContextSnapshot {
         workload_type: WorkloadType::GeneralOffice,
         interaction_level: InteractionLevel::Passive,
@@ -121,7 +121,7 @@ fn full_pipeline_contract_to_validated_policy() {
         ..Default::default()
     };
 
-    // 3. 合并契约
+    // Consolidation compacts
     let merged = api.merge_context(&base, &contract).unwrap();
     assert_eq!(merged.workload_type, WorkloadType::AiInference);
     assert_eq!(merged.interaction_level, InteractionLevel::Interactive);
@@ -143,7 +143,7 @@ fn full_pipeline_contract_to_validated_policy() {
 #[test]
 fn api_registry_is_shared_with_callers() {
     let (reg, api, app) = setup();
-    // PublicApi::registry() 与外部 Arc 共享
+    // PublicApi::registry() share with external Arc
     assert!(Arc::ptr_eq(api.registry(), &reg));
     assert!(api.registry().is_registered(&app).unwrap());
 }

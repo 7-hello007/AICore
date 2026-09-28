@@ -1,6 +1,6 @@
-//! Installer 静态冒烟测试。
+//! Installer static smoke testing.
 //!
-//! 不启动真实服务，只验证 deploy/ 结构与关键内容。
+//! Only deploy/ structure and key content are validated without starting a real service.
 
 use std::path::PathBuf;
 

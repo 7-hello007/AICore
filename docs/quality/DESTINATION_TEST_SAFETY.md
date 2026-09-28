@@ -1,6 +1,7 @@
+[English](DESTINATION_TEST_SAFETY.md) | [Chinese](DESTINATION_TEST_SAFETY.zh-CN.md)
 # Destination work: isolated test boundary
 
-## Current desktop authorization (2026-09-27)
+## Historical desktop authorization (2026-09-27)
 
 The user permits native operations and system changes for this continuation,
 but prohibits installer packages and confines downloads to project `env/`.
@@ -65,7 +66,7 @@ files under `env/`, stops only its test daemon and never invokes a platform
 setter. Its result is a local intent integration result, not a Windows
 hardware or ACL certification.
 
-The current authorization permits Model Mode, mocks, isolated filesystem/IPC
+The authorization at that stage permitted Model Mode, mocks, isolated filesystem/IPC
 fixtures and **read-only** native telemetry/capability checks. The unfiltered
 `cargo test --workspace --all-targets --locked` command also contains tests
 that invoke platform process/affinity/power controllers or start a platform

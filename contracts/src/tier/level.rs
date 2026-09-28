@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-/// 兼容等级。
+/// Compatibility level.
 ///
-/// - L0：零改动软件透明适配。
-/// - L1：可选感知集成（应用主动声明）。
-/// - L2：原生高级集成（应用深度接入）。
+/// - L0: Zero change software is transparent.
+/// - L1: Optional sensory integration (applying active declarations).
+/// - L2: Advanced primary integration (application depth access).
 ///
-/// **平级关系**：L0 / L1 / L2 互不依赖，删除任一不影响其他。
+/// ** Peer relationships**: L0 / L1 / L2 are not dependent on each other and delete any without prejudice to others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TierLevel {

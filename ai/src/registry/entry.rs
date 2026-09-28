@@ -1,12 +1,12 @@
 use aicore_contracts::ai::model_metadata::ModelMetadata;
 
-/// Registry 中的一条模型记录。
+/// A model log in Registry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelEntry {
     pub metadata: ModelMetadata,
-    /// provider 名称。
+    /// Provider name.
     pub provider_name: String,
-    /// 当前是否可用。
+    /// Current availability.
     pub available: bool,
 }
 

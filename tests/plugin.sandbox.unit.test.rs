@@ -1,4 +1,4 @@
-//! run_with_timeout 沙箱测试。
+//! run_with_timeout sandbox testing.
 
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ fn slow_call_times_out() {
     .unwrap();
 
     assert!(result.is_none(), "should have timed out");
-    // 确认调用方没被阻塞
+    // Make sure the caller isn't blocked.
     assert!(start.elapsed() < Duration::from_secs(2));
 }
 

@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-/// 签名算法。
+/// Signing algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SignatureAlgorithm {
-    /// SHA-256 hash（V3-K；仅用于完整性校验，不是加密签名）。
+    /// SHA-256 Hash (V3-K; only for completeness verification, not encrypted signature).
     Sha256,
-    /// Ed25519 公钥签名（V3.2 Phase 7）。
+    /// Ed25519 Public Key Signature (V3.2 Phase 7).
     Ed25519,
 }
 
@@ -18,16 +18,16 @@ impl SignatureAlgorithm {
         }
     }
 
-    /// 是否为加密签名（可信来源）。
+    /// Whether or not the signature is encrypted (credible source).
     pub fn is_cryptographic(self) -> bool {
         matches!(self, Self::Ed25519)
     }
 }
 
-/// 插件签名。
+/// Plugin signature.
 ///
-/// - SHA-256：`hash_hex` 是文件 hash；`public_key_hex` 为 None。
-/// - Ed25519：`hash_hex` 是签名（64 字节 hex）；`public_key_hex` 是公钥（32 字节 hex）。
+/// - SHA-256: `hash_hex` is a file Hash; `public_key_hex` is None.
+/// - Ed25519: `hash_hex` is signed (64 bytes hex); `public_key_hex` is public key (32 bytes hex).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginSignature {
     pub algorithm: SignatureAlgorithm,

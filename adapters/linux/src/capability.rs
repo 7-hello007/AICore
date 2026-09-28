@@ -4,14 +4,14 @@ use aicore_contracts::{
     capability::entry::CapabilityEntry, traits::capability_provider::ICapabilityProvider,
 };
 
-/// Linux 能力提供者。
+/// Linux capability provider.
 ///
-/// 运行时探测：
-/// - `/sys/firmware/acpi/platform_profile` → platform_profile 支持。
-/// - `/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` → cpufreq 支持。
+/// Runtime detection:
+/// - `/sys/firmware/acpi/platform_profile` → `platform_profile` support.
+/// - `/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` → `cpufreq` support.
 ///
-/// 未实现在 V2-A-2 范围内的能力（GPU / NPU / affinity）
-/// 显式标记为 Unsupported，附 detail 说明。
+/// Capabilities not implemented in V2-A-2 (GPU/NPU/affinity)
+/// are explicitly marked `Unsupported` with explanatory details.
 pub struct LinuxCapabilityProvider;
 
 impl LinuxCapabilityProvider {
@@ -31,7 +31,7 @@ const CPUFREQ_GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scalin
 
 impl ICapabilityProvider for LinuxCapabilityProvider {
     fn capabilities_detailed(&self) -> Vec<CapabilityEntry> {
-        // 无条件支持的能力
+        // Unconditionally supported capabilities
         let mut caps = vec![
             CapabilityEntry::supported("cpu.telemetry"),
             CapabilityEntry::supported("memory.telemetry"),
@@ -45,7 +45,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             ),
         ];
 
-        // 电源：运行时探测
+        // Power capabilities are detected at runtime.
         let has_platform_profile = Path::new(PLATFORM_PROFILE_PATH).exists();
         let has_cpufreq = Path::new(CPUFREQ_GOVERNOR_PATH).exists();
 
@@ -68,7 +68,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             ));
         }
 
-        // 温度：Linux 上 /sys/class/thermal 普遍存在
+        // Linux commonly exposes temperature data through /sys/class/thermal.
         let has_thermal = Path::new("/sys/class/thermal").exists();
         if has_thermal {
             caps.push(CapabilityEntry::supported("temperature.telemetry"));
@@ -79,7 +79,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             ));
         }
 
-        // GPU 遥测：尽力而为（amdgpu / i915 sysfs）
+        // GPU telemetry: best effort (amdgpu / i915 sysfs)
         let has_drm = Path::new("/sys/class/drm").exists();
         if has_drm {
             caps.push(CapabilityEntry::partial(
@@ -117,7 +117,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             ));
         }
 
-        // NPU 遥测：检测 /sys/class/accel
+        // Detect NPU telemetry support through /sys/class/accel.
         let has_accel = Path::new("/sys/class/accel").exists();
         if has_accel {
             caps.push(CapabilityEntry::partial(
@@ -135,7 +135,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             "vendor runtime required; Linux has no portable cross-vendor NPU control ABI",
         ));
 
-        // 前台窗口：xdotool 可用时 partial
+        // Foreground window: partial when xdotool is available
         let has_xdotool = std::process::Command::new("xdotool")
             .arg("--version")
             .output()
@@ -153,7 +153,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
             ));
         }
 
-        // CPU affinity：当前实现 后，需要权限
+        // CPU-affinity writes require permission even when the interface is available.
         caps.push(CapabilityEntry::supported("process.affinity.read"));
         caps.push(CapabilityEntry::conditional(
             "process.affinity.write",

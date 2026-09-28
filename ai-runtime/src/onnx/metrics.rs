@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// 推理指标。
+/// Inference metrics.
 ///
-/// 全部为原子计数；无锁读取。
+/// All are atomic counts; reading without lock.
 #[derive(Default)]
 pub struct InferenceMetrics {
     total_inferences: AtomicU64,

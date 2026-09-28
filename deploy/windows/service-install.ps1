@@ -1,14 +1,14 @@
-# AICore Daemon — 正式 Windows Service 安装脚本。
+# AICore Daemon - Official Windows Service installation script.
 #
-# 用法：
+# Usage:
 #   .\service-install.ps1 -BinPath "C:\Program Files\AICore\aicored.exe"
 #
-# 行为：
-#   1. 复制二进制到 Program Files。
-#   2. 使用 sc.exe 创建 Windows Service。
-#   3. 配置失败自动重启。
-#   4. 启动服务。
-#   5. 输出状态。
+# Conduct:
+#   Copy binary to Program Files.
+#   Create Windows Service using sc.exe.
+#   3. Autostart with configuration failure.
+#   Start-up services.
+#   5. Output status.
 param(
     [Parameter(Mandatory = $true)]
     [string]$BinPath,
@@ -31,13 +31,13 @@ if (-not (Test-Path $BinPath)) {
     exit 1
 }
 
-# 1. 目录 + 复制
+# 1. Directory + Copy
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $target = Join-Path $InstallDir "aicored.exe"
 Copy-Item -Path $BinPath -Destination $target -Force
 Write-Host "installed binary -> $target"
 
-# 2. 停止旧服务（若存在）
+# 2. Discontinuation of old services (if any)
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "stopping existing service"
@@ -47,7 +47,7 @@ if ($existing) {
     Start-Sleep -Seconds 1
 }
 
-# 3. 创建服务
+# 3. Creation services
 $configPath = "$env:ProgramData\AICore\config.json"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $configPath) | Out-Null
 if (-not (Test-Path $configPath)) {
@@ -61,14 +61,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "service created"
 
-# 4. 描述 + 失败恢复
+# Description + Failed to recover
 sc.exe description $ServiceName $Description | Out-Null
 sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/5000/restart/5000 | Out-Null
 Write-Host "recovery configured"
 
-# 5. 启动
+# Start
 sc.exe start $ServiceName
 Start-Sleep -Seconds 3
 
-# 6. 状态
+# 6. Status
 Get-Service -Name $ServiceName | Format-List Name, DisplayName, Status, StartType

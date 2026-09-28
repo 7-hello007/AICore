@@ -1,11 +1,11 @@
-//! Terminal 与 Web 共用 DashboardSnapshot 的静态一致性测试。
+//! Terminal shares the DashboardSnapshot static consistency test with Web.
 
 use aicore_contracts::dashboard::snapshot::DashboardSnapshot;
 
 #[test]
 fn snapshot_has_all_v3_fields() {
     let snap = DashboardSnapshot::default();
-    // 15 字段；缺失字段会导致下列断言不通过
+    // 15 fields;missing fields will result in the following assertions not being approved
     let _ = &snap.daemon_status;
     let _ = &snap.current_context;
     let _ = &snap.current_workload;

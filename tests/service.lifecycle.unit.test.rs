@@ -1,4 +1,4 @@
-//! ServiceLifecycle 单元测试（基于 MockServiceController）。
+//! ServiceLifecycle unit test (based on MockServiceController).
 
 use std::sync::Arc;
 

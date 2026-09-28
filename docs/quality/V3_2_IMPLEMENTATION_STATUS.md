@@ -1,3 +1,4 @@
+[English](V3_2_IMPLEMENTATION_STATUS.md) | [Chinese](V3_2_IMPLEMENTATION_STATUS.zh-CN.md)
 > Historical V3.2 status retained for traceability. Current baseline is V4.
 
 # V3.2 Implementation Status

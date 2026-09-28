@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 透明控制的六个阶段。
+/// Six phases of transparent control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlStage {
@@ -25,7 +25,7 @@ impl ControlStage {
     }
 }
 
-/// 单个阶段的执行状态。
+/// Status of implementation of individual phases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageStatus {
@@ -41,7 +41,7 @@ impl StageStatus {
     }
 }
 
-/// 单个阶段的执行结果。
+/// Implementation results for individual phases.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StageOutcome {
     pub stage: ControlStage,

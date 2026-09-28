@@ -4,9 +4,9 @@ use aicore_contracts::{
     traits::process_controller::{AffinityMask, IProcessController},
 };
 
-/// Linux 进程控制器。
+/// Linux process controller.
 ///
-/// 使用 `setpriority(2)` 与 `sched_setaffinity(2)`。
+/// Use `setpriority(2)` with `sched_setaffinity(2)`.
 pub struct LinuxProcessController;
 
 impl LinuxProcessController {

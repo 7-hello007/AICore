@@ -1,6 +1,6 @@
-//! 验证真实采集扩展。
+//! Validate real collection extension.
 //!
-//! 测试在容器 / VM 上也必须通过：读不到就返回 None，不 panic。
+//! The test must also be passed on the container / VM: Noon, no Panic if you cannot read it.
 
 use aicore_contracts::traits::telemetry_provider::ITelemetryProvider;
 
@@ -15,7 +15,7 @@ use aicore_adapter_windows::WindowsTelemetryProvider as PlatformProvider;
 fn collect_returns_snapshot_without_panic() {
     let p = PlatformProvider::new();
     let s = p.collect().expect("collect");
-    // 不 panic；CPU / memory 必须存在
+    // No Panic; CPU/ memory must exist
     assert!(s.cpu.logical_cores > 0);
     assert!(s.memory.total_mb > 0);
 }
@@ -25,7 +25,7 @@ fn collect_returns_snapshot_without_panic() {
 fn temperature_is_optional() {
     let p = PlatformProvider::new();
     let s = p.collect().expect("collect");
-    // 容器 / VM 可能读不到温度；不 panic 即通过
+    // Container / VM may not read the temperature; no Panic passes
     let _ = s.temperature.cpu_celsius;
     let _ = s.temperature.gpu_celsius;
     let _ = s.temperature.system_celsius;
@@ -36,7 +36,7 @@ fn temperature_is_optional() {
 fn gpu_is_optional() {
     let p = PlatformProvider::new();
     let s = p.collect().expect("collect");
-    // 无独显机器上 GPU 字段全是 None 或零值；不 panic 即通过
+    // The GPU field on a non-specified machine is all None or zero; no panic passes
     if let Some(v) = s.gpu.usage_percent {
         assert!((0.0..=100.0).contains(&v), "gpu usage out of range: {}", v);
     }
@@ -65,7 +65,7 @@ fn linux_reports_extended_capabilities() {
 fn sampling_constraints_are_non_negative() {
     let p = PlatformProvider::new();
     let c = p.sampling_constraints();
-    // 默认 >= 0
+    // Default > = 0
     assert!(c.min_interval_ms < 10_000, "constraint unexpectedly large");
     assert!(!c.should_skip(0) || c.min_interval_ms > 0);
 }

@@ -1,4 +1,4 @@
-//! Rollback 集成测试：通过 AdaptiveLoop 走完六段式。
+//! Rollback Integration Test: Go through six segments through AdaptiveLoop.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -40,7 +40,7 @@ impl ITelemetryProvider for MockTelemetry {
     }
 }
 
-/// 第 1 次执行返回 AllFailed，后续返回 AllSucceeded。
+/// The first execution was to return AllFailed, followed by AllSucceeded.
 struct FailThenSucceedExecutor {
     calls: AtomicU32,
 }
@@ -66,11 +66,11 @@ impl IPolicyExecutor for FailThenSucceedExecutor {
     }
 }
 
-/// 构造 AdaptiveLoop，同时把 inner executor 给 loop 的 executor 槽，
-/// 把 TransparentExecutor 给 transparent 槽。
+/// Construct AdaptiveLoop while sending inner executor into the loop executor slot,
+/// Give TransparentExecutor to transfer slots.
 ///
-/// 注意：两者共享同一个底层实现（通过 Arc clone），这样 tick 时
-/// 若 transparent 路径触发回退，回退会复用同一个底层。
+/// Note: Both share the same underlying implementation (through Arc code) so that the tick
+/// If the transfer path triggers a retreat, it returns to the same bottom.
 fn build_loop_with_transparent(
     inner: Arc<dyn IPolicyExecutor>,
     transparent: Arc<dyn ITransparentExecutor>,
@@ -99,7 +99,7 @@ fn first_tick_without_prior_rolls_back_failed() {
         calls: AtomicU32::new(0),
     });
 
-    // 用一个独立的 TransparentExecutor 包装同类型的 inner
+    // Inner with a single TransparentExecutor package
     let inner_for_transparent: Arc<dyn IPolicyExecutor> = Arc::new(FailThenSucceedExecutor {
         calls: AtomicU32::new(0),
     });
@@ -109,7 +109,7 @@ fn first_tick_without_prior_rolls_back_failed() {
     let loop_ = build_loop_with_transparent(inner, tx);
     let outcome = loop_.tick(&ExecutionTargets::default());
 
-    // 首次 tick：无 prior → rollback 失败；status = AllFailed
+    // First tick: no root rollback failed; status = AllFailed
     assert!(!outcome.success);
 }
 
@@ -145,7 +145,7 @@ fn adaptive_loop_without_transparent_uses_v2_path() {
     let fallback = base.clone();
     let validator = Arc::new(aicore_core::policy::DefaultPolicyValidator::new());
 
-    // 未启用 transparent
+    // Transparent not enabled
     let loop_ = AdaptiveLoop::new(
         telemetry,
         ctx_engine,
@@ -157,7 +157,7 @@ fn adaptive_loop_without_transparent_uses_v2_path() {
     );
 
     let outcome = loop_.tick(&ExecutionTargets::default());
-    // V2 路径：第 1 次失败
+    // V2 Path: 1 failed
     assert!(!outcome.success);
     assert_eq!(outcome.tick_id, 1);
 }

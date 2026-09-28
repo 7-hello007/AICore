@@ -1,20 +1,20 @@
 use serde::{Deserialize, Serialize};
 
-/// 硬件设备身份。
+/// Hardware device identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareDeviceInfo {
-    /// 稳定 ID，例如 "drm:card0" / "npu:accel0"。
+    /// Steady ID, such as "drum:card0"/ "npu:accel0".
     pub id: String,
-    /// 厂商，例如 "AMD" / "NVIDIA" / "Intel"。
+    /// Vendors such as "AMD"/ "NVIDIA"/ "Intel"
     pub vendor: String,
-    /// 设备名。
+    /// Device name.
     pub name: String,
-    /// 驱动名（若可读）。
+    /// Driver name (if readable).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver: Option<String>,
 }
 
-/// GPU 遥测样本。
+/// GPU telemetry sample.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GpuTelemetrySample {
     pub device: HardwareDeviceInfo,
@@ -25,7 +25,7 @@ pub struct GpuTelemetrySample {
     pub sampled_at_unix_ms: u64,
 }
 
-/// NPU 遥测样本。
+/// NPU telemetry sample.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NpuTelemetrySample {
     pub device: HardwareDeviceInfo,

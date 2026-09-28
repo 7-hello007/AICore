@@ -1,4 +1,4 @@
-//! 硬件能力探测测试。
+//! Hardware capability detection test.
 
 #[cfg(target_os = "linux")]
 use aicore_adapter_linux::LinuxHardwareCapabilityProvider as PlatformProvider;

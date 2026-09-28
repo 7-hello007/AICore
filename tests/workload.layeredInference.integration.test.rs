@@ -1,4 +1,4 @@
-//! 分层 Workload Inference 集成测试：Rule + ML + Fusion。
+//! Layered workload inference integration: rules + ML + fusion.
 
 use std::sync::Arc;
 
@@ -46,12 +46,12 @@ fn ai_snapshot() -> ComputerSnapshot {
 #[test]
 fn fusion_combines_rule_and_ml() {
     let mut fusion = WorkloadFusion::new();
-    // 规则源（L0）
+    // Rule source (L0)
     fusion.add_source(Arc::new(aicore_tier_l0::L0WorkloadSource::new()));
-    // ML 源
+    // ML Source
     fusion.add_source(Arc::new(MlWorkloadSource::with_default_weights().unwrap()));
 
-    // 有前台应用 Code → 规则识别为 Development
+    // A foreground Code application is classified as Development by the rule source.
     let obs = fusion.observe(&dev_snapshot()).unwrap();
     assert_eq!(obs.workload_type, WorkloadType::Development);
 }
@@ -62,10 +62,10 @@ fn fusion_uses_ml_when_no_rule_signal() {
     fusion.add_source(Arc::new(aicore_tier_l0::L0WorkloadSource::new()));
     fusion.add_source(Arc::new(MlWorkloadSource::with_default_weights().unwrap()));
 
-    // 无前台应用，但 NPU 高 → ML 推断 AI Inference
+    // No foreground application, but high NPU usage suggests AI inference to ML.
     let obs = fusion.observe(&ai_snapshot()).unwrap();
-    // ML 单一来源置信度可能 < 0.9 → 可能返回 Unknown 或 AI Inference
-    // 只验证不 panic 且结果是合法值
+    // A single ML source may have confidence below 0.9, yielding Unknown or AI Inference.
+    // Check that inference does not panic and returns a valid result.
     assert!(matches!(
         obs.workload_type,
         WorkloadType::AiInference | WorkloadType::Unknown
@@ -83,7 +83,7 @@ fn register_l0_with_fusion_and_query() {
     let source = hub.best_workload_source().unwrap().unwrap();
     assert_eq!(source.source_name(), "workload_fusion");
 
-    // 通过 hub 的 source 也能工作
+    // The source registered through the hub works as well.
     let obs = source.observe(&dev_snapshot()).unwrap();
     assert_eq!(obs.workload_type, WorkloadType::Development);
 }

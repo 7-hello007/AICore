@@ -11,7 +11,7 @@ use crate::telemetry::sysfs;
 const DRM_BASE: &str = "/sys/class/drm";
 const ACCEL_BASE: &str = "/sys/class/accel";
 
-/// Linux 硬件遥测提供者。
+/// Linux hardware telemetry provider.
 ///
 /// - GPU：`/sys/class/drm/card*/device/`
 /// - NPU：`/sys/class/accel/accel*`
@@ -125,7 +125,7 @@ impl IHardwareTelemetryProvider for LinuxHardwareTelemetryProvider {
             )));
         }
 
-        // Linux 上没有通用 NPU 利用率接口；尽力而为。
+        // There is no universal NPU access interface on Linux; do your best.
         let utilization = sysfs::read_f32(format!("{}/device/utilization", path));
 
         Ok(NpuTelemetrySample {

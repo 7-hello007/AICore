@@ -1,4 +1,4 @@
-//! ShortHorizonPredictor 单元测试。
+//! ShortHorizonPredictor unit test.
 
 use aicore_contracts::{
     application::id::ApplicationId,
@@ -128,7 +128,7 @@ fn predict_with_mixed_recent_falls_back_to_dominant() {
     };
     let pred = p.predict(&input_with_memory(Some(mem))).unwrap();
     assert_eq!(pred.predicted_workload, WorkloadType::Development);
-    // 多数场景置信度是 0.5
+    // Most scene confidence is 0.5.
     assert!((pred.confidence - 0.5).abs() < f32::EPSILON);
 }
 
@@ -143,7 +143,7 @@ fn predict_with_unknown_dominant_fails() {
         hourly_patterns: Vec::new(),
         application_patterns: Vec::new(),
     };
-    // Unknown 且样本足够 → 一致性检查跳过，多数检查也跳过 → Err
+    // Unknown and a sample is enough.
     let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
     let msg = format!("{}", err);
     assert!(msg.contains("no dominant or consistent"), "got: {}", msg);
@@ -153,8 +153,8 @@ fn predict_with_unknown_dominant_fails() {
 fn min_confidence_filters_low_confidence() {
     let p = ShortHorizonPredictor::new(3, 5_000, 0.99);
     let mem = consistent_memory(WorkloadType::Development, 5);
-    // 一致性场景置信度上限 0.95，小于 0.99 → 会走到 dominant 分支
-    // dominant 置信度 0.5 < 0.99 → 最终 Err
+    // Consistency scene confidence ceiling 0.95, less than 0.99 will go to dominant branch
+    // Dominant confidence 0.5 < 0.99 → Final Err
     let err = p.predict(&input_with_memory(Some(mem))).unwrap_err();
     assert!(matches!(err, ContractError::AiInferenceFailed(_)));
 }

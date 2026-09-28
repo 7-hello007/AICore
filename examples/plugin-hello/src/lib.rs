@@ -1,4 +1,4 @@
-//! 示例 cdylib 插件：导出 AICore Plugin ABI 要求的 3 个符号。
+//! Example cdylib plugin: Export 3 symbols for AICore Plugin ABI.
 
 use std::os::raw::c_char;
 
@@ -15,7 +15,7 @@ pub extern "C" fn aicore_plugin_name() -> *const c_char {
     NAME.as_ptr() as *const c_char
 }
 
-/// 简单执行：返回输入 × 2 + 1。
+/// Simple execution: returns input x 2 + 1.
 #[no_mangle]
 pub extern "C" fn aicore_plugin_execute(input: u32) -> u32 {
     input.wrapping_mul(2).wrapping_add(1)

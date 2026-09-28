@@ -1,4 +1,4 @@
-//! Runtime route fallback 测试：backend 不可用 → native。
+//! Runtime route fallback test: Backend is not available.
 
 use aicore_contracts::{
     ai::runtime::ModelHandle,
@@ -12,7 +12,7 @@ use aicore_contracts::{
 use aicore_contracts::{context::snapshot::ContextSnapshot, telemetry::snapshot::ComputerSnapshot};
 use aicore_runtime_router::DefaultRuntimeBinder;
 
-/// 固定输出 Gpu route 的 Router。
+/// Fixed output of Gpu route Router.
 struct FixedGpuRouter;
 impl IRuntimeRouter for FixedGpuRouter {
     fn decide(&self, _s: &ComputerSnapshot, _c: &ContextSnapshot) -> ContractResult<RuntimeRoute> {
@@ -31,7 +31,7 @@ impl IRuntimeRouter for FixedGpuRouter {
     }
 }
 
-/// 检查 DefaultRuntimeBinder 对 Gpu route 是否回退。
+/// Checks whether DefaultRuntimeBinder against Gpu route returns.
 #[test]
 fn default_binder_falls_back_for_gpu() {
     let binder = DefaultRuntimeBinder::new();
@@ -79,7 +79,7 @@ fn default_binder_falls_back_for_npu() {
 
 #[test]
 fn fixed_gpu_router_recorded_but_falls_back() {
-    // 直接使用 Router + Binder 组合（不通过 AdaptiveLoop）
+    // Directly use Router + Binder (not AdaptiveLoop)
     let router = FixedGpuRouter;
     let binder = DefaultRuntimeBinder::new();
 

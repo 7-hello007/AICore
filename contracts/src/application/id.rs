@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// 应用标识符。
+/// Apply identifiers.
 ///
-/// 约定：反向域名风格，例如 "com.example.vscode"。
-/// 不强制格式，但必须非空、长度 ≤ 128。
+/// Engagement: Reverse domain name style, such as "com.example.vscode".
+/// Format is not mandatory, but must be non-empty, long ≤128.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ApplicationId(pub String);
 
@@ -16,7 +16,7 @@ impl ApplicationId {
         &self.0
     }
 
-    /// 基本合法性校验。
+    /// Basic legality verification.
     pub fn is_valid(&self) -> bool {
         let s = self.0.trim();
         !s.is_empty() && s.len() <= 128

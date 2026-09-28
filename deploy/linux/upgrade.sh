@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# AICore daemon 升级脚本（Linux）。
+# AICore daemon Upgrade Script (Linux).
 #
-# 行为：
-#   1. 备份当前二进制到 /var/backups/aicore/<timestamp>/。
-#   2. 安装新二进制。
-#   3. 重启服务。
-#   4. 若健康检查失败，自动回滚到备份。
+# Conduct:
+#   1. Backup current binary to /var/backups/aicore/<timestamp>/.
+#   2. Installation of a new binary.
+#   3. Restart services.
+#   If a health check fails, roll back automatically to the backup.
 #
-# 用法：
+# Usage:
 #   sudo ./upgrade.sh
 set -euo pipefail
 
@@ -35,7 +35,7 @@ TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
 mkdir -p "${BACKUP_DIR}"
 
-# 1. 备份当前二进制
+# 1. Backup Current Binary
 for bin in aicored aicore aicore-dashboard; do
     if [ -f "${BIN_DIR}/${bin}" ]; then
         cp -a "${BIN_DIR}/${bin}" "${BACKUP_DIR}/${bin}"
@@ -47,7 +47,7 @@ if [ -f "${BIN_DIR}/${MODEL_REL}" ]; then
     cp -a "${BIN_DIR}/${MODEL_REL}" "${BACKUP_DIR}/${MODEL_REL}"
 fi
 
-# 2. 安装新二进制
+# 2. Installation of a new binary
 for bin in aicored aicore aicore-dashboard; do
     if [ ! -f "${SOURCE_BIN_DIR}/${bin}" ]; then
         echo "error: missing ${SOURCE_BIN_DIR}/${bin}" >&2
@@ -59,11 +59,11 @@ done
 install -d -m 0755 "${BIN_DIR}/models"
 install -m 0644 "${SOURCE_BIN_DIR}/${MODEL_REL}" "${BIN_DIR}/${MODEL_REL}"
 
-# 3. 重启服务
+# 3. Restarting services
 systemctl daemon-reload
 systemctl restart aicored.service
 
-# 4. 健康检查（10s 内必须 active）
+# Health check-ups (10s)
 HEALTHY=false
 for i in $(seq 1 10); do
     sleep 1

@@ -4,16 +4,16 @@ use super::sysfs;
 
 const THERMAL_BASE: &str = "/sys/class/thermal";
 
-/// 读取系统温度。
+/// Read system temperature.
 ///
-/// 遍历 `/sys/class/thermal/thermal_zone*`，按类型名分类：
-/// - CPU：类型名含 "cpu" 或 "x86_pkg_temp" 或 "k10temp" 或 "coretemp"
-/// - GPU：类型名含 "gpu" 或 "amdgpu" 或 "i915"
-/// - 系统：类型名含 "acpitz" 或 "pch"
+/// `/sys/class/thermal/thermal_zone*`, by type:
+/// - CPU: Type includes "cpu" or "x86_pkg_temp" or "k10temp" or "coretemp"
+/// - GPU: Type includes "gpu" or "amdgpu" or "i915"
+/// - Systems: Type includes "acpitz" or "pch"
 ///
-/// 温度单位：sysfs 是毫摄氏度，转成摄氏度。
+/// Temperature units: sysfs are milligrade degrees centigrade (mC), converted to degrees Celsius.
 ///
-/// 读不到任何值时不 panic，返回全 None 的 Snapshot。
+/// Unable to read any value without panic, return all None Snapshot.
 pub fn read_temperature() -> TemperatureSnapshot {
     let mut snapshot = TemperatureSnapshot::default();
 

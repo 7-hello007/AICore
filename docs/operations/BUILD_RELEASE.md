@@ -1,10 +1,11 @@
+[English](BUILD_RELEASE.md) | [Chinese](BUILD_RELEASE.zh-CN.md)
 # Build & Release
 
-版本唯一来源：`workspace.package.version`。
+The single version source is `workspace.package.version`.
 
-所有包装脚本通过统一版本读取逻辑生成：DEB/TAR/MSI 等。
+Packaging scripts for DEB, TAR, and MSI read that version through one shared mechanism.
 
-发布前门禁：
+Release gates:
 
 1. format
 2. clippy

@@ -1,3 +1,4 @@
+[English](SYSTEM_ARCHITECTURE.md) | [Chinese](SYSTEM_ARCHITECTURE.zh-CN.md)
 # AICore System Architecture
 
 ## System Position

@@ -9,11 +9,11 @@ use aicore_contracts::{
     traits::task_queue::{transition, IPreparationAuthorization, ITaskQueue},
 };
 
-/// 内存 Task 队列。
+/// Memory Task queue.
 ///
-/// - 优先级：`effective_priority`（含 deadline）。
-/// - 过期：`dequeue` 时检查 deadline，过期置 Expired。
-/// - 线程安全：内部 `Mutex<QueueState>`。
+/// - Priority: `effective_priority` (including deadline).
+/// - Expiry: check deadline at `dequeue`, expired Expired.
+/// - Thread security: internal `Mutex<QueueState>`.
 pub struct InMemoryTaskQueue {
     state: Mutex<QueueState>,
 }
@@ -22,7 +22,7 @@ pub struct InMemoryTaskQueue {
 struct QueueState {
     /// task_id → QueuedTask
     tasks: HashMap<String, QueuedTask>,
-    /// 顺序 id 计数器（用于生成 task_id）。
+    /// Order id counter (used to generate task_id).
     next_seq: AtomicU64,
     preparations: HashMap<String, (u64, Arc<dyn IPreparationAuthorization>)>,
 }
@@ -92,7 +92,7 @@ impl ITaskQueue for InMemoryTaskQueue {
         let now_secs = now_unix_secs();
         let now_ms = now_unix_ms();
 
-        // 1. 过期清理：所有 Queued 且过期的 → Expired
+        // 1. Expired clean-up: all Queued and expired Expired
         let expired_ids: Vec<String> = state
             .tasks
             .values()
@@ -109,7 +109,7 @@ impl ITaskQueue for InMemoryTaskQueue {
             state.preparations.remove(&id);
         }
 
-        // 2. 找最高优先级的 Queued
+        // 2. Finding the highest priority
         let candidate = state
             .tasks
             .values()
@@ -178,7 +178,7 @@ impl ITaskQueue for InMemoryTaskQueue {
 }
 
 impl InMemoryTaskQueue {
-    /// 取消所有仍处于 queued/running 的任务。
+    /// Cancel all tasks that remain queued/running.
     pub fn cancel_all(&self) -> ContractResult<usize> {
         let mut state = self.lock()?;
         let now = now_unix_ms();
@@ -203,7 +203,7 @@ impl InMemoryTaskQueue {
         Ok(count)
     }
 
-    /// 清理所有任务。主要用于测试与显式用户操作。
+    /// Clears all tasks. This is mainly for testing and explicit user operations.
     pub fn clear(&self) -> ContractResult<()> {
         let mut state = self.lock()?;
         state.tasks.clear();
@@ -247,7 +247,7 @@ fn insert_task(state: &mut QueueState, mut task: QueuedTask) -> ContractResult<S
     Ok(id)
 }
 
-/// 共享包装，便于同时给 daemon 和 AdaptiveLoop 使用。
+/// Share packaging to facilitate simultaneous use of daemon and AdaptiveLoop.
 pub type SharedTaskQueue = Arc<dyn ITaskQueue>;
 
 fn now_unix_ms() -> u64 {

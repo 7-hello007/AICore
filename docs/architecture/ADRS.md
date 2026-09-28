@@ -1,6 +1,7 @@
+[English](ADRS.md) | [Chinese](ADRS.zh-CN.md)
 # ADR Index
 
-建议至少维护：
+Maintain at least the following architecture decision records:
 
 - ADR-001 Core Boundary
 - ADR-002 Three Independent Compatibility Tiers

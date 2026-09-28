@@ -11,7 +11,7 @@ use aicore_contracts::{
 use crate::context_merge::apply_task_contract;
 use crate::registry::ApplicationRegistry;
 
-/// 提交结果。
+/// Submission of results.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubmitResult {
     pub accepted: bool,
@@ -19,9 +19,9 @@ pub struct SubmitResult {
     pub message: String,
 }
 
-/// AICore 进程内公共 API。
+/// Public API within the AICore process.
 ///
-/// 阶段七只做进程内 API；跨进程 IPC 由后续阶段引入。
+/// Phase 7 is limited to API; cross-process IPC is introduced from the follow-up phase.
 pub struct PublicApi {
     registry: Arc<ApplicationRegistry>,
     task_queue: Arc<dyn ITaskQueue>,
@@ -35,7 +35,7 @@ impl PublicApi {
         }
     }
 
-    /// 使用 daemon 已有的共享 TaskQueue，确保进程内 API 与 IPC 具有相同提交语义。
+    /// Use the shared TaskQueue already available in daemon to ensure that API has the same syntax as IPC in the process.
     pub fn with_task_queue(mut self, task_queue: Arc<dyn ITaskQueue>) -> Self {
         self.task_queue = task_queue;
         self
@@ -49,7 +49,7 @@ impl PublicApi {
         &self.registry
     }
 
-    /// 注册应用。
+    /// Register application.
     pub fn register(
         &self,
         application_id: ApplicationId,
@@ -61,19 +61,19 @@ impl PublicApi {
             .register(application_id, name, version, capabilities)
     }
 
-    /// 注销应用。
+    /// Write-off application.
     pub fn unregister(&self, application_id: &ApplicationId) -> ContractResult<bool> {
         self.registry.unregister(application_id)
     }
 
-    /// 提交 TaskContract。
+    /// Submit TaskContract.
     ///
-    /// 校验：
-    /// - application_id 必须已注册
-    /// - task_id 若提供，长度 ≤ 256
-    /// - deadline_unix_secs 若提供，必须 > 0
+    /// Verify:
+    /// - application_id must be registered.
+    /// - task_id, if available, length 256
+    /// - deadline_unix_secs, if available, must > 0
     pub fn submit_task(&self, contract: &TaskContract) -> ContractResult<SubmitResult> {
-        // 1. 应用必须已注册
+        // Applications must be registered
         if !self.registry.is_registered(&contract.application_id)? {
             return Err(ContractError::AppNotRegistered(format!(
                 "application not registered: {}",
@@ -81,7 +81,7 @@ impl PublicApi {
             )));
         }
 
-        // 2. task_id 合法性
+        // 2. task_id Legitimacy
         if let Some(tid) = &contract.task_id {
             if tid.trim().is_empty() || tid.len() > 256 {
                 return Err(ContractError::ContractInvalid(
@@ -90,7 +90,7 @@ impl PublicApi {
             }
         }
 
-        // 3. deadline 合法性
+        // 3. Deadline Legitimacy
         if let Some(d) = contract.deadline_unix_secs {
             if d == 0 {
                 return Err(ContractError::ContractInvalid(
@@ -117,7 +117,7 @@ impl PublicApi {
         })
     }
 
-    /// 将契约应用到基础上下文。
+    /// Applies the compact to the following.
     pub fn merge_context(
         &self,
         base: &ContextSnapshot,

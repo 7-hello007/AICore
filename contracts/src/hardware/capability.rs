@@ -1,35 +1,35 @@
 use serde::{Deserialize, Serialize};
 
-/// 硬件能力等级。
+/// Hardware capability level.
 ///
-/// 用于 GPU / NPU 的**细粒度**能力声明。
+/// For GPU / NPU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HardwareCapability {
-    /// 设备身份（名称、厂商、型号）。
+    /// Equipment identity (name, manufacturer, model).
     DeviceIdentity,
-    /// 使用率遥测。
+    /// Use rate telemetry.
     UtilizationTelemetry,
-    /// 显存 / 内存遥测。
+    /// Visibility / memory telemetry.
     MemoryTelemetry,
-    /// 温度遥测。
+    /// Temperature telemetry.
     TemperatureTelemetry,
-    /// 队列 / 会话遥测。
+    /// Queue / session telemetry.
     QueueTelemetry,
-    /// Workload 提示（如 "graphics" / "compute"）。
+    /// Workload hints (e.g. "graphics"/ "compute").
     WorkloadHint,
-    /// Execution Provider 选择。
+    /// Exchange Provider selection.
     ProviderSelection,
-    /// 资源预留（queue / reservation）。
+    /// Que / reserve.
     ResourceReservation,
-    /// 模型放置（如"放到哪块 NPU"）。
+    /// Model placement (e.g. "where to put NPU").
     ModelPlacement,
-    /// 厂商专用控制。
+    /// Vendor-specific controls.
     VendorControl,
 }
 
 impl HardwareCapability {
-    /// 是否为只读遥测能力。
+    /// Whether to read telemetry only.
     pub fn is_telemetry(self) -> bool {
         matches!(
             self,
@@ -41,7 +41,7 @@ impl HardwareCapability {
         )
     }
 
-    /// 是否为控制类能力（需要显式授权）。
+    /// Whether it is a control capability (which requires explicit authorization).
     pub fn is_control(self) -> bool {
         !self.is_telemetry()
     }
@@ -62,7 +62,7 @@ impl HardwareCapability {
     }
 }
 
-/// 单个硬件能力的状态。
+/// Status of individual hardware capabilities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareCapabilityEntry {
     pub capability: HardwareCapability,
@@ -89,7 +89,7 @@ impl HardwareCapabilityEntry {
     }
 }
 
-/// 硬件设备类别。
+/// Hardware device category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum HardwareDeviceKind {
@@ -99,7 +99,7 @@ pub enum HardwareDeviceKind {
     Unknown,
 }
 
-/// 硬件能力清单。
+/// List of hardware capabilities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareCapabilitySet {
     pub device_name: String,

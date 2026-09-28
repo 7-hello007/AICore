@@ -4,21 +4,21 @@ use super::sysfs;
 
 const DRM_BASE: &str = "/sys/class/drm";
 
-/// 读取 GPU 遥测。
+/// Read GPU telemetry.
 ///
-/// 支持路径：
+/// Support path:
 /// - AMD (amdgpu): `/sys/class/drm/card*/device/gpu_busy_percent`
-/// - VRAM: `/sys/class/drm/card*/device/mem_info_vram_used` 与 `_total`
-/// - 温度: `/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input`
+/// VRAM: `/sys/class/drm/card*/device/mem_info_vram_used` and `_total`
+/// - Temperature: `/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input`
 ///
-/// 找不到任何 GPU 或读不到字段时返回全 None，不 panic。
+/// If no GPU is found, or a field cannot be read, return `None` values without panicking.
 pub fn read_gpu() -> GpuSnapshot {
     let mut snapshot = GpuSnapshot::default();
 
     let cards = sysfs::list_dir(DRM_BASE);
     for card in cards {
         if !card.starts_with("card") || card.contains('-') {
-            // 跳过 "card0-DP-1" 之类的连接器
+            // Skip a connector like "card0-DP-1"
             continue;
         }
 
@@ -27,16 +27,16 @@ pub fn read_gpu() -> GpuSnapshot {
             continue;
         }
 
-        // 读取 vendor / device id
+        // Read
         let vendor_id = sysfs::read_trimmed(format!("{}/vendor", device_path));
         let device_id = sysfs::read_trimmed(format!("{}/device", device_path));
 
-        // vendor 推断
+        // vendor extrapolation
         if snapshot.vendor.is_none() {
             snapshot.vendor = vendor_from_id(vendor_id.as_deref());
         }
 
-        // 名称：用 vendor + device id 合成，尽量避免空
+        // Name: Synthesize with vendor + data id to avoid empty
         if snapshot.name.is_none() {
             snapshot.name = Some(format!(
                 "{} ({})",
@@ -45,7 +45,7 @@ pub fn read_gpu() -> GpuSnapshot {
             ));
         }
 
-        // 使用率
+        // Usage
         if snapshot.usage_percent.is_none() {
             if let Some(v) = sysfs::read_f32(format!("{}/gpu_busy_percent", device_path)) {
                 snapshot.usage_percent = Some(v);
@@ -64,7 +64,7 @@ pub fn read_gpu() -> GpuSnapshot {
             }
         }
 
-        // 温度：遍历 hwmon
+        // Temperature: Through hwmon
         if snapshot.temperature_celsius.is_none() {
             snapshot.temperature_celsius = read_hwmon_temp(&device_path);
         }

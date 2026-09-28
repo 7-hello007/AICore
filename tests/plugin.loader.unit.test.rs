@@ -1,4 +1,4 @@
-//! DynamicPluginLoader 错误路径测试。
+//! DynamicPluginLoader error path test.
 
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ fn load_invalid_file_fails() {
 
     let loader = DynamicPluginLoader::new();
     let err = loader.load(&path).unwrap_err();
-    // 报 Open 错误，不是 panic
+    // Report Open Error, Not Panic
     assert!(matches!(err, LoadError::Open(_)));
 
     let _ = std::fs::remove_file(&path);

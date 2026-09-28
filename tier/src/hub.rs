@@ -13,13 +13,13 @@ use crate::{
     registry::{RegistryError, TierRegistry},
 };
 
-/// Tier Hub：Core 与 Tier 之间的唯一入口。
+/// TierHub is the sole entry point between Core and the tiers.
 ///
-/// 组合：
-/// - `TierRegistry`（元数据）
-/// - 4 个 `CapabilityRegistry`（能力实现）
+/// Composition:
+/// - `TierRegistry` (metadata)
+/// - Four `CapabilityRegistry` instances (capability implementations)
 ///
-/// Core **只依赖 Hub**；不直接持有任何 Tier 实例，不匹配 TierId。
+/// Core depends only on the hub; it neither holds tier instances nor matches TierId.
 pub struct TierHub {
     registry: TierRegistry,
     workload_sources: CapabilityRegistry<dyn IWorkloadSource>,
@@ -43,16 +43,16 @@ impl TierHub {
         &self.registry
     }
 
-    // === 元数据 ===
+    // === Metadata ===
 
-    /// 注册 Tier 元数据。不注册能力实现。
+    /// Register Tier metadata.
     pub fn register_tier(&self, reg: TierRegistration) -> Result<(), RegistryError> {
         self.registry.register(reg)
     }
 
-    /// 注销 Tier 元数据 **以及** 该 Tier 的所有能力实现。
+    /// Unregister tier metadata and all of its capability implementations.
     ///
-    /// 这是"删除 Tier 不影响其他 Tier"的关键实现。
+    /// Removing one tier must not affect the others.
     pub fn unregister_tier(
         &self,
         id: &aicore_contracts::tier::id::TierId,
@@ -62,7 +62,7 @@ impl TierHub {
             .unregister(id)
             .map_err(|e| TierHubError::Registry(e.to_string()))?;
 
-        // 能力实现也要一起注销，否则会留下悬空 provider。
+        // Remove capability implementations too, avoiding dangling providers.
         self.workload_sources
             .unregister(id)
             .map_err(|e| TierHubError::Capability(e.to_string()))?;
@@ -79,7 +79,7 @@ impl TierHub {
         Ok(removed)
     }
 
-    // === 能力注册 ===
+    // === Capability registration ===
 
     pub fn register_workload_source(
         &self,
@@ -119,9 +119,9 @@ impl TierHub {
             .register(tier_id, priority, provider)
     }
 
-    // === 能力查询（Core 使用） ===
+    // = = Capability queryCore Use) = =
 
-    /// 最高优先级的 workload source；空时返回 None。
+    /// highest priority workload source; return None.
     pub fn best_workload_source(
         &self,
     ) -> Result<Option<Arc<dyn IWorkloadSource>>, CapabilityRegistryError> {
@@ -146,14 +146,14 @@ impl TierHub {
         self.native_task_providers.best()
     }
 
-    /// 所有 workload sources，按 priority 降序。
+    /// All workloads, descend.
     pub fn all_workload_sources(
         &self,
     ) -> Result<Vec<Arc<dyn IWorkloadSource>>, CapabilityRegistryError> {
         self.workload_sources.all()
     }
 
-    /// 是否声明了某能力。
+    /// Is there a declaration of a certain ability.
     pub fn has_capability(&self, cap: TierCapability) -> Result<bool, TierHubError> {
         let regs = self
             .registry

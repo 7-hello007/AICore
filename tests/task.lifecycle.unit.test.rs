@@ -1,4 +1,4 @@
-//! TaskState 状态机测试。
+//! TaskState status machine test.
 
 use aicore_contracts::task::lifecycle::TaskState;
 

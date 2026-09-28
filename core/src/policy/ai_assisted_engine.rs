@@ -12,20 +12,20 @@ use aicore_contracts::{
     traits::{ai_provider::IAiProvider, policy_engine::IPolicyEngine},
 };
 
-/// AI 辅助策略引擎。
+/// AI Auxiliary Policy Engine.
 ///
-/// 行为：
-/// 1. 先调用 base 引擎（规则引擎），得到 base_policy。
-/// 2. 若 AI 不可用，直接返回 base_policy。
-/// 3. 若 AI 可用，调用 `IAiProvider::suggest`。
-/// 4. 若建议置信度低于 threshold，返回 base_policy。
-/// 5. 若建议 payload 是 Policy，标记来源为 `AiRecommended` 后返回。
-/// 6. 其他情况返回 base_policy。
+/// Conduct:
+/// 1. First call the base engine (ruled engine), get base_policy.
+/// 2. If AI is not available, return directly to base_policy.
+/// 3. Call `IAiProvider::suggest` if AI is available.
+/// 4. If confidence is less than present, return base_policy.
+/// 5. If Payload is recommended as Policy, the source of the tag is `AiRecommended` and returns.
+/// The others returned base_policy.
 ///
-/// 安全约定：
-/// - 不校验 AI 建议的合法性——那是 `DefaultPolicyValidator` 的职责。
-/// - AI 无法绕过 Validator。
-/// - AI 失败自动 fallback 到规则。
+/// Security engagement:
+/// - Do not verify the validity of the AI recommendation - that is the function of `DefaultPolicyValidator`.
+/// - AI cannot bypass Validator.
+/// - AI failed automatically fallback to rule.
 pub struct AiAssistedPolicyEngine {
     base: Arc<dyn IPolicyEngine>,
     ai: Option<Arc<dyn IAiProvider>>,
@@ -57,8 +57,8 @@ impl AiAssistedPolicyEngine {
         self.confidence_threshold
     }
 
-    /// 生成策略并返回 (policy, ai_suggestion)。
-    /// ai_suggestion 为 None 表示走了规则路径。
+    /// Generates policy and returns (policy, ai_suggestion).
+    /// ai_suggestion indicates that the rule path has been taken.
     pub fn generate_with_meta(
         &self,
         snapshot: &ComputerSnapshot,
@@ -67,7 +67,7 @@ impl AiAssistedPolicyEngine {
         self.generate_full(snapshot, context, None)
     }
 
-    /// 带 memory 上下文生成策略。
+    /// with memory context generation policy.
     pub fn generate_full(
         &self,
         snapshot: &ComputerSnapshot,
@@ -135,7 +135,7 @@ impl IPolicyEngine for AiAssistedPolicyEngine {
     }
 }
 
-/// 给 AiSuggestion 加一个便捷方法。
+/// Add an easy way to AiSuggestion.
 trait SuggestionSourceStr {
     fn source_str(&self) -> &'static str;
 }

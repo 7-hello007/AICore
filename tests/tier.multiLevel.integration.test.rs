@@ -1,7 +1,7 @@
-//! 多 Tier 隔离测试。
+//! Multiple Tier quarantine tests.
 //!
-//! 核心不变量：
-//! **删除 L0 / L1 / L2 中任意一个，其他 Tier 与 Core 均不受影响。**
+//! Core not variable:
+//! ** Delete any of L0 / L1 / L2, and none of the other Tiers and Core are affected.**
 
 use aicore_contracts::errors::AicoreError;
 use aicore_contracts::{
@@ -89,7 +89,7 @@ fn l1_declaration_flows_through_task_source() {
 
     source.set_current(dev_contract()).unwrap();
 
-    // 通过 hub 获取 task source（trait object；无需 ITaskSource 在 scope）
+    // Get task source through hub (trait object; no ITaskSource in scope)
     let best = hub.best_task_source().unwrap().unwrap();
     let got = best.current_task().unwrap().unwrap();
     assert_eq!(got.task, Some(WorkloadType::Development));

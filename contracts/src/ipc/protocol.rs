@@ -10,7 +10,7 @@ use crate::schema::SchemaVersion;
 use crate::task::contract::TaskContract;
 use crate::task::lifecycle::TaskState;
 
-/// IPC 协议版本。不兼容变更需递增 major。
+/// IPC protocol version. Incompatible changes require a major-version increment.
 pub const IPC_PROTOCOL_VERSION: SchemaVersion = SchemaVersion::CURRENT;
 /// V2 retains the typed payload schema and requires connection negotiation.
 /// This protocol version is independent from the general persistence schema.
@@ -27,7 +27,7 @@ pub fn negotiate_version(offered: &[SchemaVersion]) -> Option<SchemaVersion> {
         .find(|version| offered.contains(version))
 }
 
-/// 请求 / 响应 Envelope。
+/// Request/response envelope.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Envelope {
     pub version: SchemaVersion,
@@ -47,11 +47,11 @@ impl Envelope {
     }
 }
 
-/// 客户端请求。
+/// Client request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
-    /// 协商当前连接的 IPC 能力；旧客户端可以继续使用单响应流程。
+    /// Negotiate IPC capabilities; older clients may use the single-response flow.
     Handshake {
         capabilities: Vec<String>,
         /// Versions this client can actually use after negotiation. Old 1.0
@@ -59,18 +59,18 @@ pub enum Request {
         #[serde(default)]
         supported_versions: Vec<SchemaVersion>,
     },
-    /// 注册应用。
+    /// Register application.
     Register {
         application_id: ApplicationId,
         name: String,
         version: String,
         capabilities: Vec<String>,
     },
-    /// 注销应用。
+    /// Unregister an application.
     Unregister {
         application_id: ApplicationId,
     },
-    /// 提交 Task Contract。
+    /// Submit a Task Contract.
     SubmitTask {
         contract: TaskContract,
     },
@@ -102,25 +102,25 @@ pub enum Request {
         application_id: ApplicationId,
         handle_id: String,
     },
-    /// 查询 daemon 状态。
+    /// Query daemon status.
     GetStatus,
-    /// 查询能力列表。
+    /// Query capability list.
     GetCapabilities,
-    /// 查询最近一次上下文。
+    /// Query the latest context.
     GetContext,
-    /// 查询当前策略。
+    /// Query the current policy.
     GetPolicy,
-    /// 查询最近 N 条 tick 摘要。
+    /// Query the latest N tick summaries.
     GetRecentTicks {
         limit: usize,
     },
-    /// 查询所有插件。
+    /// Query all plugins.
     ListPlugins,
-    /// V3.2：一次拉取完整 Dashboard 快照。
+    /// V3.2: Full Dashboard snapshot at once.
     GetDashboardSnapshot,
 }
 
-/// 响应 Envelope。
+/// Response envelope.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResponseEnvelope {
     pub version: SchemaVersion,
@@ -154,12 +154,12 @@ impl ResponseEnvelope {
     }
 }
 
-/// 响应数据。
+/// Response data.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-// ResponseData 变体大小差异较大（Status 含完整 DaemonStatus，
-// DashboardSnapshot 已 box）。IPC 传输按引用处理，不做高频 clone，
-// 因此不把 Status 也 box 掉。若后续按值分发，需重新评估。
+// ResponseData variants differ considerably in size (Status holds a full DaemonStatus;
+// DashboardSnapshot is already boxed). IPC uses references, not frequent clones,
+// so Status stays unboxed. Reassess if values are dispatched by ownership later.
 #[allow(clippy::large_enum_variant)]
 pub enum ResponseData {
     HandshakeAck {
@@ -223,7 +223,7 @@ pub enum ResponseData {
     },
 }
 
-/// 插件条目 DTO（IPC 传输用，避免直接暴露 registry 内部类型）。
+/// Plugin entry DTO for IPC, avoiding exposure of registry internals.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginEntryDto {
     pub name: String,
@@ -240,7 +240,7 @@ pub struct PluginEntryDto {
     pub failure_count: u32,
 }
 
-/// IPC 错误。
+/// IPC error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IpcError {
     pub code: String,

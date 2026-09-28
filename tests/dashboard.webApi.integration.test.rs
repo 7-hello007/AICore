@@ -1,6 +1,6 @@
-//! Web Dashboard 静态冒烟测试。
+//! Web Dashboard static smoke testing.
 //!
-//! 不启动真实 daemon；只验证 crate 存在、静态资源被嵌入、二进制可构建。
+//! Do not start the real daemon; verify only the existence of the carte, the static resource is embedded, the binary is built.
 
 use std::path::PathBuf;
 

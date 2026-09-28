@@ -1,4 +1,4 @@
-//! OnnxRuntimeBackend 单元测试（基于 MockOnnxSession）。
+//! OnnxRuntimeBackend unit test (based on MockOnnxSession).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -97,7 +97,7 @@ fn load_missing_onnx_spec_rejected() {
     let mut spec = default_spec();
     spec.onnx_spec = None;
     let err = backend.load_model(&spec).unwrap_err();
-    // validate 会先失败
+    // Validate will fail first.
     assert!(matches!(err, AicoreError::ContractInvalid(_)));
 }
 
@@ -142,7 +142,7 @@ fn infer_with_wrong_shape_fails() {
         features: vec![],
         tensors: vec![TensorInput {
             name: "input".to_string(),
-            shape: vec![1, 3], // 期望 [1, 4]
+            shape: vec![1, 3], // Expectations [1],4
             data: vec![1.0, 0.5, 0.0],
         }],
     };
@@ -159,7 +159,7 @@ fn unload_removes_model() {
     backend.unload(&handle).unwrap();
     assert_eq!(backend.loaded_count(), 0);
 
-    // 二次 unload 失败
+    // Twice failed
     assert!(backend.unload(&handle).is_err());
 }
 
@@ -198,11 +198,11 @@ fn metrics_track_inferences() {
         }],
     };
 
-    // 2 次成功
+    // 2 successes
     backend.infer(&handle, &req).unwrap();
     backend.infer(&handle, &req).unwrap();
 
-    // 1 次失败
+    // 1 failure
     let bad_req = InferenceRequest {
         features: vec![],
         tensors: vec![],

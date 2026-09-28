@@ -6,10 +6,10 @@ use aicore_contracts::tier::{
     capability::TierCapability, id::TierId, level::TierLevel, registration::TierRegistration,
 };
 
-/// Tier 注册表。
+/// Tier registration form.
 ///
-/// **不保存 Tier 实例**——只保存注册元数据。
-/// 能力实现通过独立的 `CapabilityRegistry`（下一步）注册。
+/// ** The Tier instance is not saved** - Only registered metadata are kept.
+/// Capabilities are registered through an independent `CapabilityRegistry` (next).
 pub struct TierRegistry {
     registrations: RwLock<HashMap<TierId, TierRegistration>>,
 }
@@ -21,10 +21,10 @@ impl TierRegistry {
         }
     }
 
-    /// 注册一个 Tier。
+    /// Register a Tier.
     ///
-    /// - 校验 metadata 合法性。
-    /// - 同 id 重复注册 → 拒绝（避免意外覆盖）。
+    /// - Validate metadata validity.
+    /// - Same id duplicate registration rejected (avoid accidental coverage).
     pub fn register(&self, reg: TierRegistration) -> Result<(), RegistryError> {
         reg.validate().map_err(RegistryError::InvalidRegistration)?;
 
@@ -41,9 +41,9 @@ impl TierRegistry {
         Ok(())
     }
 
-    /// 注销一个 Tier。
+    /// Write off one Tier.
     ///
-    /// 返回是否成功移除。
+    /// Returns whether removal is successful.
     pub fn unregister(&self, id: &TierId) -> Result<bool, RegistryError> {
         let mut regs = self
             .registrations
@@ -52,7 +52,7 @@ impl TierRegistry {
         Ok(regs.remove(id).is_some())
     }
 
-    /// 查询单个 Tier。
+    /// Query single Tier.
     pub fn get(&self, id: &TierId) -> Result<Option<TierRegistration>, RegistryError> {
         let regs = self
             .registrations
@@ -61,7 +61,7 @@ impl TierRegistry {
         Ok(regs.get(id).cloned())
     }
 
-    /// 列出所有 Tier。
+    /// List all of Tiers.
     pub fn list(&self) -> Result<Vec<TierRegistration>, RegistryError> {
         let regs = self
             .registrations
@@ -72,7 +72,7 @@ impl TierRegistry {
         Ok(out)
     }
 
-    /// 按能力查询。
+    /// Query by capability.
     pub fn find_by_capability(
         &self,
         cap: TierCapability,
@@ -90,7 +90,7 @@ impl TierRegistry {
         Ok(out)
     }
 
-    /// 按 level 查询。
+    /// Press level query.
     pub fn find_by_level(&self, level: TierLevel) -> Result<Vec<TierRegistration>, RegistryError> {
         let regs = self
             .registrations
@@ -105,7 +105,7 @@ impl TierRegistry {
         Ok(out)
     }
 
-    /// 统计。
+    /// Statistics.
     pub fn count(&self) -> Result<usize, RegistryError> {
         let regs = self
             .registrations
@@ -114,7 +114,7 @@ impl TierRegistry {
         Ok(regs.len())
     }
 
-    /// 是否为空。
+    /// Is it empty?
     pub fn is_empty(&self) -> Result<bool, RegistryError> {
         Ok(self.count()? == 0)
     }

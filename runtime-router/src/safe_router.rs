@@ -9,21 +9,21 @@ use aicore_contracts::{
     traits::runtime_router::IRuntimeRouter,
 };
 
-/// 安全 Runtime 路由器。
+/// Safe Runtime router.
 ///
-/// 决策规则（按优先级）：
-/// 1. **未知 workload → Native**（不允许为 "AI 化" 强行改变）。
-/// 2. **低置信度 → Native**（`context.confidence < min_confidence`）。
-/// 3. **AI Inference 且 NPU 可用** → Npu。
-/// 4. **AI Inference 且 NPU 不可用但 GPU 可用** → Gpu。
-/// 5. **Rendering / VideoEditing 且 GPU 可用** → Gpu。
-/// 6. **Compilation 且 CPU 空闲** → Cpu。
-/// 7. **其他情况 → Native**。
+/// Decision-making rules (with priority):
+/// 1. ** Unknown workload → Native** (no forced change for "AI" allowed).
+/// 2. ** Low confidence ** Native** (`context.confidence < min_confidence`).
+/// 3. **AI Information and NPU is available**Npu.
+/// **AI Reference and NPU not available but GPU available** Gpu.
+/// 5. **Rendering / VideoEditing and GPU are available** Gpu.
+/// **Communication and CPU free** Cpu.
+/// 7. **Other information ** Native**.
 ///
-/// 特点：
-/// - 默认不改变应用路径（除非明确有收益）。
-/// - 每条决策都有 `reason` 与 `confidence`。
-/// - 路由失败不影响 Core（router 层无副作用）。
+/// Characteristics:
+/// - Default does not change the application path (unless there is an explicit gain).
+/// - Every decision has `reason` and `confidence`.
+/// - The failure of route does not affect Core (no side effects on the Router layer).
 pub struct SafeRuntimeRouter {
     min_confidence: f32,
     next_route: AtomicU64,
@@ -79,7 +79,7 @@ impl IRuntimeRouter for SafeRuntimeRouter {
             ));
         }
 
-        // 2. 低置信度 → Native
+        // 2. Low confidence
         if context.confidence < self.min_confidence {
             return Ok(with_metadata(
                 self.next_id(),

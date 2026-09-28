@@ -1,4 +1,4 @@
-# 升级 AICore Windows Service（带自动回滚）。
+# Upgrade AICore Windows Service (with automatic rollback).
 param(
     [Parameter(Mandatory = $true)]
     [string]$NewBinPath,
@@ -24,17 +24,17 @@ if (-not (Test-Path $target)) {
     exit 1
 }
 
-# 1. 备份
+# 1. Backup
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 Copy-Item $target "$backupDir\aicored.exe" -Force
 Write-Host "backed up -> $backupDir"
 
-# 2. 停服务
+# 2. Closure of services
 Write-Host "stopping service"
 Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 3
 
-# 3. 替换二进制
+# 3. Replacement binary
 try {
     Copy-Item $NewBinPath $target -Force
     Write-Host "binary replaced"
@@ -45,11 +45,11 @@ try {
     exit 1
 }
 
-# 4. 启动
+# Start
 sc.exe start $ServiceName | Out-Null
 Start-Sleep -Seconds 3
 
-# 5. 健康检查
+# 5. Health screening
 $svc = Get-Service -Name $ServiceName
 if ($svc.Status -ne "Running") {
     Write-Warning "health check failed; rolling back"

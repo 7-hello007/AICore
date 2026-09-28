@@ -1,12 +1,13 @@
+[English](CONFIGURATION.md) | [Chinese](CONFIGURATION.zh-CN.md)
 # Configuration
 
-配置必须可：
+Configuration must support:
 
-- 文件加载
-- 环境变量覆盖
-- CLI 临时覆盖
-- 版本迁移
-- 校验
-- 安全回退默认值
+- configuration-file loading
+- Environment-variable overrides
+- Temporary CLI overrides
+- Version migration
+- Validation
+- Safe fallback defaults
 
-配置优先级：`CLI > Environment > Config File > Defaults`。
+Configuration precedence: `CLI > Environment > Config File > Defaults`.

@@ -1,6 +1,6 @@
-//! AICore benchmark 工具。
+//! AICore benchmark tool.
 //!
-//! 跑 N 次 tick，输出 JSON 结果（延迟分布 + RSS + 线程数）。
+//! Run N Tick, output JSON results (delayed distribution + RSS + threads).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -236,7 +236,7 @@ fn build_platform() -> (Arc<dyn ITelemetryProvider>, Arc<dyn IPolicyExecutor>) {
     (telemetry, executor)
 }
 
-/// 读取进程 RSS（MB）。
+/// Read process RSS (MB).
 #[cfg(target_os = "linux")]
 fn read_rss_mb() -> u64 {
     let Ok(content) = std::fs::read_to_string("/proc/self/status") else {
@@ -257,7 +257,7 @@ fn read_rss_mb() -> u64 {
 
 #[cfg(target_os = "windows")]
 fn read_rss_mb() -> u64 {
-    // Windows: 简化，不引入 windows-sys 到 bench
+    // Windows: Simplify, not including Windows-sys to bench
     0
 }
 

@@ -1,6 +1,6 @@
 use crate::context::workload::WorkloadType;
 
-/// 分类器输入。纯数据，不依赖任何 core 类型。
+/// . Pure data, not dependent on any core type.
 #[derive(Debug, Clone, Default)]
 pub struct ClassificationInput {
     pub cpu_usage_percent: f32,
@@ -13,13 +13,13 @@ pub struct ClassificationInput {
     pub active_process_names: Vec<String>,
 }
 
-/// workload 分类器接口。
+/// Workload classification interface.
 ///
-/// 实现可以是规则、ML 模型、LLM。Core 只依赖这个接口。
+/// This can be the rule, ML model, LLM. Core relies only on this interface.
 pub trait ITaskClassifier: Send + Sync {
     fn classify(&self, input: &ClassificationInput) -> WorkloadType;
 
-    /// 返回分类置信度。实现可以覆盖；默认值仅作为兼容兜底。
+    /// Returns the class confidence. Accomplishment can be overridden; the default value is only used as a compatible loop.
     fn confidence(&self, input: &ClassificationInput) -> f32 {
         match self.classify(input) {
             WorkloadType::Unknown => 0.0,

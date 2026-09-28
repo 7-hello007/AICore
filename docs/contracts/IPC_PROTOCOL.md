@@ -1,3 +1,4 @@
+[English](IPC_PROTOCOL.md) | [Chinese](IPC_PROTOCOL.zh-CN.md)
 # IPC Protocol
 
 ```mermaid
@@ -11,7 +12,7 @@ sequenceDiagram
     S-->>C: Response(requestId, result)
 ```
 
-## 必须具备
+## Must have
 
 - `protocol_version`
 - `request_id`
@@ -24,52 +25,54 @@ sequenceDiagram
 - timeout
 - deterministic error model
 
-## 当前实现（destination 阶段进行中）
+## Current implementation (destination work in progress)
 
-`IpcClient::connect` 首先发送 `Handshake { capabilities: ["request_ack"] }`。
-服务端返回 `HandshakeAck`；协商成功后，每个合法请求依次收到同一
-`request_id` 的 `Ack` 和最终 `Response`。未发送握手的旧客户端仍按
-单响应流程处理。支持 `1.0` 和 `2.0`：`2.0` 使用相同的 typed payload，
-但要求先建立协商会话。新版握手列出 `supported_versions`，服务端选择双方
-支持的最高版本，响应 envelope 给出选定版本；仅提供不支持的版本会失败。
-非握手请求和 Ack/Response 必须使用该连接的选定版本，客户端检查版本与
-request ID。旧握手不带列表时按 envelope 版本处理；未握手的 `2.0`
-请求会被拒绝。`IpcClient::connect` 默认使用 `1.0`，
-`connect_with_versions` 可提供 `[2.0, 1.0]`。这是两个明确支持的版本，
-不表示任意未来主版本兼容。Windows 同用户 named-pipe 测试已覆盖 `2.0`
-握手、Ack 与 GetStatus。
+`IpcClient::connect` first sends `Handshake { capabilities: ["request_ack"] }`.
+The service returns `HandshakeAck`. After successful negotiation, every valid request receives an `Ack` and
+final `Response` with the same `request_id`. Legacy clients that do not send a handshake retain the single-response
+flow. Versions `1.0` and `2.0` are explicitly supported. Version `2.0` uses the same typed payloads but requires a
+negotiated session. A current handshake supplies `supported_versions`; the service selects the highest mutually
+supported version and returns it in the response envelope. The request, acknowledgement, and response must all use
+the selected version, and the client checks both version and request ID. A legacy handshake without a version list
+uses its envelope version; an unnegotiated `2.0` request is rejected. `IpcClient::connect` defaults to `1.0`, while
+`connect_with_versions` can offer `[2.0, 1.0]`. Supporting these versions does not imply compatibility with an
+arbitrary future major version. Same-user Windows named-pipe tests cover `2.0` negotiation, Ack, and GetStatus.
 
-Linux Unix socket 使用所有者 `0600` 权限，并在接受连接时提取 peer UID/PID、
-`/proc/<pid>/stat` 的进程启动 tick 及 `/proc/<pid>/exe` 的设备号/inode；
-缺失身份或不同 UID 的连接被拒绝。应用相关请求再次核对实时身份，
-包括可执行文件是否已变更；无法读取时拒绝该请求。
-服务端最多保留 32 个连接，空闲连接 30 秒关闭。
-request ID 去重覆盖单个连接的整个寿命；达到 4096 个 ID 后服务端关闭连接，
-不提供跨连接的持久幂等性。重复 ID 返回错误，且不会再次调用业务处理器。
-Windows named pipe 代码配置所有者和 LocalSystem 的受限 DACL，拒绝远程客户端；
-首次创建要求独占 pipe 名称，并保留一个等待连接的实例防止空窗抢占。
-服务端提取客户端 PID 与进程创建时间；MSVC 目标编译已检查，Windows 运行时
-同用户身份、可执行文件 SHA-256 与 SID 策略已运行验证；跨用户 ACL 拒绝
-仍未认证。
-`Register` 把应用 ID 绑定到当前连接的 OS peer 身份；后续修改应用状态或任务的
-请求必须匹配该身份，其他 peer 不能接管同一个已注册 ID。Linux 注册重连时
-会确认旧 PID 消失或启动时间/UID/可执行文件身份变化后回收绑定并清除
-L1 声明；读取失败时保留旧绑定，防止误接管。Windows 代码也检查进程退出或 PID/创建时间变化，
-但跨用户 ACL 和失效回收尚无完整原生矩阵证据。配置 `AICORE_APP_POLICY_PATH`
-后，应用每次操作需要操作员 pin 的可执行文件 SHA-256、per-action grant，
-以及非空 `allowed_principals` 中的 Windows SID 或 Linux `uid:<number>`。
-这些值由认证 peer 只读解析，不能由请求体声明；SID 缺失或不匹配即拒绝。
-空 principal 列表保留旧 artifact-only 策略。文件 hash 不等同于签名校验
-或已加载进程映像完整性证明。连接关闭本身不立即取消任务；定期失效清理确认旧
-进程退出或身份变化后，会取消该应用的活跃排队任务并清除 L1/注册信息。
+The Linux Unix-domain socket uses owner-only `0600` permissions. On connection, the service extracts the peer
+UID and PID, the process start time from `/proc/<pid>/stat`, and the executable device and inode from
+`/proc/<pid>/exe`. Missing identity or a different UID is rejected. Application requests revalidate the live
+identity, including executable replacement, and fail closed when identity cannot be read. The service permits at
+most 32 connections and closes an idle connection after 30 seconds. Request-ID deduplication spans one connection;
+after 4096 IDs, the service closes that connection rather than claiming persistent idempotency across connections.
+A duplicate ID returns an error without calling the business handler again.
 
-应用请求中已有 `Register`、`Unregister` 和 `SubmitTask`。当前还提供
-`DeclareCurrentTask`、`ClearCurrentTask`（L1 当前任务）以及
-`SubmitNativeTask`、`GetNativeTask`、`CancelNativeTask`（L2 共享队列生命周期）。
-L2 查询/取消同时检查句柄应用 ID 与当前 peer 所有权，L2 提供者只操作自己创建的句柄。
-`SubmitNativeTask` 进入现有任务队列，不直接触发宿主机执行。
+The Windows named-pipe implementation creates a restricted DACL for the owner and `LocalSystem`, rejects remote
+clients, requests first-instance ownership of the pipe name, and keeps a waiting instance to prevent a creation-gap
+takeover. It extracts the client PID and process creation time. MSVC target compilation and same-user runtime checks
+for peer identity, executable SHA-256, and SID policy have passed. Cross-user ACL rejection is not yet certified.
 
-`PrepareUpcomingTask` 创建应用资源准备任务，需要独立 `prepare_task` grant
-和个人记忆 consent；详情见 [SCHEDULING_AND_FEEDBACK](../runtime/SCHEDULING_AND_FEEDBACK.md)。
-`ProposeIntent` 的本地 JSON、ONNX、Ollama 与协作后端配置见
-[INTENT_BACKENDS](../ai/INTENT_BACKENDS.md)。
+`Register` binds an application ID to the current operating-system peer identity. Later requests that change the
+application's state or tasks must match that identity, and another peer cannot take over the registered ID. On
+Linux, reconnection reclaims a binding and clears the L1 declaration only after confirming that the old PID is gone
+or its start time, UID, or executable identity changed. A read failure preserves the old binding to prevent an
+incorrect takeover. Windows code also checks process exit and PID or creation-time changes, but cross-user ACL and
+stale-binding cleanup do not yet have complete native matrix evidence.
+
+When `AICORE_APP_POLICY_PATH` is configured, every pinned action requires the executable SHA-256, an action-specific
+grant, and a nonempty `allowed_principals` entry containing a Windows SID or Linux `uid:<number>`. These values are
+resolved read-only from the authenticated peer and cannot be asserted by the request body. Missing or mismatched
+identity is rejected. An empty principal list retains legacy artifact-only policy. A file digest is not equivalent
+to signature verification or proof of the loaded process image. Closing a connection does not immediately cancel
+tasks; periodic stale-identity cleanup cancels active queued tasks and removes the application's L1 and registration
+state after it confirms that the process exited or its identity changed.
+
+Application requests include `Register`, `Unregister`, and `SubmitTask`, plus `DeclareCurrentTask` and
+`ClearCurrentTask` for L1, and `SubmitNativeTask`, `GetNativeTask`, and `CancelNativeTask` for the shared L2 queue
+lifecycle. L2 queries and cancellation verify both the application ID in the handle and current peer ownership.
+The L2 provider operates only on handles it created. `SubmitNativeTask` enters the existing task queue and does not
+directly trigger host execution.
+
+`PrepareUpcomingTask` creates an application resource-preparation task and requires a separate `prepare_task` grant
+plus consent for personal memory. See [Scheduling and Feedback](../runtime/SCHEDULING_AND_FEEDBACK.md).
+Configuration for the local JSON, ONNX, Ollama, and collaborative `ProposeIntent` backends is documented in
+[Intent Backends](../ai/INTENT_BACKENDS.md).

@@ -24,7 +24,7 @@ fn telemetry_to_context_pipeline() {
     let engine = ContextEngine::new(Arc::new(RuleBasedClassifier::new()));
     let ctx = engine.build(&state);
 
-    // 基本不变量
+    // Basic not variable
     assert!(ctx.timestamp_unix_ms.is_some());
     assert!(ctx.confidence >= 0.0 && ctx.confidence <= 1.0);
     assert!(ctx.active_apps.len() <= 16);

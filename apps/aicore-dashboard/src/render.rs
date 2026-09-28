@@ -1,8 +1,8 @@
 use crate::snapshot::DashboardSnapshot;
 
-/// 把快照渲染为字符串。
+/// Render snapshots as strings.
 ///
-/// 纯函数，无副作用，宽度自适应。
+/// Pure function, no side effects, width adjusts.
 pub fn render(snapshot: &DashboardSnapshot, width: usize) -> String {
     let w = width.max(60);
     let mut out = String::new();

@@ -6,7 +6,7 @@
     candle aicore.wxs
     light -out aicore.msi aicore.wixobj
 
-  或通过 build-msi.ps1 自动构建。
+  or build automatically via build-msi.ps1.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product Id="*"

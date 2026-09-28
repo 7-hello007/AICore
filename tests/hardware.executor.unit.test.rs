@@ -1,4 +1,4 @@
-//! 硬件执行器测试。
+//! Hardware implementer test.
 
 use aicore_contracts::traits::hardware_executor::{
     HardwareExecutionHint, HardwareExecutionRequest, HardwareExecutionStatus, IHardwareExecutor,

@@ -1,10 +1,10 @@
-# AICore rustfmt 配置
+# AICore rustfmt configuration
 #
-# 只使用 rustfmt stable 选项。
-# 原因：本项目的 rust-toolchain.toml 锁定 Rust 1.75（stable），
-# CI 使用 dtolnay/rust-toolchain@1.75。
+# Use only rustfmt stable options.
+# Reason: The rust-toolchain.toml locks Rust 1.75 (stable) on this project.
+# CI uses dtolnay/rust-toolchain@1.75.
 #
-# 以下选项在 rustfmt 1.7.0-stable 上是 unstable，本仓库不使用：
+# The following options are not used in this repository:
 #   - imports_granularity
 #   - group_imports
 #   - wrap_comments
@@ -14,31 +14,31 @@
 #   - blank_lines_upper_bound
 #   - blank_lines_lower_bound
 #
-# 在 stable 上使用会打出 warning 并被静默忽略。
-# 该格式策略由本文件直接定义；不绑定 ADR 编号，避免与架构 ADR 编号冲突。
+# Using these options on stable Rust would emit warnings or ignore them.
+# This file defines formatting policy directly and does not reuse architecture ADR numbers.
 
 edition = "2021"
 max_width = 100
 
-# 字段初始化简写：Foo { x, y } 而非 Foo { x: x, y: y }
+# Initialize fields as `Foo { x, y }` instead of `Foo { x: x, y: y }`.
 use_field_init_shorthand = true
 
-# 使用 `?` 而非手写 match
+# Use `?` instead of a handwritten forwarding match.
 use_try_shorthand = true
 
-# 跨平台统一 LF
+# Use LF consistently across platforms.
 newline_style = "Unix"
 
-# 显式声明空格缩进
+# Use spaces for indentation.
 hard_tabs = false
 tab_spaces = 4
 
-# import 与 mod 声明排序
+# Ordering
 reorder_imports = true
 reorder_modules = true
 
-# match arm 尾逗号（stable）
+# Add trailing commas to block-style match arms.
 match_block_trailing_comma = true
 
-# 合并相邻的 #[derive]
+# Merge adjacent `#[derive]` attributes.
 merge_derives = true

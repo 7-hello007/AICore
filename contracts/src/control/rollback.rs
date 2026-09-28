@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-/// 回退记录。
+/// Turn back the record.
 ///
-/// 每次控制尝试失败并回退时生成；用于审计与追踪。
+/// Each control attempt failed and was generated back; used for audit and tracking.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RollbackRecord {
-    /// 是否触发了回退。
+    /// Whether or not to trigger a retreat.
     pub triggered: bool,
-    /// 回退前生效的 policy id（None 表示无前一条）。
+    /// (None indicates no previous article).
     pub from_policy_id: Option<String>,
-    /// 回退目标 policy id（None 表示无可用回退目标）。
+    /// Backward target id (None means no available return target).
     pub to_policy_id: Option<String>,
-    /// 回退原因。
+    /// Reason for retreat.
     pub reason: Option<String>,
-    /// 回退是否成功。
+    /// Whether or not the retreat was successful.
     pub succeeded: Option<bool>,
 }
 

@@ -1,16 +1,16 @@
-//! Daemon 生命周期集成测试。
+//! Daemon Life Cycle Integration Test.
 //!
-//! 通过子进程启动 `aicored --once`，验证：
-//! - 进程退出码为 0
-//! - 状态文件被写入且结构合法
+//! Start `aicored --once` by subprocess, verify:
+//! - Process exit code 0
+//! - Status files are written and structurally valid
 
 use std::path::PathBuf;
 use std::process::Command;
 
 fn daemon_bin() -> PathBuf {
-    // 测试运行时，编译好的二进制在 target/debug/aicored
+    // Compiled binary in target/debug/aicored while testing running
     let mut path = std::env::current_exe().expect("current_exe");
-    path.pop(); // 去掉测试文件名
+    path.pop(); // Remove test filenames
     if path.ends_with("deps") {
         path.pop();
     }

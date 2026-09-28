@@ -21,9 +21,9 @@ impl ValidationResult {
     }
 }
 
-/// Policy Validator 接口。
+/// Polycy Validator interface.
 ///
-/// 所有策略必须经过此接口后才可进入 Executor。
+/// Every policy must pass through this interface before reaching an executor.
 pub trait IPolicyValidator: Send + Sync {
     fn validate(&self, policy: &ResourcePolicy) -> ValidationResult;
     fn name(&self) -> &'static str;

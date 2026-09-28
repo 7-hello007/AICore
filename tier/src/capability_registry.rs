@@ -2,17 +2,17 @@ use std::sync::{Arc, RwLock};
 
 use aicore_contracts::tier::{capability::TierCapability, id::TierId};
 
-/// 单个能力实现的注册项。
+/// Registration of individual competencies.
 struct CapabilityEntry<T: ?Sized> {
     tier_id: TierId,
     priority: u32,
     provider: Arc<T>,
 }
 
-/// 通用能力注册表。
+/// Universal competency registration form.
 ///
-/// 每种能力（WorkloadSource / TaskSource / ...）有一个独立的 registry 实例。
-/// Core 通过 `best()` / `all()` 查询能力，**不通过 TierId 分支**。
+/// Each capability (WorkloadSource / TaskSource / ...) has an independent registry example.
+/// Core used `best()`/`all()` query capability,** not TierId branch**.
 pub struct CapabilityRegistry<T: ?Sized> {
     capability: TierCapability,
     entries: RwLock<Vec<CapabilityEntry<T>>>,
@@ -30,10 +30,10 @@ impl<T: ?Sized + Send + Sync + 'static> CapabilityRegistry<T> {
         self.capability
     }
 
-    /// 注册一个能力实现。
+    /// Register an implemented capability.
     ///
-    /// - 相同 `tier_id` 重复注册 → 覆盖。
-    /// - 不同 `tier_id` 可以共存；`priority` 决定选择顺序。
+    /// - Same `tier_id` duplicate register overwrite.
+    /// - Different `tier_id` can coexist; `priority` decides the order of choice.
     pub fn register(
         &self,
         tier_id: TierId,
@@ -55,7 +55,7 @@ impl<T: ?Sized + Send + Sync + 'static> CapabilityRegistry<T> {
         Ok(())
     }
 
-    /// 注销某个 tier 的能力。
+    /// Write off a tier capability.
     pub fn unregister(&self, tier_id: &TierId) -> Result<bool, CapabilityRegistryError> {
         let mut entries = self
             .entries
@@ -66,7 +66,7 @@ impl<T: ?Sized + Send + Sync + 'static> CapabilityRegistry<T> {
         Ok(entries.len() < before)
     }
 
-    /// 返回优先级最高的 provider。空 registry 返回 `None`。
+    /// Returns the highest priority provider. Empty registry returns `None`.
     pub fn best(&self) -> Result<Option<Arc<T>>, CapabilityRegistryError> {
         let entries = self
             .entries
@@ -75,7 +75,7 @@ impl<T: ?Sized + Send + Sync + 'static> CapabilityRegistry<T> {
         Ok(entries.first().map(|e| e.provider.clone()))
     }
 
-    /// 返回所有 provider，按 priority 降序。
+    /// returns all providers, in descending order.
     pub fn all(&self) -> Result<Vec<Arc<T>>, CapabilityRegistryError> {
         let entries = self
             .entries
@@ -84,7 +84,7 @@ impl<T: ?Sized + Send + Sync + 'static> CapabilityRegistry<T> {
         Ok(entries.iter().map(|e| e.provider.clone()).collect())
     }
 
-    /// 返回 provider 对应的 TierId 列表。
+    /// Returns the list of TierId that corresponds to the provider.
     pub fn tier_ids(&self) -> Result<Vec<TierId>, CapabilityRegistryError> {
         let entries = self
             .entries

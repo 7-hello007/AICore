@@ -1,3 +1,4 @@
+[English](DESTINATION_REQUIREMENTS.md) | [Chinese](DESTINATION_REQUIREMENTS.zh-CN.md)
 # Destination requirements: implementation and acceptance inventory
 
 This inventory follows the root `destination.md` (especially Phases 1–8 and MVP/V2/V3). It describes the current source, not a claim that model execution certifies real hardware. `V4_DEFECT_CORRECTION_REPORT.md` records the earlier V4 code gate only. Each item remains open until its implementation, integration, observability, failure tests, platform declaration, documentation and overhead budget are evidenced per `ACCEPTANCE_MODEL.md`.
@@ -27,7 +28,7 @@ Windows captures and exercises the existing Platform Mode interfaces in memory. 
 passing tests narrow integration risk for D-03/D-05/D-12 but do not close
 hardware, effect or Windows native control acceptance gaps.
 
-Current desktop authorization permits native certification with original-state capture,
+During the previous native-verification round, desktop authorization permitted certification with original-state capture,
 restoration and readback, excludes installer execution, and confines downloads to
 project `env/`. The current workspace suite has **no native-control filters**.
 Owned child targets replace system/current-process targets; native power tests

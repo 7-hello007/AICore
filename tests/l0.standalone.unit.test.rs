@@ -1,4 +1,4 @@
-//! L0 独立测试：注册、观察、建议。
+//! L0 Independent testing: registration, observation, recommendation.
 
 use aicore_contracts::{
     context::{
@@ -106,7 +106,7 @@ fn adaptation_provider_downgrades_gpu_when_unavailable() {
 
     let hint = provider.suggest(&snap, &ctx).unwrap().unwrap();
     let policy = hint.policy_override.unwrap();
-    // GPU / NPU 不可用 → 优先级降级
+    // GPU / NPU not available
     assert_eq!(
         policy.gpu.priority,
         aicore_contracts::policy::priority::PolicyPriority::Normal
@@ -116,7 +116,7 @@ fn adaptation_provider_downgrades_gpu_when_unavailable() {
         aicore_contracts::policy::priority::PolicyPriority::Normal
     );
     assert!(!policy.npu.preferred);
-    // reason 里应有降级说明
+    // There should be a demotion note in the news.
     assert!(hint.reason.contains("gpu_unavailable"));
     assert!(hint.reason.contains("npu_unavailable"));
 }

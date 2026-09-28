@@ -1,19 +1,20 @@
+[English](TEST_NAMING.md) | [Chinese](TEST_NAMING.zh-CN.md)
 # Test Naming
 
-测试目录必须扁平：只有 `tests/`，不得按类别创建子目录。
+The test directory must be flat: only `tests/`, and no subdirectories should be created by category.
 
-格式：
+Format:
 
-`功能名.功能说明[.功能补充说明].test.后缀名`
+`featureName.behavior[.detail].test.extension`
 
-规则：
+Rules:
 
-- 驼峰式命名
-- 说明尽量不超过 5 个单词
-- 功能名必须对应真实模块/能力
-- 禁止 `test1` / `tempTest` / `newTest`
+- Use lower camel case for each name segment.
+- Keep each description within five words where practical.
+- Use a real module or capability name as the feature segment.
+- Do not use placeholders such as `test1`, `tempTest`, or `newTest`.
 
-示例：
+Example:
 
 ```text
 context.buildState.test.rs

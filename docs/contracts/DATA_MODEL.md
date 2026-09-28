@@ -1,6 +1,7 @@
+[English](DATA_MODEL.md) | [Chinese](DATA_MODEL.zh-CN.md)
 # Data Model
 
-核心实体：
+Core entities:
 
 ```mermaid
 classDiagram
@@ -21,14 +22,14 @@ classDiagram
     class AiSuggestion
 ```
 
-### 核心实体规则
+### Core entity rules
 
-| Entity | 作用 |
+| Entity | Role |
 |---|---|
-| ComputerState | 实时系统状态 |
-| ContextSnapshot | 当前任务上下文 |
-| ResourcePolicy | 决策结果 |
-| ExecutionResult | 实际执行结果 |
-| HistoricalRecord | 长期反馈 |
-| UserProfile | 稳定用户偏好 |
-| AiSuggestion | AI 建议，不等价于执行 |
+| ComputerState | Real-time system state |
+| ContextSnapshot | Context of the current task |
+| ResourcePolicy | Resource-control decision |
+| ExecutionResult | Observed execution outcome |
+| HistoricalRecord | Long-term feedback |
+| UserProfile | Stable user preferences |
+| AiSuggestion | Advisory AI output, never an authorization |

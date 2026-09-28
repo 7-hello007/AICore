@@ -7,7 +7,7 @@ use aicore_contracts::ipc::protocol::{
 
 use crate::transport::{client_connect, IpcStream, IpcTransport};
 
-/// 简单的 IPC 客户端。一次请求一次响应。
+/// A simple IPC client. A request for a response once.
 pub struct IpcClient {
     stream: IpcStream,
     ack_enabled: bool,
@@ -15,7 +15,7 @@ pub struct IpcClient {
 }
 
 impl IpcClient {
-    /// 连接到 IPC server。
+    /// Connect to IPC server.
     pub async fn connect(path: impl Into<PathBuf>) -> std::io::Result<Self> {
         Self::connect_with_versions(path, vec![IPC_PROTOCOL_VERSION]).await
     }
@@ -80,7 +80,7 @@ impl IpcClient {
         })
     }
 
-    /// 发送请求并等待响应，超时由调用方提供。
+    /// Sends a request and waits for a response.
     pub async fn call(
         &mut self,
         request_id: &str,
@@ -164,7 +164,7 @@ async fn read_response_until(
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
-/// 从 `ResponseEnvelope` 提取数据或错误。
+/// Extract data or error from `ResponseEnvelope`.
 pub fn unwrap_response(resp: ResponseEnvelope) -> Result<ResponseData, IpcError> {
     if resp.success {
         resp.data

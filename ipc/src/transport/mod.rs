@@ -60,7 +60,7 @@ pub use windows::{client_connect, server_listen, IpcListener, IpcStream};
 #[cfg(target_os = "windows")]
 pub(crate) use windows::{process_creation_time, process_executable_path, process_identity_stale};
 
-/// 传输层抽象。
+/// The transfer layer is abstract.
 #[async_trait]
 pub trait IpcTransport: Send + Sync {
     async fn read_message(&mut self) -> io::Result<Option<String>>;

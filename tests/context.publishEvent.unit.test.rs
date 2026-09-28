@@ -55,7 +55,7 @@ fn bus_without_subscribers_is_noop() {
         timestamp_unix_ms: 0,
         context: ContextSnapshot::default(),
     });
-    bus.publish(&event); // 不应 panic
+    bus.publish(&event); // Not Panic
     assert_eq!(bus.subscriber_count(), 0);
 }
 

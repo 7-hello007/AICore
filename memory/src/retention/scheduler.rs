@@ -8,19 +8,19 @@ use aicore_contracts::{
     traits::memory_store::IMemoryStore,
 };
 
-/// 保留调度器。
+/// Retention scheduler.
 ///
-/// 语义：
-/// - 无副作用地判断是否该运行（`should_run`）。
-/// - 每次运行产出 `RetentionReport`（同时写入审计缓冲）。
-/// - `retention_days` 从 `UserProfile` 读取，作为唯一权威。
-/// - cutoff 由传入的 `now` 计算，保证 `run_once_at(now)` 的时间可控。
-/// - 失败不会 panic，报告 `RetentionReport::failure`。
+/// Semantics:
+/// - `should_run` decides without side effects.
+/// - Each run returns a `RetentionReport` and writes it to the audit buffer.
+/// - `retention_days` read from `UserProfile` as sole authority.
+/// - The supplied `now` determines the cutoff, making `run_once_at(now)` deterministic.
+/// - Failures are reported through `RetentionReport::failure` without panicking.
 ///
-/// 时间语义：
-/// - 所有运行时间与记录时间统一使用 Unix milliseconds (`unix_ms`)。
-/// - `RetentionPolicy.check_interval_secs` 仍保留“秒”作为配置单位，
-///   在调度器内部转换为毫秒进行比较。
+/// Time semantics:
+/// - Run and record timestamps use Unix milliseconds (`unix_ms`).
+/// - `RetentionPolicy.check_interval_secs` remains configured in seconds and
+///   is converted to milliseconds before comparison.
 pub struct RetentionScheduler {
     store: Arc<dyn IMemoryStore>,
     policy: RetentionPolicy,
@@ -46,13 +46,13 @@ impl RetentionScheduler {
         &self.policy
     }
 
-    /// 判断是否应在本时间点运行。
+    /// Determines whether it should run at this time point.
     ///
-    /// `now` 使用 Unix milliseconds。
+    /// `now` uses Unix milliseconds.
     ///
-    /// - `policy.enabled = false` → 永远 false。
-    /// - 从未运行过 → true（首次立即运行）。
-    /// - 距离上次运行 ≥ `check_interval_secs` → true。
+    /// - `policy.enabled = false` → always false.
+    /// - Never run → true, so the first run is immediate.
+    /// - At least `check_interval_secs` since the last run → true.
     pub fn should_run(&self, now: u64) -> bool {
         if !self.policy.enabled {
             return false;
@@ -64,20 +64,20 @@ impl RetentionScheduler {
             return true;
         }
 
-        // 配置仍然以秒保存，因此比较前转换成毫秒。
+        // The configuration is still saved in seconds and is therefore converted to milliseconds before comparison.
         let check_interval_ms = self.policy.check_interval_secs.saturating_mul(1_000);
 
         now.saturating_sub(last) >= check_interval_ms
     }
 
-    /// 使用当前时间运行（供生产环境）。
+    /// Run using current time (for the production environment).
     pub fn run_once(&self) -> ContractResult<RetentionReport> {
         self.run_once_at(now_unix_ms())
     }
 
-    /// 在指定时间点运行（供测试）。
+    /// Run at the specified time point (for testing).
     ///
-    /// `now` 使用 Unix milliseconds。
+    /// `now` uses Unix milliseconds.
     pub fn run_once_at(&self, now: u64) -> ContractResult<RetentionReport> {
         let report = self.evaluate(now);
 
@@ -89,15 +89,15 @@ impl RetentionScheduler {
             audit.push_back(report.clone());
         }
 
-        // 无论成功、失败、跳过，都更新 last_run，
-        // 避免调度器在连续调用时发生紧密重试。
+        // Update last_run after success, failure, or skip.
+        // This avoids tight retries when the scheduler is called repeatedly.
         self.last_run_unix_ms.store(now, Ordering::SeqCst);
 
         Ok(report)
     }
 
     fn evaluate(&self, now: u64) -> RetentionReport {
-        // 1. 读取 profile
+        // 1. Read the profile.
         let profile = match self.store.load_profile() {
             Ok(p) => p,
             Err(e) => {
@@ -105,16 +105,16 @@ impl RetentionScheduler {
             },
         };
 
-        // 2. retention_days = 0 → 表示无限保留，跳过
+        // 2. retention_days = 0 means unlimited retention; skip cleanup.
         if profile.retention_days == 0 {
             return RetentionReport::skipped(now, 0, "retention_days = 0 (unlimited)");
         }
 
-        // 3. 根据传入的 now 计算 cutoff。
+        // 3. Calculate the cutoff from the supplied now.
         //
-        // 不调用 store.apply_retention(days)，因为它可能使用
-        // 实际系统时间，而 run_once_at(now) 要求整个过程使用
-        // 调用方传入的确定性时间。
+        // Do not call store.apply_retention(days): it may use wall-clock time,
+        // while run_once_at(now) requires deterministic time throughout.
+        // Use the caller-supplied timestamp for every step instead.
         const DAY_MS: u64 = 86_400_000;
 
         let retention_ms = (profile.retention_days as u64).saturating_mul(DAY_MS);
@@ -132,7 +132,7 @@ impl RetentionScheduler {
         }
     }
 
-    /// 返回审计日志（从旧到新）。
+    /// Returns the audit log (from old to new).
     pub fn audit_log(&self) -> Vec<RetentionReport> {
         self.audit
             .lock()
@@ -140,15 +140,15 @@ impl RetentionScheduler {
             .unwrap_or_default()
     }
 
-    /// 返回最近一次运行时间。
+    /// Returns the last run time.
     ///
-    /// 返回值使用 Unix milliseconds。
-    /// 0 表示从未运行。
+    /// Returns values with Unix milliseconds.
+    /// 0 indicates never running.
     pub fn last_run_unix_ms(&self) -> u64 {
         self.last_run_unix_ms.load(Ordering::SeqCst)
     }
 
-    /// 清空审计日志。
+    /// Clear the audit log.
     pub fn clear_audit(&self) {
         if let Ok(mut audit) = self.audit.lock() {
             audit.clear();
@@ -156,7 +156,7 @@ impl RetentionScheduler {
     }
 }
 
-/// 当前 Unix 时间，单位：milliseconds。
+/// Current Unix time, in milliseconds.
 fn now_unix_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
 

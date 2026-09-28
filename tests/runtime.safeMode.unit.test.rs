@@ -51,7 +51,7 @@ fn success_resets_failure_count() {
     assert_eq!(c.current_mode(), RuntimeMode::Degraded);
     c.record_success();
     assert_eq!(c.consecutive_failures(), 0);
-    // 单次成功不足 recovery_threshold=2，仍为 Degraded
+    // Not enough single success recovery_threshold = 2, still Degraded
     assert_eq!(c.current_mode(), RuntimeMode::Degraded);
 }
 

@@ -1,16 +1,16 @@
-//! 长稳测试。
+//! Long and steady.
 //!
-//! 时长由 `AICORE_LONG_RUN_SECONDS` 控制：
-//! - 默认 30 秒（本地 / CI smoke）
+//! Length controlled by `AICORE_LONG_RUN_SECONDS`:
+//! - Default 30 seconds (local / CI smoke)
 //! - CI nightly：3600
-//! - 产品验收：86400
+//! - Product acceptance: 86400
 //!
-//! 断言（不依赖绝对阈值，只验证不变量）：
-//! - tick 计数 == 期望
-//! - RSS 增长 ≤ 32MB（合理上限，容器环境）
-//! - 线程数增长 ≤ 8（tokio runtime 已稳定）
-//! - p99 tick 延迟 < 500ms
-//! - 无 panic
+//! (no absolute threshold, no variable only)
+//! -Tick Count = Expectation
+//! - RSS growth ≤ 32MB (reasonable ceiling, container environment)
+//! - Thread growth ~ 8 (tokio runtime stable)
+//! -p99 pick delay < 500ms
+//! - No Panic
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -166,7 +166,7 @@ fn long_run_keeps_rss_and_threads_stable() {
     let rss_before = read_rss_mb();
     let threads_before = read_thread_count();
 
-    // 采集延迟
+    // Collection delay
     let mut durations: Vec<u64> = Vec::new();
     let start = Instant::now();
     let mut ticks = 0u64;
@@ -198,7 +198,7 @@ fn long_run_keeps_rss_and_threads_stable() {
     let metrics = loop_.metrics();
     assert_eq!(metrics.total_ticks, ticks);
 
-    // RSS 增长上限：32MB（容器友好）
+    // RSS growth cap: 32MB (container friendly)
     if rss_before > 0 && rss_after > 0 {
         let growth = rss_after as i64 - rss_before as i64;
         assert!(
@@ -210,7 +210,7 @@ fn long_run_keeps_rss_and_threads_stable() {
         );
     }
 
-    // 线程数增长上限：8
+    // Maximum linear growth: 8
     if threads_before > 0 && threads_after > 0 {
         let growth = threads_after.saturating_sub(threads_before);
         assert!(
@@ -222,7 +222,7 @@ fn long_run_keeps_rss_and_threads_stable() {
         );
     }
 
-    // p99 延迟 < 500ms
+    // p99 Delay < 500ms
     assert!(p99 < 500, "p99 latency too high: {} ms", p99);
 }
 

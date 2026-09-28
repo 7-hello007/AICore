@@ -1,4 +1,4 @@
-//! 预测闭环集成测试。
+//! Forecast closed ring integration tests.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -214,7 +214,7 @@ fn build_loop(memory: Arc<InMemoryStore>) -> AdaptiveLoop {
         AdaptiveLoopConfig::default(),
     );
 
-    // 启用历史记录 + 预测器
+    // Enable history + predictor
     let profile = UserProfile {
         history_enabled: true,
         profile_enabled: true,
@@ -232,7 +232,7 @@ fn build_loop(memory: Arc<InMemoryStore>) -> AdaptiveLoop {
 #[test]
 fn loop_without_memory_produces_no_prediction() {
     let memory = Arc::new(InMemoryStore::new());
-    // 不启用 profile
+    // Cannot Enable Profile
     let telemetry: Arc<dyn ITelemetryProvider> = Arc::new(MockTelemetry::new());
     let ctx_engine = Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new())));
     let base: Arc<dyn IPolicyEngine> = Arc::new(RuleBasedPolicyEngine::new());
@@ -261,7 +261,7 @@ fn loop_without_memory_produces_no_prediction() {
 fn loop_with_consistent_history_predicts() {
     let memory = Arc::new(InMemoryStore::new());
 
-    // 预置 5 条相同 workload 的记录
+    // Preset 5 identical workload records
     for i in 0..5 {
         memory
             .append_record(&rec(
@@ -275,7 +275,7 @@ fn loop_with_consistent_history_predicts() {
     let loop_ = build_loop(memory);
     let outcome = loop_.tick(&ExecutionTargets::default());
 
-    // 预测应生效
+    // Projections should be effective
     assert_eq!(
         outcome.predicted_workload,
         Some(WorkloadType::AiInference),
@@ -328,7 +328,7 @@ fn prediction_does_not_break_safety_invariant() {
     let loop_ = build_loop(memory);
     for _ in 0..3 {
         let outcome = loop_.tick(&ExecutionTargets::default());
-        // 无论预测结果如何，Validator 必须通过（policy_id 存在即代表通过）
+        // Whatever the projection, Validator must pass.policy_id (as adopted)
         assert!(
             outcome.policy_id.is_some(),
             "policy must be generated even with prediction"

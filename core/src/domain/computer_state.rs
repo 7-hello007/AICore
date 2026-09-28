@@ -1,10 +1,10 @@
 use aicore_contracts::telemetry::ComputerSnapshot;
 
-/// Core 内部使用的计算机状态。
+/// Core internal computer state.
 ///
-/// 与 ComputerSnapshot 的区别：
-/// - Snapshot 是采集层输出。
-/// - ComputerState 是规范化后、供 Context / Policy 使用的领域模型。
+/// Different from ComputerSnapshot:
+/// - Snapshot is the harvest layer output.
+/// - ComputerState is a standardized field model for use by Context / Policy.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ComputerState {
     pub snapshot: ComputerSnapshot,

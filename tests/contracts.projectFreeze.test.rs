@@ -1,6 +1,6 @@
-//! V3.2 Phase 1 契约冻结验收测试。
+//! V3.2 Case 1 contractually freezes acceptance testing.
 //!
-//! 不实现任何逻辑，只校验契约的**存在性、字段完整性、语义一致性**。
+//! No logic is implemented, only the existence of the contract**, the integrity of the field, semantic consistency**.
 
 use aicore_contracts::{
     ai::runtime::{

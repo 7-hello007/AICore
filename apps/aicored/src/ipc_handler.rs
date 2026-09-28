@@ -21,7 +21,7 @@ use aicore_tier_l2::L2NativeTaskProvider;
 
 use crate::tick_history::TickHistory;
 
-/// Daemon 的 IPC 请求处理器。
+/// Damon's IPC request processor.
 pub struct DaemonIpcHandler {
     registry: Arc<ApplicationRegistry>,
     app_owners: Arc<Mutex<HashMap<ApplicationId, ClientIdentity>>>,
@@ -757,7 +757,7 @@ impl DaemonIpcHandler {
 
         let mut snap = DashboardSnapshot::new(now);
 
-        // 1. daemon status + 从 last_tick 提取的字段
+        // 1. Damon status + field extracted from last_tick
         if let Ok(guard) = self.status.lock() {
             snap.daemon_status = Some(guard.clone());
 

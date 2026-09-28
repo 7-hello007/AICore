@@ -6,14 +6,14 @@ use aicore_contracts::{
     traits::ai_provider::IAiProvider,
 };
 
-/// 推理路由器。
+/// Suggestion router.
 ///
-/// 按注册顺序尝试 IAiProvider，返回第一个成功结果。
-/// 全部失败时返回最后一个错误。
+/// Try IAiProvider in order of registration, return the first successful result.
+/// Returns the last error when all fails.
 ///
-/// 设计目的：
-/// - 支持多模型 / 多 Runtime 的优先级链（本地优先、备用、云端）。
-/// - 为将来的 Model A → Model B → Model C 替换提供基础。
+/// Design purpose:
+/// - Support the priority chain (local priority, backup, clouds) for multi-model / multi-Runtime.
+/// - Provide a basis for future Model A → Model B → Model C replacement.
 pub struct InferenceRouter {
     providers: Vec<Arc<dyn IAiProvider>>,
 }
@@ -63,7 +63,7 @@ impl Default for InferenceRouter {
     }
 }
 
-/// 把 InferenceRouter 包装成 IAiProvider，以便嵌入 AiAssistedPolicyEngine。
+/// Pack InferenceRouter as IAiProvider for embedding in AiAssistedPolicyEngine.
 pub struct RouterAsProvider {
     router: Arc<InferenceRouter>,
 }

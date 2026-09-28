@@ -6,7 +6,7 @@ use crate::policy::priority::PolicySource;
 
 use super::mode::RuntimeMode;
 
-/// 一次 tick 的完整结果。
+/// A complete result of a tick.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct TickOutcome {
     pub tick_id: u64,

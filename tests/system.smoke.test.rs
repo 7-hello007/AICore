@@ -1,14 +1,14 @@
-//! Smoke test：验证运行时闭环能连续跑 N 秒不崩溃。
+//! Smoke test: Verify that closed rings run consecutively for N seconds without crash.
 //!
-//! 时长由 `AICORE_SMOKE_SECONDS` 控制，默认 5 秒。
-//! - 本地开发：默认 5s
+//! Length controlled by `AICORE_SMOKE_SECONDS`, default 5 seconds.
+//! - Local development: default 5s
 //! - CI：60s
-//! - 产品验收：可设为 86400（24h）
+//! - Product acceptance: can be set at 86400 (24h)
 //!
-//! 断言：
-//! - 至少执行 1 个 tick
-//! - metrics 计数一致
-//! - 没有 panic
+//! It is asserted that:
+//! - At least 1 tick
+//! - Metrics count the same.
+//! - No, Panic.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -146,8 +146,8 @@ fn smoke_trace_ids_unique() {
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 #[test]
 fn smoke_mode_is_valid_enum_value() {
-    // Smoke test 只验证"循环能跑、mode 是合法值"，不断言特定环境结果。
-    // 真实环境下 Power/Process 控制可能因权限不足失败，导致进入 Degraded/Safe。
+    // Smoke test only "Circle Runs, Mode is a legitimate value" and keeps talking about specific environmental results.
+    // Power/Process controls in the real environment may fail because of inadequate access, leading to entry into Degrad/Safe.
     let loop_ = build_loop();
     let targets = ExecutionTargets::default();
 

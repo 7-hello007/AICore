@@ -1,24 +1,29 @@
+[English](README.md) | [Chinese](README.zh-CN.md)
+
 # WiX MSI Template
 
-## 前置
+## Prerequisites
 
-- Windows 环境
-- WiX Toolset v3（`candle` + `light`）
+- Windows environment
+- WiX Toolset v3 (`candle` and `light`)
 
-## 构建
+## Build
 
 ```powershell
-# 1. 构建 release 二进制
+# 1. Build the release binaries
 cargo build --release -p aicore-daemon -p aicore-cli
 
-# 2. 生成 MSI
+# 2. Generate the MSI package
 cd deploy/windows/wix
 candle -dVersion=<workspace-version> -dBinDir=..\..\..\target\release aicore.wxs
 light -out ..\..\..\dist\aicore-<workspace-version>.msi aicore.wixobj
-输出
-dist/aicore-<version>.msi
+```
 
-已知限制
-Web Dashboard 是独立进程；发布包应与 daemon 一起分发。
+## Output
 
-未配置代码签名；生产环境应配置 Authenticode。
+`dist/aicore-<version>.msi`
+
+## Known Limitations
+
+- The Web Dashboard is a separate process and should be distributed with the daemon.
+- Code signing is not configured; production packages should use Authenticode.

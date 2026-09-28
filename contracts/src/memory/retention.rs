@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-/// 保留策略配置。
+/// Keeps the policy configuration.
 ///
-/// 语义：
-/// - `enabled = false`：不自动执行（隐私优先默认）。
-/// - `retention_days` **不在此处**：由 `UserProfile.retention_days` 提供，
-///   避免两处配置冲突。
-/// - `check_interval_secs`：最短两次运行之间的间隔。
-/// - `audit_capacity`：审计环形缓冲的容量。
+/// Semantics:
+/// `enabled = false`: Not self-execution (prior privacy default).
+/// - `retention_days`** Not here**: provided by `UserProfile.retention_days`
+///   To avoid two configuration conflicts.
+/// - `check_interval_secs`: interval between minimum two run times.
+/// - `audit_capacity`: Audit of the capacity of the ring buffer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RetentionPolicy {
     pub enabled: bool,
@@ -42,7 +42,7 @@ impl RetentionPolicy {
     }
 }
 
-/// 一次 retention 运行的结果（同时作为 audit entry）。
+/// The result of a retentation running at a time (also as an audit entry).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RetentionReport {
     pub ran_at_unix_ms: u64,

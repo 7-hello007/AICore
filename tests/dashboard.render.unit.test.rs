@@ -1,4 +1,4 @@
-//! Render 纯函数测试。
+//! Render Pure Function Test.
 
 use aicore_contracts::{
     capability::entry::CapabilityEntry,
@@ -135,11 +135,11 @@ fn errors_render_when_present() {
 
 #[test]
 fn width_respected_minimum() {
-    // 极窄宽度应该被 clamp 到 60
+    // Extreme width should be clamp to 60.
     let s = empty_snapshot();
     let out = render(&s, 10);
     assert!(out.contains('═'));
-    // 至少第一行 bar 足够宽
+    // At least the first line, bar, wide enough.
     let first_line = out.lines().next().unwrap();
     assert!(first_line.chars().count() >= 60);
 }

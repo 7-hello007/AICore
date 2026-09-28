@@ -1,4 +1,4 @@
-//! 验证 TraceContext 与 TickOutcome 的 trace_id 集成。
+//! Authentication TraceContext and TickOutcome Yes. trace_id Integration.
 
 use aicore_contracts::runtime::trace::TraceContext;
 

@@ -7,10 +7,10 @@ use aicore_contracts::{
     traits::workload_source::{IWorkloadSource, SourceKind, WorkloadObservation},
 };
 
-/// 特征向量：`[cpu_norm, gpu_norm, npu_norm, mem_norm]`。
+/// Feature vector: `[cpu_norm, gpu_norm, npu_norm, mem_norm]`.
 pub const FEATURE_DIM: usize = 4;
 
-/// 模型权重表。
+/// Model weight tables.
 #[derive(Debug, Clone)]
 pub struct MlWeightTable {
     pub version: String,
@@ -25,12 +25,12 @@ pub struct MlWeightEntry {
 
 impl MlWeightTable {
     pub fn default_weights() -> Self {
-        // 设计原则：
-        // - 高资源 workload（Gaming / Rendering / VideoEditing）用**负的 GPU 权重**
-        //   表达"没有 GPU 使用就不像这类"。
-        // - 低资源 workload（GeneralOffice / BackgroundTask）权重与资源弱相关，
-        //   使"全低"输入时能胜出。
-        // - AiInference 强依赖 NPU；Compilation 强依赖 CPU。
+        // Design principles:
+        // - Workload (Gaming / Rendering / VideoEditing) with negative **GPU weight**
+        //   It's not like this without GPU.
+        // - Low resource workload (GeneralOffice/BackgroundTask) weights associated with weak resources.
+        //   Make the "all low" enter win.
+        // - AiInference relies heavily on NPU; Compilation relies heavily on CPU.
         Self {
             version: "1.0.0".to_string(),
             entries: vec![

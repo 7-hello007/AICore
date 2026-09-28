@@ -2,18 +2,18 @@ use serde::{Deserialize, Serialize};
 
 use super::status::{ExecutionOverallStatus, ExecutionStatus};
 
-/// 单个执行动作的结果。
+/// Results of individual execution actions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionOutcome {
-    /// 资源类别，例如 "power.profile" / "process.priority"。
+    /// Resource categories, such as "power.profile"/ "process.priority".
     pub resource: String,
-    /// 目标，例如 "system" / "pid=1234"。
+    /// Targets such as "system"/ "pid=1234".
     pub target: String,
     pub status: ExecutionStatus,
     pub message: String,
 }
 
-/// 一次策略执行的完整结果。
+/// Complete results of a one-time strategy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionResult {
     pub policy_id: String,

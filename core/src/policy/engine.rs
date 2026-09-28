@@ -16,12 +16,12 @@ use aicore_contracts::{
     traits::policy_engine::IPolicyEngine,
 };
 
-/// 基于规则的策略引擎。
+/// A rule-based strategy engine.
 ///
-/// 设计目标：
-/// - 确定性：同样输入 → 同样输出（除 policy_id / 时间戳外）。
-/// - 可解释：reason 字段说明为什么这么选。
-/// - 可替换：AI 建议器后续实现同一接口。
+/// Design objectives:
+/// - Determination: Enter the same output (except policy_id/ time stamp).
+/// - It can be explained: Reason field explains why it is so chosen.
+/// - Replaceable: AI recommends that the same interface be followed.
 pub struct RuleBasedPolicyEngine;
 
 impl RuleBasedPolicyEngine {
@@ -41,7 +41,7 @@ impl IPolicyEngine for RuleBasedPolicyEngine {
         let base = base_policy_for(context.workload_type);
         let (cpu, gpu, npu, mem, mut power_mode, throttle) = base;
 
-        // Interaction level 调整
+        // Interaction level adjustment
         let (cpu, gpu, npu, mem) = match context.interaction_level {
             InteractionLevel::Interactive => (cpu, gpu, npu, mem),
             InteractionLevel::Passive => (
@@ -58,7 +58,7 @@ impl IPolicyEngine for RuleBasedPolicyEngine {
             ),
         };
 
-        // 电源感知：电池供电且未充电时，非重度 workload 优先省电
+        // Power perception: non-heavy workload priority saving when batteries are powered and uncharged
         let on_battery = snapshot.battery.present
             && !snapshot.battery.charging.unwrap_or(true)
             && !snapshot.power.ac_connected;
@@ -78,13 +78,13 @@ impl IPolicyEngine for RuleBasedPolicyEngine {
             };
         }
 
-        // 整体优先级 = 所有子资源的最大值，满足 Validator 不变量
+        // Overall priority = maximum value for all sub-resources, meeting Validator non-variable
         let overall = [cpu, gpu, npu, mem]
             .into_iter()
             .max()
             .unwrap_or(PolicyPriority::Normal);
 
-        // NPU preferred 只在可用且优先级 >= Normal 时启用
+        // NPU prefered only when available and priority > = Normal
         let npu_preferred = snapshot.npu.available && npu >= PolicyPriority::Normal;
 
         let reason = format!(

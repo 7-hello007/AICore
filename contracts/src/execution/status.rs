@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 单个执行动作的结果状态。
+/// The result state of the individual execution action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionStatus {
@@ -12,23 +12,23 @@ pub enum ExecutionStatus {
 }
 
 impl ExecutionStatus {
-    /// 是否算作"真失败"（喂给 SafeMode）。
+    /// Is it a real failure? SafeMode）。
     ///
-    /// - `Failed` / `PermissionDenied`：真失败。
-    /// - `NotSupported`：能力缺失，不算失败（应走 capability 降级）。
-    /// - `Skipped`：显式跳过，不算失败。
+    /// - `Failed`/`PermissionDenied`: What a failure.
+    /// - `NotSupported`: Lack of capability is not a failure (should be downgraded).
+    /// - `Skipped`: Explicit skip, not a failure.
     pub fn is_real_failure(self) -> bool {
         matches!(self, Self::Failed | Self::PermissionDenied)
     }
 }
 
-/// 整体执行结果。
+/// Overall implementation results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionOverallStatus {
     AllSucceeded,
     PartiallySucceeded,
-    /// 所有 outcome 都是 Skipped / NotSupported，没有任何实际操作。
+    /// All outcomes are Skipped/NotSupported, without any practical operation.
     NoOp,
     AllFailed,
 }
@@ -53,27 +53,27 @@ impl ExecutionOverallStatus {
             return Self::AllSucceeded;
         }
         if success > 0 {
-            // 有成功、有非成功（NotSupported / Skipped / Failed）→ 部分成功
+            // Successful, non-successful (NotSupported/Skipped/Failed)
             return Self::PartiallySucceeded;
         }
         if real_failures > 0 {
-            // 无成功、有真失败 → 全部失败
+            // No success, no failure, no failure.
             return Self::AllFailed;
         }
-        // 无成功、无真失败 → 全是 NotSupported / Skipped → NoOp
+        // No success, no real failure. NotSupported / Skipped → NoOp
         Self::NoOp
     }
 
-    /// 是否算作"对 SafeMode 友好的成功"。
+    /// Does it count as "a friendly success to SafeMode"?
     ///
-    /// - AllSucceeded / PartiallySucceeded → true（成功，重置失败计数）
-    /// - NoOp → false（不改变 SafeMode 状态）
+    /// - AllSucceeded / PartiallySucceeded → true (success, replacement failure count)
+    /// - NoOp → false (no change in SafeMode status)
     /// - AllFailed → false
     pub fn is_success(self) -> bool {
         matches!(self, Self::AllSucceeded | Self::PartiallySucceeded)
     }
 
-    /// 是否算作"真失败"（喂给 SafeMode）。
+    /// Is it a real failure? SafeMode）。
     pub fn is_failure(self) -> bool {
         matches!(self, Self::AllFailed)
     }

@@ -1,18 +1,20 @@
+[English](DATA_PRIVACY.md) | [Chinese](DATA_PRIVACY.zh-CN.md)
 # Data Privacy
 
-默认原则：Local-first、Data-minimization、Explicit retention。
+Default principles: local first, data minimization, and explicit retention limits.
 
-模型输入前必须检查：
+Before data is sent to a model, check:
 
-- 是否包含用户敏感数据
-- 是否允许进入该模型
-- 是否允许云端
-- 是否能匿名化
+- whether it contains sensitive user data
+- whether the selected model may access it
+- whether cloud processing is permitted
+- whether the data can be anonymized
 
-所有历史数据都必须支持 retention/deletion/audit。
+All retained history must support deletion.
 
-当前 `HistoricalRecord.application_id` 只来自显式注册的 L1/L2/队列任务；
-`history_enabled` 为 false 时不写入，`profile_enabled` 为 false 时不读取用于
-个性化。应用 ID 仍属于可关联的个人行为数据，随历史记录接受同一 SQLite/JSON
-retention、清空和审计流程。聚合模式至少需要三个同一应用、同一 UTC 小时样本；
-预测时必须有对应的显式任务身份，不能用窗口标题推断身份。
+Currently, `HistoricalRecord.application_id` is populated only from explicitly registered L1, L2, or queued tasks.
+When `history_enabled` is false, no history is written. When `profile_enabled` is false, history is not read for
+personalization. Application identifiers remain subject to the same retention, deletion, and audit controls as
+other personal-behavior data stored in SQLite or JSON. Pattern aggregation requires at least three samples for
+the same application and UTC hour. Predictions require an explicit task identity and are never inferred from a
+window title.

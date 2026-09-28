@@ -7,17 +7,17 @@ use aicore_contracts::{
     },
 };
 
-/// L0 场景定义。
+/// L0 scene definition.
 #[derive(Debug, Clone)]
 pub struct Scenario {
     pub name: &'static str,
-    /// 应用名（用于 foreground）。
+    /// Apply name (for use foreground).
     pub foreground_app: &'static str,
-    /// 应用版本（人类可读；evidence 记录）。
+    /// Applied version (human readability; record).
     pub app_version: &'static str,
-    /// 期望分类器识别的 workload。
+    /// Expect the sorter to recognize the workload.
     pub expected_workload: WorkloadType,
-    /// 合成 snapshot 构造器。
+    /// Synthetic snapshot constructor.
     pub snapshot: fn() -> ComputerSnapshot,
 }
 

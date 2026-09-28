@@ -1,3 +1,4 @@
+[English](ENGINEERING_COMPLETION_REPORT.md) | [Chinese](ENGINEERING_COMPLETION_REPORT.zh-CN.md)
 # AICore V3.2 Engineering Completion Report
 
 > Historical V3.2 record. Current baseline is V4; see `V4_DEFECT_CORRECTION_REPORT.md` and `V4_RELEASE_READINESS.md`.

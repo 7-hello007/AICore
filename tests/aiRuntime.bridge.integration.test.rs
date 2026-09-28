@@ -1,4 +1,4 @@
-//! RuntimeBackedProvider 桥接测试。
+//! RuntimeBackedProvider bridge test.
 
 use std::sync::Arc;
 
@@ -105,8 +105,8 @@ fn high_npu_suggests_boost_npu() {
 
 #[test]
 fn low_everything_produces_valid_output() {
-    // 低资源场景 softmax 分布平均，top1 概率可能 < 0.3。
-    // 这里用一个宽松阈值，验证 provider 能正常输出。
+    // Low-resource scenario softmax distribution average, Top1 probability may be < 0.3.
+    // Here's a loose threshold to verify that provider can output properly.
     let rt: Arc<dyn IAiRuntime> = Arc::new(PureRustRuntime::new());
     let spec = ModelSpec {
         name: "policy_classifier_v1".to_string(),
@@ -125,13 +125,13 @@ fn low_everything_produces_valid_output() {
         AiSuggestionPayload::Policy(_) => {},
         _ => panic!("expected policy payload"),
     }
-    // 置信度合法
+    // Trust is legal
     assert!(s.confidence > 0.0 && s.confidence <= 1.0);
 }
 
 #[test]
 fn low_everything_below_default_confidence_errors_gracefully() {
-    // 默认 min_confidence=0.3 时，低资源场景应返回 Err（让上层回退规则引擎）。
+    // By default min_confidence = 0.3, the low resource scenario should return to Err.
     let p = build_provider();
     let result = p.suggest(&input_with(2.0, 2.0, 0.0, 5.0));
     assert!(result.is_err(), "expected low-confidence Err");

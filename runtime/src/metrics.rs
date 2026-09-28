@@ -2,9 +2,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use aicore_contracts::runtime::metrics::LoopMetrics;
 
-/// 指标收集器。
+/// Indicator collector.
 ///
-/// 全部为原子操作；读取时一次性取出。
+/// All atoms; one-time take-out when read.
 #[derive(Default)]
 pub struct MetricsCollector {
     total_ticks: AtomicU64,

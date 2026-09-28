@@ -48,7 +48,7 @@ use aicore_tier_l1::register_l1;
 use aicore_tier_l1::L1TaskSource;
 use aicore_tier_l2::{register_l2, register_l2_with_queue, L2NativeTaskProvider};
 
-/// 组装好的 daemon 运行时。
+/// Installed daemon runtime.
 pub struct DaemonRuntime {
     pub loop_: Arc<AdaptiveLoop>,
     pub model_mode: bool,
@@ -61,13 +61,13 @@ pub struct DaemonRuntime {
     pub l1_source: Option<Arc<L1TaskSource>>,
     pub l2_provider: Option<Arc<L2NativeTaskProvider>>,
 
-    /// 当前执行模式使用的 target。
+    /// The current execution mode uses target.
     ///
     /// Model mode：
-    /// 使用虚拟 PID，只存在于模型环境中。
+    /// Using virtual PID only exists in a model environment.
     ///
     /// Platform mode：
-    /// 使用平台执行目标。
+    /// The platform is used to implement the objectives.
     pub execution_targets: ExecutionTargets,
     pub(crate) telemetry_selection: Arc<TelemetrySelection>,
     pub(crate) process_selection: Arc<ProcessSelection>,
@@ -231,7 +231,7 @@ impl IProcessController for ProcessSelection {
     }
 }
 
-/// 完整构造：memory + task_queue。
+/// Complete construction: memory + task_queue.
 pub fn build_runtime_full(
     memory_path: Option<&Path>,
     task_queue: Option<Arc<dyn ITaskQueue>>,
@@ -260,7 +260,7 @@ fn build_runtime_for_mode_with_simulation(
 ) -> DaemonRuntime {
     /*
      * ============================================================
-     * 1. 平台基础组件
+     * 1. Platform basic components
      * ============================================================
      */
 
@@ -290,8 +290,8 @@ fn build_runtime_for_mode_with_simulation(
      * Platform mode：
      *     DefaultPolicyExecutor
      *
-     * 重要：
-     * Model mode 永远不会调用真实 ProcessController /
+     * Important:
+     * Model Mode will never call real ProcessController/
      * PowerController。
      * ============================================================
      */
@@ -376,7 +376,7 @@ fn build_runtime_for_mode_with_simulation(
      * Production default：
      * PureRustRuntime + local JSON model。
      *
-     * 不使用 Mock AI 作为生产默认。
+     * Mark AI is not used as the production default.
      * ============================================================
      */
 
@@ -583,7 +583,7 @@ fn build_runtime_for_mode_with_simulation(
      * Platform mode：
      *     DefaultRuntimeBinder
      *
-     * 这样 Model mode 下 GPU / NPU 不会碰真实硬件。
+     * This way, under Model Mode, GPU/NPU does not touch real hardware.
      * ============================================================
      */
 
@@ -636,7 +636,7 @@ fn build_runtime_for_mode_with_simulation(
         /*
          * Linux real hardware binding.
          *
-         * 只有 platform mode 才允许进入这里。
+         * Only platform Mode is allowed in here.
          */
         if let Some(simulator) = &simulated_platform {
             let exec = simulator.clone()
@@ -672,7 +672,7 @@ fn build_runtime_for_mode_with_simulation(
             /*
              * Windows real hardware binding。
              *
-             * 只有 platform mode 才允许进入这里。
+             * Only platform Mode is allowed in here.
              */
             #[cfg(target_os = "windows")]
             {
@@ -882,13 +882,13 @@ fn build_runtime_for_mode_with_simulation(
      * ============================================================
      * 15. Execution Targets
      *
-     * 这一步必须在 DaemonRuntime 返回之前完成。
+     * This step must be completed before DaemonRuntime returns.
      *
      * Model mode：
-     *     虚拟 foreground/background PID。
+     *     Virtual foreground/background PID.
      *
      * Platform mode：
-     *     保持原有空 target 行为，未来由上层提供真实 target。
+     *     Keeps the original target behavior empty, and the future provides real target from the upper level.
      * ============================================================
      */
 
@@ -930,7 +930,7 @@ fn build_runtime_for_mode_with_simulation(
     }
 }
 
-/// 模型文件路径。
+/// Model file path.
 fn model_path() -> PathBuf {
     if let Ok(path) = std::env::var("AICORE_MODEL_PATH") {
         return PathBuf::from(path);
@@ -1123,20 +1123,20 @@ fn build_hardware_matrices() -> Vec<DeviceCapabilityMatrix> {
         .collect()
 }
 
-/// AICore 执行模式。
+/// AICore execution mode.
 ///
-/// 默认：model
+/// Default: model
 ///
 /// Model mode：
-/// - 不修改真实进程。
-/// - 不修改真实电源状态。
-/// - GPU/NPU 只做模型化执行。
-/// - Policy 写入 ModelEnvironment。
+/// - Don't change the real process.
+/// - Do not modify the real power state.
+/// - GPU/NPU only for modelling implementation.
+/// - Policy writes ModelEnvironment.
 ///
 /// Platform mode：
-/// - 使用真实平台 adapter。
+/// - Use real platform adapter.
 ///
-/// 环境变量：
+/// Environmental variables:
 ///
 /// AICORE_EXECUTION_MODE=model
 /// AICORE_EXECUTION_MODE=platform

@@ -1,3 +1,4 @@
+[English](SECURITY_ARCHITECTURE.md) | [Chinese](SECURITY_ARCHITECTURE.zh-CN.md)
 # Security Architecture
 
 ```mermaid
@@ -12,4 +13,4 @@ flowchart TB
     CLIENT --> AUTH --> CONTRACT --> POLICY --> EXEC --> OS
 ```
 
-安全边界至少覆盖 IPC、Plugin、Model、Runtime、Configuration、Persistent Data。
+Security boundaries cover at least IPC, plugins, models, runtime, configuration, and persistent data.

@@ -1,55 +1,55 @@
 use serde::{Deserialize, Serialize};
 
-/// 模型运行时类型。
+/// model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelRuntime {
-    /// 纯 Rust 特征加权分类器。
+    /// Pure Rust feature-weighted classifier.
     #[default]
     NativeRust,
     /// ONNX Runtime（V3）。
     OnnxRuntime,
     /// llama.cpp（V3）。
     LlamaCpp,
-    /// 厂商 SDK（V3）。
+    /// Vendor SDK (V3).
     VendorSdk,
-    /// Mock（仅用于测试）。
+    /// Mock (for testing only).
     Mock,
 }
 
-/// 隐私等级。
+/// Privacy level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyClass {
-    /// 强制本地。
+    /// Force local.
     #[default]
     LocalOnly,
-    /// 允许本地，可选云端。
+    /// Allow local, optional cloud.
     LocalPreferred,
-    /// 允许云端（需用户显式开启）。
+    /// Allows clouds to be opened (user visible).
     CloudAllowed,
 }
 
-/// 模型元数据。
+/// Model metadata.
 ///
-/// 每个 AI Provider 必须声明自己的元数据，供 Registry 管理。
+/// Each AI Provider must declare its metadata for Registry management.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelMetadata {
     pub name: String,
     pub version: String,
     pub runtime: ModelRuntime,
     pub capabilities: Vec<String>,
-    /// 延迟预算，毫秒。推理超过此值视为超时。
+    /// Delays in budget, milliseconds.
     pub latency_budget_ms: u64,
-    /// 内存预算，MB。
+    /// Memory budget, MB.
     pub memory_budget_mb: u64,
     pub privacy_class: PrivacyClass,
-    /// 模型描述。
+    /// Model description.
     pub description: String,
 }
 
 impl ModelMetadata {
-    /// 合法性检查。
+    /// Legitimacy check.
     pub fn validate(&self) -> crate::errors::AicoreResult<()> {
         use crate::errors::AicoreError;
         if self.name.trim().is_empty() {
@@ -80,7 +80,7 @@ impl ModelMetadata {
         Ok(())
     }
 
-    /// 是否为 local-only。
+    /// Is it local-only.
     pub fn is_local_only(&self) -> bool {
         self.privacy_class == PrivacyClass::LocalOnly
     }

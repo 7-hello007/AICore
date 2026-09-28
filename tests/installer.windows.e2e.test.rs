@@ -1,4 +1,4 @@
-//! Windows installer 静态校验（不实际安装）。
+//! Windows instiller static verification (not physically installed).
 
 use std::path::PathBuf;
 

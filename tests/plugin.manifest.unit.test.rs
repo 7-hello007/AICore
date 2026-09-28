@@ -1,4 +1,4 @@
-//! Plugin manifest 校验测试。
+//! Plugin verification test.
 
 use aicore_contracts::errors::AicoreError;
 use aicore_contracts::plugin::{
@@ -74,7 +74,7 @@ fn api_version_mismatch_rejected() {
 fn higher_minor_version_ok() {
     let mut m = valid_manifest();
     m.api_version = "1.5".to_string();
-    // 主版本相同，插件次版本 5 > Core 次版本 0 → 应拒绝
+    // Same main version, plugin sub-version 5 > Core version 0→ should be rejected
     assert!(m.validate().is_err());
 }
 
@@ -100,7 +100,7 @@ fn untrusted_control_permission_rejected() {
 fn untrusted_readonly_permission_allowed() {
     let mut m = valid_manifest();
     m.trust_level = TrustLevel::Untrusted;
-    // 只有 read 权限
+    // Only read permissions
     assert!(m.is_permission_allowed());
 }
 

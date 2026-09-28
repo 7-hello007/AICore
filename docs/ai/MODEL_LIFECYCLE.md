@@ -1,8 +1,9 @@
+[English](MODEL_LIFECYCLE.md) | [Chinese](MODEL_LIFECYCLE.zh-CN.md)
 # Model Lifecycle
 
 `Discover → Validate → Load → Warm → Infer → Monitor → Degrade/Fallback → Unload`
 
-每个模型必须有：
+Each model must have:
 
 - name/version
 - model kind
@@ -13,4 +14,4 @@
 - privacy class
 - capabilities
 
-模型升级必须支持 rollback。
+Model upgrade must support rollback.

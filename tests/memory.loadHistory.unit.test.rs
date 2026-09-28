@@ -89,7 +89,7 @@ fn json_file_store_round_trip() {
     let history = tmp.join("history.json");
     let profile = tmp.join("profile.json");
 
-    // 清理
+    // Clear
     let _ = std::fs::remove_file(&history);
     let _ = std::fs::remove_file(&profile);
 
@@ -110,7 +110,7 @@ fn json_file_store_round_trip() {
         store.save_profile(&p).unwrap();
     }
 
-    // 重新打开：验证持久化
+    // Reopen: Validation lasting
     let store = JsonFileStore::new(&history, &profile);
     assert_eq!(store.record_count().unwrap(), 2);
     let loaded = store.load_records(10).unwrap();
@@ -118,11 +118,11 @@ fn json_file_store_round_trip() {
     assert_eq!(loaded[0].record_id, "a");
     assert!(store.load_profile().unwrap().history_enabled);
 
-    // 清空
+    // Clear
     store.clear_history().unwrap();
     assert_eq!(store.record_count().unwrap(), 0);
 
-    // 清理
+    // Clear
     let _ = std::fs::remove_file(&history);
     let _ = std::fs::remove_file(&profile);
     let _: PathBuf = tmp;

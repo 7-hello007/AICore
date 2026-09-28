@@ -8,9 +8,9 @@ use super::record::HistoricalRecord;
 
 type ApplicationWorkloadCounts = (ApplicationId, u8, Vec<(WorkloadType, usize)>);
 
-/// 从历史记录推导出来的轻量级上下文。
+/// Lightweight context derived from historical records.
 ///
-/// 供 AI Provider 消费。不包含原始时间序列，只包含聚合结论。
+/// For AI Provider consumption.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct MemoryContext {
     pub recent_workloads: Vec<WorkloadType>,
@@ -43,13 +43,13 @@ pub struct HourlyWorkloadPattern {
 }
 
 impl MemoryContext {
-    /// 从历史记录构建。空输入返回默认值。
+    /// Builds from history. Empty input returns the default value.
     pub fn from_records(records: &[HistoricalRecord]) -> Self {
         if records.is_empty() {
             return Self::default();
         }
 
-        // 主导 workload
+        // Lead workload
         let mut counts: Vec<(WorkloadType, usize)> = Vec::new();
         for r in records {
             if let Some(entry) = counts.iter_mut().find(|(w, _)| *w == r.workload_type) {
@@ -60,7 +60,7 @@ impl MemoryContext {
         }
         let dominant = counts.iter().max_by_key(|(_, c)| *c).map(|(w, _)| *w);
 
-        // 最近序列（新 → 旧）
+        // Recent sequence (new old)
         let recent: Vec<WorkloadType> = records
             .iter()
             .rev()
@@ -68,7 +68,7 @@ impl MemoryContext {
             .map(|r| r.workload_type)
             .collect();
 
-        // 首选电源模式
+        // Preferred Power Mode
         let mut power_counts: Vec<(PowerMode, usize)> = Vec::new();
         for r in records {
             if let Some(entry) = power_counts.iter_mut().find(|(m, _)| *m == r.power_mode) {

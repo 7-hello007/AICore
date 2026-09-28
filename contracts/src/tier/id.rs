@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// Tier 唯一标识。
+/// Tier's unique identifier.
 ///
-/// 约定：小写点分，例如 `l0.legacy` / `l1.aware` / `l2.native`。
-/// Core **不得**根据 TierId 分支；TierId 只用于日志与诊断。
+/// Engagement: lowercase points such as `l0.legacy`/`l1.aware`/`l2.native`.
+/// Core** Not ** according to TierId branch; TierId is used only for logs and diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TierId(pub String);
 

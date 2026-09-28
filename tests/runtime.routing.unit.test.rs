@@ -1,4 +1,4 @@
-//! SafeRuntimeRouter 单元测试。
+//! SafeRuntimeRouter unit test.
 
 use aicore_contracts::{
     context::{
@@ -92,7 +92,7 @@ fn ai_inference_without_npu_but_gpu_routes_to_gpu() {
 
     assert_eq!(route.source, RuntimeRouteSource::Gpu);
     assert!(route.reason.contains("NPU unavailable"));
-    // GPU fallback 置信度 *0.8
+    // GPU fallback confidence *0.8
     assert!(route.confidence < 0.9);
 }
 
@@ -175,7 +175,7 @@ fn native_route_has_high_confidence() {
     let r = SafeRuntimeRouter::new();
     let snap = snapshot_with(false, false, 20.0);
     let route = r.decide(&snap, &ctx(WorkloadType::Unknown, 0.5)).unwrap();
-    // Native 是"确定保持路径"，置信度应为 1.0
+    // Native is "Performing the path." The confidence level should be 1.0.
     assert_eq!(route.confidence, 1.0);
 }
 

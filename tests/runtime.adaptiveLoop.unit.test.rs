@@ -23,7 +23,7 @@ use aicore_core::{
 };
 use aicore_runtime::AdaptiveLoop;
 
-/// 可控的 Mock Telemetry Provider。
+/// Mark Telemetry Provider.
 struct MockTelemetry {
     fail: bool,
     calls: AtomicU64,
@@ -64,7 +64,7 @@ impl ITelemetryProvider for MockTelemetry {
     }
 }
 
-/// 永远返回 AllSucceeded 的 Executor。
+/// Executor that always returns `AllSucceeded`.
 struct OkExecutor;
 
 impl IPolicyExecutor for OkExecutor {
@@ -87,7 +87,7 @@ impl IPolicyExecutor for OkExecutor {
     }
 }
 
-/// 永远返回 AllFailed 的 Executor。
+/// Executor that always returns `AllFailed`.
 struct FailExecutor;
 
 impl IPolicyExecutor for FailExecutor {
@@ -165,7 +165,7 @@ fn telemetry_failure_marks_tick_failed() {
     assert!(!outcome.success);
     assert!(outcome.policy_id.is_none());
     assert!(!outcome.validation_accepted);
-    assert_eq!(loop_.current_mode(), RuntimeMode::Normal); // 单次失败仍在 Normal
+    assert_eq!(loop_.current_mode(), RuntimeMode::Normal); // Single failure is still in Normal
 }
 
 #[test]

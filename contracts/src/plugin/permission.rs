@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-/// 插件声明的权限。
+/// Plugin Declaration Permission.
 ///
-/// 权限是"能力请求"，不是"授权"。Core 在加载时校验用户是否允许。
+/// Permissions are "capability requests," not "authorizations." Core check if user permission is allowed when loading.
 ///
-/// serde 表示采用点分格式（与 `name()` 一致），例如 `"process.control"`。
+/// serde indicates a dot format (consistent with `name()`), such as `"process.control"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PluginPermission {
     #[serde(rename = "telemetry.read")]
@@ -38,7 +38,7 @@ pub enum PluginPermission {
 }
 
 impl PluginPermission {
-    /// 是否属于"控制类"权限（需要用户显式授权）。
+    /// Whether or not it belongs to the "control class" (which requires explicit user authorization).
     pub fn is_control(self) -> bool {
         matches!(
             self,

@@ -1,4 +1,4 @@
-//! JSON → SQLite 迁移测试。
+//! JSON → SQLite migration test.
 
 use std::path::PathBuf;
 
@@ -63,7 +63,7 @@ fn migrate_transfers_records_and_profile() {
     let _ = std::fs::remove_file(&json_profile);
     let _ = std::fs::remove_file(&sqlite_path);
 
-    // 准备 JSON 源
+    // Prepare JSON source
     {
         let store = JsonFileStore::new(&json_history, &json_profile);
         store.append_record(&rec("a")).unwrap();
@@ -87,19 +87,19 @@ fn migrate_transfers_records_and_profile() {
     assert_eq!(report.records_migrated, 2);
     assert!(report.profile_migrated);
 
-    // SQLite 已写入
+    // SQLite written
     let sqlite = SqliteMemoryStore::open(&sqlite_path).unwrap();
     assert_eq!(sqlite.record_count().unwrap(), 2);
     let profile = sqlite.load_profile().unwrap();
     assert!(profile.history_enabled);
     assert_eq!(profile.retention_days, 14);
 
-    // 源文件被重命名为 .migrated
+    // Source file renamed.
     assert!(!json_history.exists());
     let backup = json_history.with_extension("json.migrated");
     assert!(backup.exists());
 
-    // 清理
+    // Clear
     let _ = std::fs::remove_file(&sqlite_path);
     let _ = std::fs::remove_file(&backup);
     let _ = std::fs::remove_file(&json_profile);
@@ -118,13 +118,13 @@ fn migrate_skips_when_target_non_empty() {
     let _ = std::fs::remove_file(&json_profile);
     let _ = std::fs::remove_file(&sqlite_path);
 
-    // 先建 JSON
+    // Build JSON first
     {
         let store = JsonFileStore::new(&json_history, &json_profile);
         store.append_record(&rec("a")).unwrap();
     }
 
-    // 先建 SQLite 并写入
+    // Build SQLite and write first
     {
         let sqlite = SqliteMemoryStore::open(&sqlite_path).unwrap();
         sqlite.append_record(&rec("existing")).unwrap();
@@ -139,7 +139,7 @@ fn migrate_skips_when_target_non_empty() {
     assert!(report.skipped);
     assert!(report.skip_reason.as_ref().unwrap().contains("already"));
 
-    // JSON 源应该保留（因为跳过了）
+    // JSON source should be retained (because of skipping)
     assert!(json_history.exists());
 
     let _: PathBuf = sqlite_path.clone();

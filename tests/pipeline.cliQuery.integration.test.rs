@@ -1,4 +1,4 @@
-//! IPC server + GetRecentTicks 集成测试。
+//! IPC server + GetRecentTicks integration test.
 
 #[cfg(target_os = "linux")]
 mod linux_tests {
@@ -21,7 +21,7 @@ mod linux_tests {
     use aicore_ipc::{unwrap_response, IpcClient, IpcHandler, IpcServer};
     use std::collections::VecDeque;
 
-    /// 简化 TickHistory：与 daemon 中的实现等价。
+    /// Simplify TickHistory: Equivalence with daemon.
     struct TestHistory {
         max: usize,
         buf: Mutex<VecDeque<TickSummary>>,
@@ -193,7 +193,7 @@ mod linux_tests {
         match data {
             ResponseData::RecentTicks { ticks } => {
                 assert_eq!(ticks.len(), 5);
-                // 最近 5 条应该是 16..=20
+                // Recent 5 should read 16.=20
                 assert_eq!(ticks[0].tick_id, 16);
                 assert_eq!(ticks[4].tick_id, 20);
             },
@@ -248,7 +248,7 @@ mod linux_tests {
         handle.abort();
     }
 
-    // 抑制 unused import 警告
+    // Unused Report Warning
     #[allow(dead_code)]
     fn _unused(_: PathBuf) {}
 }

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// Plugin API 版本。
+/// Plugin API version.
 ///
-/// 主版本不兼容：Core 拒绝加载主版本不匹配的插件。
-/// 次版本向下兼容：Core 可以加载次版本 ≤ 自身次版本的插件。
+/// Main version is not compatible: Core refuses to load plugins whose main version does not match.
+/// Sub-version is compatible down: Core can load the plugin for sub-version ≤ itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiVersion {
     pub major: u32,
@@ -15,10 +15,10 @@ impl ApiVersion {
         Self { major, minor }
     }
 
-    /// 当前 Core 支持的 Plugin API 版本。
+    /// The current version of Plugin API supported by Core.
     pub const CURRENT: ApiVersion = ApiVersion::new(1, 0);
 
-    /// 是否兼容：主版本相同且插件次版本 ≤ Core 次版本。
+    /// Compatibility: The main version is the same and plugin sub-version ≤ Core.
     pub fn is_compatible_with(&self, core: ApiVersion) -> bool {
         self.major == core.major && self.minor <= core.minor
     }
@@ -34,7 +34,7 @@ impl std::fmt::Display for ApiVersion {
     }
 }
 
-/// 从 "1.0" 解析。
+/// Parsing from "1.0".
 pub fn parse_api_version(s: &str) -> Option<ApiVersion> {
     let mut parts = s.split('.');
     let major = parts.next()?.parse().ok()?;

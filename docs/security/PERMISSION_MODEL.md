@@ -1,6 +1,7 @@
+[English](PERMISSION_MODEL.md) | [Chinese](PERMISSION_MODEL.zh-CN.md)
 # Permission Model
 
-权限建议分为：
+Proposed capabilities are divided into:
 
 - telemetry.read
 - process.read
@@ -14,4 +15,4 @@
 - plugin.install
 - plugin.control
 
-默认最小权限；控制能力必须经过 capability + permission + policy 三重检查。
+Use least privilege by default. Check control requests at the identity, capability, and action boundaries.

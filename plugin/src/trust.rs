@@ -7,14 +7,14 @@ use aicore_contracts::plugin::{
 
 use crate::signature::{SignatureVerifier, SignatureVerifyError};
 
-/// Trust Store 条目。
+/// Trust Store entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrustEntry {
     pub plugin_id: String,
     pub level: TrustLevel,
-    /// 期望的 Ed25519 公钥（hex）；Trusted 必须为 Some，其他 level 可为 None。
+    /// The desired Ed25519 public key (hex); Trusted must come, other level can be None.
     pub public_key_hex: Option<String>,
-    /// 是否允许 control 类权限。
+    /// Whether to allow a control class.
     pub allow_control: bool,
 }
 
@@ -56,7 +56,7 @@ impl TrustEntry {
     }
 }
 
-/// 验证结果。
+/// Verify results.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrustVerification {
     pub plugin_id: String,
@@ -67,10 +67,10 @@ pub struct TrustVerification {
 
 /// Trust Store。
 ///
-/// 职责：
-/// - 记录 plugin_id 的信任等级与公钥。
-/// - 验证签名是否来自已信任的公钥。
-/// - 拒绝未信任插件的 control 权限。
+/// Duties:
+/// - Record plugin_id confidence and public key.
+/// - Verify whether the signature is from a trusted public key.
+/// - Rejects the control permission for untrusted plugins.
 pub struct TrustStore {
     entries: RwLock<HashMap<String, TrustEntry>>,
 }
@@ -106,12 +106,12 @@ impl TrustStore {
         Ok(entries.len())
     }
 
-    /// 验证插件签名是否来自已信任的公钥。
+    /// Could not close temporary folder: %s
     ///
-    /// 语义：
-    /// - BuiltIn / LocalDev：跳过签名校验；返回对应 level。
-    /// - Trusted：要求 Ed25519 签名且公钥匹配；不匹配 → 拒绝。
-    /// - Untrusted：拒绝。
+    /// Semantics:
+    /// - BuiltIn/LocalDev: Skip signature verification; return the corresponding level.
+    /// - Trusted: Ed25519 is required to sign and match the public key; does not match the rejection.
+    /// - Untrusted: Rejected.
     pub fn verify(
         &self,
         plugin_id: &str,
@@ -156,7 +156,7 @@ impl TrustStore {
                     },
                 };
 
-                // Trusted 必须绑定 TrustStore 中的 Ed25519 公钥。
+                // Trusted must bind the Ed25519 public key in TrustStore.
                 if sig.algorithm != aicore_contracts::plugin::signature::SignatureAlgorithm::Ed25519
                 {
                     return Ok(TrustVerification {
@@ -207,7 +207,7 @@ impl TrustStore {
         }
     }
 
-    /// 检查插件是否有 control 权限。
+    /// Checks if plugins have control privileges.
     pub fn permits_control(
         &self,
         plugin_id: &str,

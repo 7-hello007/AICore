@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 
 use crate::{sse, write_simple, AppState};
 
-// 静态资源（嵌入二进制）
+// Static resources (doved binary)
 const INDEX_HTML: &str = include_str!("../static/index.html");
 const STYLE_CSS: &str = include_str!("../static/style.css");
 const APP_JS: &str = include_str!("../static/app.js");

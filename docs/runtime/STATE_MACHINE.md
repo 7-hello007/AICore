@@ -1,14 +1,15 @@
+[English](STATE_MACHINE.md) | [Chinese](STATE_MACHINE.zh-CN.md)
 # State Machine
 
 ## Task
 
 `Created → Detected → Classified → Planned → Validated → Queued → Running → Completed`
 
-异常路径：
+Failure path:
 
 `Running → Failed → Recovering → Degraded`
 
-取消路径：
+Cancellation path:
 
 `Created/Queued/Running → Cancelled`
 

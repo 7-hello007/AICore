@@ -1,4 +1,4 @@
-//! NPU 真实执行链集成测试。
+//! NPU actually performs chain integration tests.
 
 use std::sync::Arc;
 

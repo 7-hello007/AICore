@@ -1,17 +1,17 @@
 # Rust / Cargo
-# 构建产物
+# Build products
 /target/
 
-# rustfmt 备份
+# rustfmt backup
 **/*.rs.bk
 
-# 本地 cargo 缓存
+# Local cargo Cache
 /vendor/
 
-# Cargo.lock 说明
-# Cargo.lock 必须提交。
+# Cargo.lock Note
+# Cargo.lock must submit.
 #
-# AICore 是 workspace，含多个 [[bin]]：
+# AICore is a workspace with multiple[[bin]:
 #   - aicored
 #   - aicore
 #   - aicore-dashboard
@@ -20,25 +20,25 @@
 #   - aicore-l0-realworld
 #   - plugin-echo
 #
-# 对二进制项目，Cargo 官方推荐提交 Cargo.lock 以锁定依赖版本，
-# 保证所有环境（本地 / CI / 发布）使用完全相同的依赖树。
+# In the case of binary projects, Cargo officially recommended for submission to Cargo.lock to lock on the dependent version.
+# Ensure that all environments (local / CI/ release) use exactly the same dependencies.
 
-# 构建 / 发布产物
+# Build / Release
 /dist/
 
-# 打包临时目录
+# Pack a temporary directory
 *.deb
 *.tar.gz
 *.tar.xz
 *.rpm
 *.msi
 
-# aicored 运行时状态文件
+# aicored Runtime Status File
 *.log
 *.status.json
 *.json.tmp
 
-# SQLite 数据库与 WAL
+# SQLite database and WAL
 *.db
 *.db-wal
 *.db-shm
@@ -46,11 +46,11 @@
 *.sqlite-wal
 *.sqlite-shm
 
-# 本地 benchmark 输出
+# Local benchmark output
 /benchmarks/*-local.json
 /benchmarks/*-nightly.json
 
-# 测试临时目录
+# Test Temporary Directory
 /tmp-test/
 
 # Emacs
@@ -79,6 +79,6 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 
-# 个人路径
+# Personal path
 /mydoc
 /env

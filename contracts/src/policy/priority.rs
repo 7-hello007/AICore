@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// 策略优先级。
+/// Strategy priority.
 ///
-/// 顺序即语义：Background < Low < Normal < High < Interactive。
+/// Semantic order: Background < Low < Nomal < High < Interactive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyPriority {
@@ -14,7 +14,7 @@ pub enum PolicyPriority {
     Interactive,
 }
 
-/// 策略来源。用于可解释性与审计。
+/// Strategic source. Used for interpretability and auditing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicySource {

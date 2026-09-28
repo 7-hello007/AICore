@@ -1,6 +1,7 @@
+[English](TESTING_STRATEGY.md) | [Chinese](TESTING_STRATEGY.zh-CN.md)
 # Testing Strategy
 
-测试必须覆盖：
+Tests must cover:
 
 - unit
 - contract
@@ -11,6 +12,6 @@
 - platform E2E
 - UI/Web E2E
 - performance
-- long-run
+- long-running behavior
 
-所有公共接口必须至少有 contract test。
+Every public interface needs at least a contract test.

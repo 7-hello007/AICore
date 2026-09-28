@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 服务状态。
+/// Service status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceState {
@@ -19,7 +19,7 @@ impl ServiceState {
     }
 }
 
-/// 服务配置。
+/// Service configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServiceConfig {
     pub name: String,
@@ -28,9 +28,9 @@ pub struct ServiceConfig {
     pub binary_path: String,
     pub args: Vec<String>,
     pub auto_start: bool,
-    /// 失败自动重启。
+    /// Failed to restart automatically.
     pub restart_on_failure: bool,
-    /// 重启延迟，秒。
+    /// Restart delay, seconds.
     pub restart_delay_secs: u64,
 }
 
@@ -66,7 +66,7 @@ impl ServiceConfig {
     }
 }
 
-/// 服务操作结果。
+/// Service results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServiceOperationResult {
     pub state: ServiceState,
@@ -93,10 +93,10 @@ impl ServiceOperationResult {
     }
 }
 
-/// 服务生命周期契约。
+/// Service life cycle compact.
 ///
-/// 平台实现：
-/// - Windows：`aicore-service-host` 提供 `sc.exe` / `windows-service` crate 包装。
+/// Platform implementations provide:
+/// Windows: `aicore-service-host` provides `sc.exe` / `windows-service` crate packaging.
 /// - Linux：systemd unit。
 pub trait IServiceController: Send + Sync {
     fn install(&self, config: &ServiceConfig) -> ServiceOperationResult;

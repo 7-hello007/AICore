@@ -15,14 +15,14 @@ use aicore_contracts::{
     },
 };
 
-/// 默认策略执行器。
+/// Default policy executor.
 ///
-/// 只做低风险控制：
-/// 1. 系统电源模式。
-/// 2. 前台进程优先级。
-/// 3. 后台进程节流（若策略要求）。
+/// Performs only low-risk controls:
+/// 1. System power mode.
+/// 2. Foreground-process priority.
+/// 3. Background-process throttling (when requested by policy).
 ///
-/// GPU / NPU 由 Runtime Router / Hardware Executor 处理；CPU 亲和性由 ProcessController 处理。
+/// GPU/NPU actions belong to Runtime Router / Hardware Executor; CPU affinity to ProcessController.
 pub struct DefaultPolicyExecutor {
     process: Option<Arc<dyn IProcessController>>,
     power: Option<Arc<dyn IPowerController>>,
@@ -42,7 +42,7 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
         let started = now_unix_ms();
         let mut outcomes: Vec<ExecutionOutcome> = Vec::new();
 
-        // 1. 电源模式（系统级）
+        // 1. Power mode (system level)
         if targets.process_only {
             outcomes.push(ExecutionOutcome {
                 resource: "power.profile".into(),
@@ -73,7 +73,7 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
             });
         }
 
-        // 2. 前台进程优先级
+        // 2. Foreground-process priority.
         if let Some(process) = &self.process {
             let fg_priority = policy.cpu.priority;
             for pid in &targets.foreground_pids {
@@ -92,7 +92,7 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
                 }
             }
 
-            // 2.5 CPU 亲和性
+            // 2.5 CPU affinity.
             if let Some(cores) = &policy.cpu.affinity_cores {
                 if let Some(process) = &self.process {
                     let mask = aicore_contracts::traits::process_controller::AffinityMask::new(
@@ -127,10 +127,10 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
                 }
             }
 
-            // 3. 后台节流
+            // 3. Background throttling.
             if policy.background.throttle {
                 for pid in &targets.background_pids {
-                    // 跳过与前台重叠的 PID
+                    // Skip PIDs that also appear in the foreground set.
                     if targets.foreground_pids.contains(pid) {
                         continue;
                     }

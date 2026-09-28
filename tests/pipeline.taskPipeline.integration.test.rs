@@ -1,4 +1,4 @@
-//! Task Pipeline 集成测试：enqueue → AdaptiveLoop tick 消费 → complete。
+//! Task Pipeline Integration Test: enqueue → AdaptiveLoop tick consumption → complete.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -143,7 +143,7 @@ fn task_enqueued_then_consumed_by_tick() {
     let outcome = loop_.tick(&ExecutionTargets::default());
 
     assert!(outcome.success);
-    // task 被消费
+    // task consumed
     let t = queue.get("t1").unwrap().unwrap();
     assert_eq!(t.state, TaskState::Completed);
     assert_eq!(queue.queued_count().unwrap(), 0);
@@ -156,7 +156,7 @@ fn tick_without_task_has_no_task_id_in_message() {
     let outcome = loop_.tick(&ExecutionTargets::default());
 
     assert!(outcome.success);
-    // queue 仍为空
+    // queue is still empty
     assert_eq!(queue.queued_count().unwrap(), 0);
 }
 
@@ -195,7 +195,7 @@ fn multiple_ticks_consume_multiple_tasks() {
 
 #[test]
 fn invalid_transition_during_finish_is_reported_gracefully() {
-    // 手工构造：先 enqueue，不 dequeue，直接 complete 会失败
+    // Artisanal construction: First enquee, no dequee, direct complete fails
     let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
     queue.enqueue(dev_task("t1")).unwrap();
     let result = queue.complete("t1", None);
@@ -205,7 +205,7 @@ fn invalid_transition_during_finish_is_reported_gracefully() {
 #[test]
 fn task_without_task_field_does_not_change_workload() {
     let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
-    // task 无 task 字段 → 不改 context.workload_type
+    // It's not gonna change.workload_type
     let mut c = TaskContract::minimal(ApplicationId::new("com.example.app"));
     c.task_id = Some("t1".to_string());
     queue
@@ -214,7 +214,7 @@ fn task_without_task_field_does_not_change_workload() {
 
     let loop_ = build_loop(queue.clone());
     let outcome = loop_.tick(&ExecutionTargets::default());
-    // 依然成功执行
+    // Still successfully implemented
     assert!(outcome.success);
     assert_eq!(
         queue.get("t1").unwrap().unwrap().state,

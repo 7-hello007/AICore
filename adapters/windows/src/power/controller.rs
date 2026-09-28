@@ -23,9 +23,9 @@ mod imp {
     use super::*;
     use windows_sys::Win32::Foundation::LocalFree;
 
-    // windows-sys 0.61 将 PowerGetActiveScheme / PowerSetActiveScheme
-    // 从 Win32::System::Power 移除，因此直接用 extern "system" 声明。
-    // 这两个函数由 powrprof.dll 导出，签名自 Windows Vista 起稳定。
+    // Windows-sys 0.61 will PowerGetActiveScheme/ PowerSetActiveScheme
+    // Removed from Win32::System::Power, and therefore declared directly using external "system".
+    // These two functions are exported by powrprof.dll and the signature is stable from Windows Vista.
     #[link(name = "powrprof")]
     extern "system" {
         fn PowerGetActiveScheme(
@@ -39,10 +39,10 @@ mod imp {
         ) -> u32;
     }
 
-    // Windows 内置电源方案 GUID：
-    //  - 高性能: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-    //  - 平衡:   381b4222-f694-41f0-9685-ff5bb260df2e
-    //  - 节能:   a1841308-3541-4fab-bc81-f71556f20b4a
+    // Windows internal power source program GUID:
+    //  - High performance: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+    //  - Balance: 381b4222-f694-41f0-9685-ff5b2df2e
+    //  - Energy efficiency: a1841308-3541-4fab-bc81-f71556f20b4a
     const GUID_HIGH_PERF: [u8; 16] = [
         0xda, 0x7f, 0x5e, 0x8c, 0xbf, 0xe8, 0x96, 0x4a, 0x9a, 0x85, 0xa6, 0xe2, 0x3a, 0x8c, 0x63,
         0x5c,

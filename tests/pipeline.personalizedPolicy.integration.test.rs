@@ -119,7 +119,7 @@ fn history_boost_raises_confidence() {
     };
 
     let s = p.suggest(&input).unwrap();
-    // 基础 0.9 + 0.05 boost，被 clamp 到 0.95
+    // Base 0.9 + 0.05 host, clamp to 0.95
     assert!((s.confidence - 0.95).abs() < f32::EPSILON);
 }
 
@@ -174,13 +174,13 @@ fn personalized_pipeline_still_passes_validator() {
         ..Default::default()
     };
 
-    // 走完整路径：AI 建议 → Validator
+    // Take the full path: AI recommends → Validator
     let base_policy = engine.generate(&snapshot, &ctx);
     let validator = DefaultPolicyValidator::new();
     let result = validator.validate(&base_policy);
     assert!(result.accepted, "policy rejected: {:?}", result.issues);
 
-    // 直接验证 MockAiProvider 在 memory 存在时不 panic
+    // Directly authenticate MockAiProvider not Panic when memory exists
     let _ = memory.sample_count;
 }
 

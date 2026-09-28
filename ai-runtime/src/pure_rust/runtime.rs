@@ -18,15 +18,15 @@ struct LoadedModel {
     weights: ModelWeights,
 }
 
-/// 纯 Rust 模型运行时。
+/// Pure Rust model runtime.
 ///
-/// - 从 JSON 文件或内联 JSON 加载权重。
-/// - 支持多个模型同时加载。
-/// - 提供 load / unload / infer / health 完整生命周期。
-/// - 无外部依赖，无 C++ 工具链。
+/// - Load weight from an JSON file or an inline JSON.
+/// - Support the simultaneous loading of multiple models.
+/// - Provides a full life cycle of load / unload / infer / health.
+/// - No external dependency, no C++ tool chain.
 pub struct PureRustRuntime {
     models: Mutex<Vec<LoadedModel>>,
-    /// handle 序号，保证唯一。
+    /// Handle serial number, guarantee the only.
     next_seq: AtomicU64,
 }
 

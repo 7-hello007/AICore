@@ -1,4 +1,4 @@
-//! Upgrade + rollback 集成测试。
+//! Upgrad + rollback integration test.
 
 use std::sync::Arc;
 
@@ -54,7 +54,7 @@ fn upgrade_failure_does_not_change_binary() {
         },
         other => panic!("expected Failed, got {:?}", other),
     }
-    // 二进制未改变
+    // Binary unchanged
     assert_eq!(c.current_binary(), "/mock/bin/aicored");
     assert_eq!(c.backup_count(), 0);
 }
@@ -79,12 +79,12 @@ fn upgrade_preserves_previous_binary_in_backup() {
     let outcome = plan.run("/new/aicored-v2");
     assert_eq!(outcome, UpgradeOutcome::Succeeded);
 
-    // rollback 恢复原始
+    // Rollback Restore Original
     c.rollback().unwrap_ok();
     assert_eq!(c.current_binary(), original);
 }
 
-// 便于断言的便捷扩展
+// Easy-to-assist expansion.
 trait UnwrapOk {
     fn unwrap_ok(self);
 }

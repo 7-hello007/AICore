@@ -10,49 +10,49 @@ use crate::runtime::{
     route::RuntimeRoute,
 };
 
-/// Dashboard 共享状态契约。
+/// Shared Dashboard state contract.
 ///
-/// **Terminal 与 Web Dashboard 必须共用此结构**。
-/// 新增任何字段都先扩展本契约，再同时增加两种渲染。
+/// **Terminal and Web Dashboard must share this structure.**
+/// Add new fields here first, then update both renderers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DashboardSnapshot {
     pub schema_version: SchemaVersion,
     pub fetched_at_unix_ms: u64,
 
-    // === 核心运行时 ===
+    // === Core runtime ===
     pub daemon_status: Option<DaemonStatus>,
 
-    // === 当前上下文与任务 ===
+    // === Current context and task ===
     pub current_context: Option<ContextSnapshot>,
     pub current_workload: Option<String>,
     pub prediction: Option<PredictionSummary>,
 
-    // === 决策 ===
+    // === Decision ===
     pub current_policy: Option<ResourcePolicy>,
     pub runtime_route: Option<RuntimeRoute>,
 
-    // === 执行 ===
+    // === Execution ===
     pub execution_status: Option<ExecutionSummary>,
     pub rollback_status: Option<RollbackSummary>,
 
-    // === 能力与组件 ===
+    // === Capabilities and components ===
     pub capabilities: Vec<CapabilityEntry>,
     pub tier_states: Vec<TierStateEntry>,
     pub plugin_states: Vec<PluginEntryDto>,
 
-    // === 长期状态 ===
+    // === Long-term state ===
     pub retention_status: Option<RetentionSummary>,
     pub ai_runtime_health: Option<AiRuntimeHealthSummary>,
 
-    // === 历史 ===
+    // === History ===
     pub recent_ticks: Vec<TickSummary>,
 
-    // === 错误 ===
+    // === Errors ===
     pub errors: Vec<String>,
 }
 
 impl DashboardSnapshot {
-    /// 当前 schema 版本。
+    /// Current schema version.
     pub const SCHEMA_VERSION: SchemaVersion = SchemaVersion::CURRENT;
 
     pub fn new(fetched_at_unix_ms: u64) -> Self {
@@ -72,7 +72,7 @@ impl DashboardSnapshot {
     }
 }
 
-/// 预测摘要。
+/// Summary of projections.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PredictionSummary {
     pub predicted_workload: String,
@@ -81,7 +81,7 @@ pub struct PredictionSummary {
     pub horizon_ms: Option<u64>,
 }
 
-/// 执行摘要。
+/// Executive summary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionSummary {
     pub policy_id: String,
@@ -90,7 +90,7 @@ pub struct ExecutionSummary {
     pub duration_ms: u64,
 }
 
-/// 回退摘要。
+/// Revert summary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RollbackSummary {
     pub triggered: bool,
@@ -104,7 +104,7 @@ pub struct RollbackSummary {
     pub reason: Option<String>,
 }
 
-/// Tier 状态条目。
+/// Tier status entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TierStateEntry {
     pub id: String,
@@ -113,7 +113,7 @@ pub struct TierStateEntry {
     pub capabilities: Vec<String>,
 }
 
-/// Retention 摘要。
+/// Retention Summary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RetentionSummary {
     pub enabled: bool,
@@ -122,7 +122,7 @@ pub struct RetentionSummary {
     pub last_run_unix_secs: u64,
 }
 
-/// AI Runtime 健康摘要。
+/// AI Runtime Health Summary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiRuntimeHealthSummary {
     pub runtime_name: String,

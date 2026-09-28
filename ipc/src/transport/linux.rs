@@ -8,7 +8,7 @@ use tokio::net::{UnixListener, UnixStream};
 use super::{read_bounded_message, IpcTransport};
 use crate::ClientIdentity;
 
-/// Linux Unix Domain Socket 传输。
+/// Linux Unix Domain Socket transfer.
 pub struct IpcStream {
     reader: BufReader<tokio::io::ReadHalf<UnixStream>>,
     writer: tokio::io::WriteHalf<UnixStream>,
@@ -44,7 +44,7 @@ impl IpcTransport for IpcStream {
     }
 }
 
-/// Unix Domain Socket 监听器。
+/// Unix Domain Socket listener.
 pub struct IpcListener {
     inner: UnixListener,
     path: PathBuf,
@@ -54,7 +54,7 @@ pub struct IpcListener {
 }
 
 impl IpcListener {
-    /// 接受一个连接。
+    /// Accept a connection.
     pub async fn accept(&self) -> io::Result<IpcStream> {
         let (stream, _) = self.inner.accept().await?;
         let credentials = stream.peer_cred()?;
@@ -81,7 +81,7 @@ impl IpcListener {
         ))
     }
 
-    /// 返回监听路径。
+    /// Returns the listening path.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -98,9 +98,9 @@ impl Drop for IpcListener {
     }
 }
 
-/// 监听 Unix Domain Socket。
+/// Listen, Unix Domain Socket.
 ///
-/// 仅清理已失效的 socket；保留普通文件、符号链接和正在监听的 socket。
+/// Clears only expired sockets; keeps normal files, symbolic links and sockets that are listening.
 pub fn server_listen(path: impl AsRef<Path>) -> io::Result<IpcListener> {
     let path = path.as_ref().to_path_buf();
     if let Some(parent) = path.parent() {
@@ -141,7 +141,7 @@ pub fn server_listen(path: impl AsRef<Path>) -> io::Result<IpcListener> {
     })
 }
 
-/// 连接 Unix Domain Socket。
+/// Connect to Unix Domain Socket.
 pub async fn client_connect(path: impl AsRef<Path>) -> io::Result<IpcStream> {
     let stream = UnixStream::connect(path.as_ref()).await?;
     Ok(IpcStream::from_stream(

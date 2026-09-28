@@ -1,4 +1,4 @@
-//! TierRegistry 与 TierRegistration 测试。
+//! TierRegistry test with TierRegistration.
 
 use aicore_contracts::errors::AicoreError;
 use aicore_contracts::tier::{

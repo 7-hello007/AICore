@@ -1,4 +1,4 @@
-//! Route → Binder → TickOutcome 集成测试。
+//! Route Binder TickOutcome integration test.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -80,7 +80,7 @@ impl IPolicyExecutor for OkExecutor {
     }
 }
 
-/// 固定输出 Cpu 的 Router。
+/// Fixed output of Cup Router.
 struct FixedCpuRouter;
 impl IRuntimeRouter for FixedCpuRouter {
     fn decide(&self, _s: &ComputerSnapshot, _c: &ContextSnapshot) -> ContractResult<RuntimeRoute> {
@@ -99,7 +99,7 @@ impl IRuntimeRouter for FixedCpuRouter {
     }
 }
 
-/// 固定返回 executed=true 的 Binder。
+/// Fixed returns the exported = true of Binder.
 struct OkBinder;
 impl IRuntimeBinder for OkBinder {
     fn bind_and_execute(&self, req: &BindingRequest) -> ContractResult<BindingResult> {

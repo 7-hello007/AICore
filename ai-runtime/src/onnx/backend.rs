@@ -15,21 +15,21 @@ use aicore_contracts::{
 use super::metrics::InferenceMetrics;
 use super::session::{IOnnxSession, IOnnxSessionFactory};
 
-/// 已加载的 ONNX 模型。
+/// A loaded ONNX model.
 struct LoadedOnnxModel {
     handle: ModelHandle,
     session: Arc<dyn IOnnxSession>,
 }
 
-/// ONNX Runtime 后端。
+/// ONNX Runtime backend.
 ///
-/// 职责：
-/// - 从 `ModelSpec`（`kind == Onnx`）加载模型。
-/// - 校验 `onnx_spec`。
-/// - 通过 `IOnnxSessionFactory` 创建 session。
-/// - 推理带超时。
-/// - 失败不 panic；返回 `ContractError`。
-/// - 记录 metrics。
+/// Duties:
+/// - Loading models from `ModelSpec` (`kind == Onnx`).
+/// - Verify `onnx_spec`.
+/// - Creates session through `IOnnxSessionFactory`.
+/// - It's time out.
+/// - Failures return `ContractError` instead of panicking.
+/// - Records.
 pub struct OnnxRuntimeBackend {
     factory: Arc<dyn IOnnxSessionFactory>,
     models: Mutex<Vec<LoadedOnnxModel>>,
@@ -98,7 +98,7 @@ impl IAiRuntime for OnnxRuntimeBackend {
             .create_session(onnx_spec, &path)
             .map_err(|e| ContractError::ResourceUnavailable(format!("create session: {}", e)))?;
 
-        // 提前取 provider 名称，避免 session 被 move 后再借用
+        // Take provider name in advance, avoid using session before moving
         let provider_name = session.provider_name();
 
         let now = now_unix_ms();
@@ -154,7 +154,7 @@ impl IAiRuntime for OnnxRuntimeBackend {
     ) -> ContractResult<InferenceResponse> {
         let start = Instant::now();
 
-        // 1. 拿 session（短暂持锁）
+        // 1. Take the session (short-term lock)
         let session: Arc<dyn IOnnxSession> = {
             let models = self.models.lock().map_err(|_| {
                 ContractError::AdapterUnavailable("onnx backend lock poisoned".into())
@@ -171,7 +171,7 @@ impl IAiRuntime for OnnxRuntimeBackend {
                 })?
         };
 
-        // 2. 校验张量输入非空
+        // 2. Validation coverage input is not empty
         if request.tensors.is_empty() {
             self.metrics
                 .record_failure(start.elapsed().as_millis() as u64);
@@ -180,9 +180,9 @@ impl IAiRuntime for OnnxRuntimeBackend {
             ));
         }
 
-        // 3. 在独立线程执行并由调用方超时边界控制等待时间。
-        // IOnnxSession 没有统一的取消接口，因此超时后无法强制终止第三方 runtime 的内部计算；
-        // 但 AICore 不再阻塞当前 control loop。具体 provider 可在自身实现中提供更强取消语义。
+        // 3. Enforce the timeout boundary in a worker thread while the caller waits.
+        // IOnnxSession does not have a unified cancellation interface, and therefore it is not possible to enforce the end of the third-party runtime internal calculation;
+        // However, AICore does not block the current control loop. Specific provider can provide stronger semantics in its own implementation.
         let tensors = request.tensors.clone();
         let session_for_run = session.clone();
         let timeout = self.timeout;

@@ -3,38 +3,38 @@ use crate::ai::runtime::{
 };
 use crate::errors::ContractResult;
 
-/// AI 模型运行时抽象。
+/// AI models run in abstracto.
 ///
-/// 实现可以是：
-/// - `PureRustRuntime`（V3-F 提供）
-/// - ONNX Runtime（V3-F.2 或更晚）
-/// - llama.cpp（V3-F.2 或更晚）
+/// This can be implemented by:
+/// - `PureRustRuntime` (provided by V3-F)
+/// - ONNX Runtime (V3-F.2 or later)
+/// -llama.cpp (V3-F.2 or later)
 /// - vendor runtime
 ///
-/// 约束：
-/// - AI Runtime **不直接调用 OS control API**。
-/// - 出错必须返回 `ContractError`，不 panic。
-/// - 生命周期：load → infer → unload。
+/// Binding:
+/// - AI Runtime** does not directly call OS control API**.
+/// - Error must return `ContractError`, not Panic.
+/// - Life cycle: load → infer unload.
 pub trait IAiRuntime: Send + Sync {
-    /// 加载模型。
+    /// Load model.
     fn load_model(&self, spec: &ModelSpec) -> ContractResult<ModelHandle>;
 
-    /// 卸载模型。句柄无效时返回错误。
+    /// Unmounts the model. Returns an error when the handle is invalid.
     fn unload(&self, handle: &ModelHandle) -> ContractResult<()>;
 
-    /// 运行推理。
+    /// Run the inference.
     fn infer(
         &self,
         handle: &ModelHandle,
         request: &InferenceRequest,
     ) -> ContractResult<InferenceResponse>;
 
-    /// Runtime 支持的能力。
+    /// The capability of Runtime support.
     fn capabilities(&self) -> Vec<RuntimeCapability>;
 
-    /// Runtime 健康状态。
+    /// Runtime state of health.
     fn health(&self) -> RuntimeHealth;
 
-    /// Runtime 名称。
+    /// Runtime name.
     fn runtime_name(&self) -> &'static str;
 }

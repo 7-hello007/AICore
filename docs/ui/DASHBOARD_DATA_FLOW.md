@@ -1,7 +1,8 @@
+[English](DASHBOARD_DATA_FLOW.md) | [Chinese](DASHBOARD_DATA_FLOW.zh-CN.md)
 # Dashboard Data Flow
 
-Realtime 数据：State/Event → Dashboard Snapshot → Terminal/Web。
+Real-time data: state or event → dashboard snapshot → terminal or web.
 
-Historical 数据：Memory → Query → History Views。
+Historical data: memory → query → history views.
 
-Web 使用受控本地 API；Terminal 与 Web 都必须能显示：状态、资源、当前 Context、当前 Policy、Execution Result、Tier、Plugin、Runtime Health。
+The web interface uses a controlled local API. Both terminal and web views should show state, resources, current context, current policy, execution results, tiers, plugins, and runtime health.

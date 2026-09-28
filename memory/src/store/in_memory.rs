@@ -6,9 +6,9 @@ use aicore_contracts::{
     traits::memory_store::IMemoryStore,
 };
 
-/// 内存存储。
+/// Memory storage.
 ///
-/// 用途：单元测试、短期会话。不持久化。
+/// Purpose: Module testing, short-term sessions. Not durable.
 #[derive(Default)]
 pub struct InMemoryStore {
     records: RwLock<Vec<HistoricalRecord>>,

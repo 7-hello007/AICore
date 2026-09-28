@@ -1,4 +1,4 @@
-//! 验证 Capability Provider 返回真实、结构完整的能力列表。
+//! Authentication Capability Provider Returns a real, structured list of capabilities.
 
 use aicore_contracts::{
     capability::status::CapabilityStatus, traits::capability_provider::ICapabilityProvider,

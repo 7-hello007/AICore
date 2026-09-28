@@ -8,9 +8,9 @@ use aicore_contracts::events::{
 };
 
 #[derive(Debug, Clone)]
-// Event 变体大小差异较大（SystemStateUpdated 包含完整 ComputerSnapshot）。
-// 当前 EventBus 用引用传递（publish(&self, event: &Event)），不做 clone 拷贝，
-// 因此不 box。若后续 EventBus 改为按值分发，需重新评估。
+// Event variants vary considerably (SystemStateUpdated contains complete ComputerSnapshot).
+// EventBus is currently transmitted by reference (public (&self, event: & Event), without copying a message.
+// Therefore, no box. If EventBus is subsequently converted to value-based distribution, it will need to be reassessed.
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
     SystemStateUpdated(SystemStateUpdated),

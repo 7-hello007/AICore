@@ -144,7 +144,7 @@ async fn async_main(args: Args) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // 首次立即渲染
+    // First rendering immediately
     clear_screen();
     let snap = client.fetch().await;
     print!("{}", render(&snap, width));

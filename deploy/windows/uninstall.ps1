@@ -1,2 +1,2 @@
-# 停止并移除开发模式安装。
+# Stop and remove the development mode installation.
 & (Join-Path $PSScriptRoot "install.ps1") -Uninstall

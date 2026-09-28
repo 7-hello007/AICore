@@ -1,6 +1,6 @@
-//! Windows affinity 能力声明测试。
+//! Windows capability statement test.
 //!
-//! 在 Linux 上只能编译 + 检查能力声明；真实 Windows 调用留 CI。
+//! Only + check capability statements can be compiled on Linux; real Windows calls for the retention of CI.
 
 #[cfg(target_os = "windows")]
 use aicore_contracts::traits::capability_provider::ICapabilityProvider;
@@ -46,6 +46,6 @@ fn affinity_returns_contract_error_on_bad_pid() {
     use aicore_adapter_windows::WindowsProcessController as PlatformProcessController;
 
     let c = PlatformProcessController::new();
-    // 999_999_999 大概率不存在；无论成功/失败都不 panic
+    // 999_999_999 No probability; success/failure is not panic
     let _ = c.get_affinity(999_999_999);
 }

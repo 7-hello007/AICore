@@ -1,4 +1,4 @@
-//! SignatureVerifier 单元测试。
+//! SignatureVerifier unit test.
 
 use std::path::PathBuf;
 
@@ -18,7 +18,7 @@ fn compute_sha256_from_bytes() {
     let sig = SignatureVerifier::compute_sha256_from_bytes(b"hello");
     assert_eq!(sig.algorithm, SignatureAlgorithm::Sha256);
     assert!(sig.is_well_formed());
-    // SHA-256("hello") 的已知值
+    // Known value of SHA-256 ( "hello")
     assert_eq!(
         sig.hash_hex,
         "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -39,7 +39,7 @@ fn compute_sha256_from_file() {
 #[test]
 fn compute_empty_input() {
     let sig = SignatureVerifier::compute_sha256_from_bytes(b"");
-    // SHA-256("") 的已知值
+    // Known value of SHA-256(")
     assert_eq!(
         sig.hash_hex,
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

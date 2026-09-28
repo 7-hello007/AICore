@@ -12,9 +12,9 @@ const CONNECTION_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 use crate::transport::{server_listen, IpcListener, IpcStream, IpcTransport};
 use crate::ClientIdentity;
 
-/// 请求处理器。daemon 实现此 trait，把 IPC 请求映射到内部服务。
+/// Request processor implemented by the daemon to map IPC requests to internal services.
 pub trait IpcHandler: Send + Sync + 'static {
-    /// 处理一条请求并返回响应数据；错误通过 `Err` 返回。
+    /// Process a request and return response data; error returned via `Err`.
     fn handle(&self, request: Request) -> Result<ResponseData, IpcError>;
 
     /// Transport-authenticated peer path. Existing in-process handlers may
@@ -27,7 +27,7 @@ pub trait IpcHandler: Send + Sync + 'static {
         self.handle(request)
     }
 
-    /// Handler 名称，用于日志。
+    /// Handler name for log.
     fn name(&self) -> &'static str;
 }
 
@@ -171,7 +171,7 @@ pub struct IpcServer {
 }
 
 impl IpcServer {
-    /// 创建 server，绑定到指定路径。
+    /// Creates a server, binds to the specified path.
     pub fn bind(path: impl Into<PathBuf>, handler: Arc<dyn IpcHandler>) -> std::io::Result<Self> {
         let listener = server_listen(path.into())?;
         let (_tx, rx) = mpsc::channel(1);
@@ -187,13 +187,13 @@ impl IpcServer {
         self.listener.path()
     }
 
-    /// 设置 shutdown channel。
+    /// Sets the shutdown channel.
     pub fn with_shutdown(mut self, rx: mpsc::Receiver<()>) -> Self {
         self.shutdown_rx = rx;
         self
     }
 
-    /// 启动事件循环。
+    /// Starts the event cycle.
     pub async fn run(mut self) {
         tracing::info!(
             component = "ipc_server",

@@ -8,12 +8,12 @@ pub struct PowerStateSnapshot {
     pub state_id: String,
 }
 
-/// 系统级电源策略抽象。
+/// System-level power policy is abstract.
 pub trait IPowerController: Send + Sync {
-    /// 应用电源模式。返回实际生效的模式（平台可能降级）。
+    /// Apply the power mode. Returns the mode in effect (the platform may be downgraded).
     fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode>;
 
-    /// 读取当前电源模式。
+    /// Reads the current power mode.
     fn get_profile(&self) -> ContractResult<PowerMode>;
 
     fn capture_state(&self) -> ContractResult<PowerStateSnapshot> {

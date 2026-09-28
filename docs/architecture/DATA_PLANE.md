@@ -1,3 +1,4 @@
+[English](DATA_PLANE.md) | [Chinese](DATA_PLANE.zh-CN.md)
 # Data Plane
 
 ```mermaid
@@ -17,9 +18,9 @@ flowchart LR
     MEM --> DASH
 ```
 
-Data Plane 必须保证：
+The data plane must ensure that:
 
-- Terminal、Web Dashboard 使用同一状态源。
-- Realtime State 与 Historical Data 分离。
-- UI 不直接访问 OS。
-- 高频数据不得阻塞 Control Plane。
+- Terminal and web dashboards use the same source.
+- Real-time state remains separate from historical data.
+- UI code does not access the OS directly.
+- High-frequency data collection does not block the control plane.

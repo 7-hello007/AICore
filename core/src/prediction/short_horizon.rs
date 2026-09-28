@@ -5,18 +5,18 @@ use aicore_contracts::{
     traits::predictor::IPredictor,
 };
 
-/// 短期预测器。
+/// Short-term predictor.
 ///
-/// 策略（按优先级）：
-/// 1. **一致性优先**：若 Memory 中最近 `min_samples` 条记录都是同一 workload，
-///    预测下一个还是它。
-/// 2. **时间模式**：相同 UTC 小时有足量且高置信的个人样本时使用它。
-/// 3. **多数优先**：若 Memory 样本数够，用 `dominant_workload`。
-/// 4. 都不可用时返回 Err，让上层回退到当前观测。
+/// Policy (by priority):
+/// 1. ** Consistency priority**: if the most recent `min_samples` records in Memory are the same workload,
+///    Prognose next or it.
+/// 2. ** Time pattern**: use of the same UTC hour with a sufficient number of trusted individual samples.
+/// ** Most priorities**: `dominant_workload` if the number of Memory samples is sufficient.
+/// 4. Return Err when none is available, and allow the upper layer to retreat to current observations.
 ///
-/// 置信度：
-/// - 一致性场景：样本数越多越自信，上限 0.95。
-/// - 多数场景：固定 0.5。
+/// Confidence:
+/// - Consistency scenario: the more the sample, the more confident, the upper limit of 0.95.
+/// - Most scenarios: fixed 0.5.
 pub struct ShortHorizonPredictor {
     min_samples: usize,
     horizon_ms: u64,
@@ -57,7 +57,7 @@ impl ShortHorizonPredictor {
             return None;
         }
 
-        // 样本越多越自信：5 条 → 0.6，10 条 → 0.8，20+ 条 → 0.95
+        // The more samples the more confident: 5 → 0.6, 10 → 0.8, 20 + → 0.95
         let confidence = (0.4 + (sample_count as f32) * 0.04).clamp(0.5, 0.95);
         if confidence < self.min_confidence {
             return None;
@@ -140,7 +140,7 @@ impl IPredictor for ShortHorizonPredictor {
             }
         }
 
-        // 1. 一致性
+        // Coherence
         if let Some(pred) = self.try_consistent(&memory.recent_workloads, memory.sample_count) {
             return Ok(pred);
         }
@@ -165,7 +165,7 @@ impl IPredictor for ShortHorizonPredictor {
             }
         }
 
-        // 2. 多数
+        // 2. Majority
         if let Some(dominant) = memory.dominant_workload {
             if let Some(pred) = self.try_dominant(dominant, memory.sample_count) {
                 return Ok(pred);

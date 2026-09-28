@@ -1,8 +1,8 @@
-//! ONNX Session 抽象。
+//! ONNX Session abstract.
 //!
 //! ONNX Session contract。
-//! 当前 V3.2 release baseline 使用 dependency-free Mock session 进行契约测试；
-//! 真实 ONNX provider 是可插拔实现，不属于 Core contract。
+//! Current V3.2 contract test using dependency-free Mock session;
+//! The real ONNX program is available for insertion and does not belong to Core contract.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use aicore_contracts::ai::runtime::{
     InferenceLabel, OnnxModelSpec, TensorDType, TensorInput, TensorSchema,
 };
 
-/// 一次 ONNX 推理会话。
+/// An ONNX inference session.
 pub trait IOnnxSession: Send + Sync {
     fn run(&self, inputs: &[TensorInput]) -> Result<Vec<InferenceLabel>, String>;
     fn input_schemas(&self) -> Vec<TensorSchema>;
@@ -19,7 +19,7 @@ pub trait IOnnxSession: Send + Sync {
     fn provider_name(&self) -> &'static str;
 }
 
-/// Session 工厂。
+/// Session factory.
 pub trait IOnnxSessionFactory: Send + Sync {
     fn create_session(
         &self,
@@ -31,7 +31,7 @@ pub trait IOnnxSessionFactory: Send + Sync {
 }
 
 // ============================================================
-// Mock 实现（默认）
+// Mark loaded (default)
 // ============================================================
 
 pub struct MockOnnxSession {
@@ -148,14 +148,14 @@ impl IOnnxSession for MockOnnxSession {
     }
 }
 
-/// Mock session 工厂。
+/// Mock session factory.
 ///
-/// - 默认总是成功（路径必须存在）。
-/// - `failing(reason)` 版本总是返回 Err，用于测试 fallback。
+/// - Default always succeeds (the path must exist).
+/// - `failing(reason)` always returns Err to test fallback.
 pub struct MockOnnxSessionFactory {
     session: Arc<dyn IOnnxSession>,
     fail_reason: Option<String>,
-    /// 若为 true，即使路径存在也失败。
+    /// If true, even the path exists.
     skip_path_check: bool,
 }
 

@@ -1,4 +1,4 @@
-//! 硬件遥测测试。
+//! Hardware telemetry testing.
 
 use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
 
@@ -24,7 +24,7 @@ fn provider_has_name() {
 fn linux_enumerates_gpu_devices_without_panic() {
     let p = PlatformProvider::new();
     let devices = p.gpu_devices();
-    // 容器 / VM 可能没有 GPU；只验证不 panic
+    // Packaging / VM may not have GPU; authentication only is not possible
     for d in &devices {
         assert!(d.id.starts_with("drm:"));
         assert!(!d.vendor.is_empty());

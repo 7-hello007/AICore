@@ -1,9 +1,9 @@
-# AICore daemon 开发模式启动脚本（Windows）。
+# AICore daemon development mode start script (Windows).
 #
-# 用法：
-#   .\install.ps1               # 安装到 %LOCALAPPDATA%\AICore 并启动
-#   .\install.ps1 -Stop         # 停止
-#   .\install.ps1 -Uninstall    # 停止并移除
+# Usage:
+#   . \install.ps1# Installed to %LOCALAPPDATA%AICore and started
+#   . install.ps1-Stop # Stop
+#   .\install.ps1 -Uninstall
 param(
     [switch]$Stop,
     [switch]$Uninstall
@@ -31,7 +31,7 @@ if ($Uninstall) {
     exit 0
 }
 
-# 安装
+# Install
 New-Item -ItemType Directory -Force -Path $InstallDir, $StateDir | Out-Null
 
 $srcDir = Split-Path -Parent $PSCommandPath

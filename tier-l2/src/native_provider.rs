@@ -13,24 +13,24 @@ use aicore_contracts::{
     traits::task_queue::ITaskQueue,
 };
 
-/// 内部记录。
+/// Internal records.
 struct NativeTaskRecord {
     contract: TaskContract,
     state: TaskState,
     submitted_at_unix_secs: u64,
 }
 
-/// L2 原生任务控制提供者。
+/// L2 Origin task control provider.
 ///
-/// 语义：
-/// - 应用通过 `submit(contract)` 提交原生任务；返回 handle。
-/// - 通过 `query(handle)` 查询状态。
-/// - 通过 `cancel(handle)` 请求取消。
-/// - 独立模式的 `transition(handle, state)` 由 Core 驱动状态机；绑定共享队列后由队列驱动。
+/// Semantics:
+/// - Apply `submit(contract)` for original tasks; return handle.
+/// - Through `query(handle)` query status.
+/// - Request cancelled through `cancel(handle)`.
+/// - The `transition(handle, state)` in a stand-alone mode is a Core driver; it is driven by a queue when the sharing queue is bound.
 ///
-/// **约束**：
-/// - L2 不直接执行 OS 操作；只管理任务元数据。
-/// - 实际执行仍走 Core 的 Validator → Executor 路径。
+/// ** Binding**:
+/// - L2 does not directly perform OS operations; only manage task metadata.
+/// - The actual execution still follows the Validator→Executor path of Core.
 pub struct L2NativeTaskProvider {
     tasks: Mutex<HashMap<String, NativeTaskRecord>>,
     next_seq: AtomicU64,
@@ -52,7 +52,7 @@ impl L2NativeTaskProvider {
         self
     }
 
-    /// 状态转换。允许：
+    /// Status conversion. Allow:
     /// - Pending → Running / Cancelled / Failed
     /// - Running → Completed / Failed / Cancelled
     pub fn transition(&self, handle: &NativeTaskHandle, next: TaskState) -> ContractResult<()> {
@@ -90,7 +90,7 @@ impl L2NativeTaskProvider {
         self.tasks.lock().map(|t| t.len()).unwrap_or(0)
     }
 
-    /// 返回 task 的 contract 与提交时间。
+    /// Returns the task with the submission time.
     pub fn task_info(
         &self,
         handle: &NativeTaskHandle,
@@ -205,7 +205,7 @@ impl INativeTaskProvider for L2NativeTaskProvider {
             }
             return queue.cancel(&handle.handle_id);
         }
-        // 只有 Pending / Running 可取消
+        // Only Pending / Running can be cancelled
         let current = self.query(handle)?;
         match current {
             TaskState::Queued | TaskState::Running => self.transition(handle, TaskState::Cancelled),

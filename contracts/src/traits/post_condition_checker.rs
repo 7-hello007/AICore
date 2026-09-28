@@ -1,20 +1,20 @@
 use crate::execution::result::ExecutionResult;
 use crate::policy::resource_policy::ResourcePolicy;
 
-/// 后置条件检查结果。
+/// Post-condition check results.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PostConditionResult {
-    /// 检查通过。
+    /// Check through.
     Passed,
-    /// 检查失败，附原因。
+    /// Check failed, with reasons.
     Failed(String),
-    /// 不适用（例如资源不可用），不算失败。
+    /// Not applicable (e.g., non-availability of resources) is not a failure.
     NotApplicable,
 }
 
-/// 后置条件检查器。
+/// Post-condition checker.
 ///
-/// 在 Apply 之后调用；若返回 `Failed`，Executor 应触发 Rollback。
+/// Call after Apply; if `Failed` is returned, Excel should trigger Rollback.
 pub trait IPostConditionChecker: Send + Sync {
     fn verify(&self, policy: &ResourcePolicy, result: &ExecutionResult) -> PostConditionResult;
 

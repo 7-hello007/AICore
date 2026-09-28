@@ -1,12 +1,12 @@
 # Windows CI smoke test。
 #
-# 在 GitHub Actions 的 Windows runner 上：
-#   1. 构建 aicored。
-#   2. 以 --once 模式运行，验证退出码 0。
-#   3. 验证状态文件被写入。
-#   4. 构建 service-host crate。
+# Yes. GitHub Actions Windows Runner on:
+#   Construction.
+#   2. Run in --once mode, verify exit code 0.
+#   3. The certification status document is written.
+#   4. Build service-host crime.
 #
-# 不安装真实 Windows Service（需要 admin，CI runner 可用但耗时）。
+# No real Windows Service (needs admin, CI runner is available but time-consuming).
 
 $ErrorActionPreference = "Stop"
 

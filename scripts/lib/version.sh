@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
-# 从 workspace 的 Cargo.toml 读取规范版本。
+# Read the canonical workspace version from Cargo.toml.
 #
-# 用法：
+# Usage:
 #   REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 #   source "${REPO_ROOT}/scripts/lib/version.sh"
 #   echo "$WORKSPACE_VERSION"
 #
-# 设计意图：
-#   - workspace.package.version 是版本号的唯一来源。
-#   - 所有构建脚本必须通过此库读取，禁止硬编码版本号。
-#   - 用户可通过 AICORE_VERSION 环境变量显式覆盖。
+# Design intent:
+#   - workspace.package.version is the only default version source.
+#   - Build scripts must use this library instead of hard-coding a version.
+#   - AICORE_VERSION provides an explicit override.
 
-# 解析库脚本自身的位置，以便在不依赖当前工作目录的情况下找到仓库根目录。
+# Resolve the repository root from this script rather than the current directory.
 _version_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _version_repo_root="$(cd "${_version_lib_dir}/../.." && pwd)"
 
-# 从给定 manifest 中提取 [workspace.package] 下的 version 字段。
-# 参数：
-#   $1 - 可选的 Cargo.toml 路径；默认使用仓库根目录的 Cargo.toml。
-# 返回值：
-#   成功时输出版本字符串（例如 "0.1.0"）；失败时输出空字符串。
+# Extract the version field from `[workspace.package]` in a manifest.
+# Parameters:
+#   $1 - optional Cargo.toml path; defaults to the repository-root Cargo.toml.
+# Return value:
+#   Print the version string on success (for example, "0.1.0"); print nothing on failure.
 get_workspace_version() {
     local manifest="${1:-${_version_repo_root}/Cargo.toml}"
     if [ ! -f "$manifest" ]; then
-        echo "错误：找不到 manifest: $manifest" >&2
+        echo "Error: manifest not found: $manifest" >&2
         return 1
     fi
     sed -n '/^\[workspace\.package\]/,/^\[/p' "$manifest" \
@@ -32,10 +32,10 @@ get_workspace_version() {
         | sed -E 's/.*"([^"]*)".*/\1/'
 }
 
-# 加载时立即解析版本，并导出到环境。
+# Resolve and export the version when this library is sourced.
 WORKSPACE_VERSION="${AICORE_VERSION:-$(get_workspace_version)}"
 if [ -z "$WORKSPACE_VERSION" ]; then
-    echo "错误：无法从 ${_version_repo_root}/Cargo.toml 读取 workspace.package.version" >&2
+    echo "Error: cannot read from ${_version_repo_root}/Cargo.toml workspace.package.version" >&2
     return 1 2>/dev/null || exit 1
 fi
 

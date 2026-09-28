@@ -17,20 +17,20 @@ use crate::scenarios::Scenario;
 use aicore_contracts::traits::policy_engine::IPolicyEngine;
 use aicore_contracts::traits::task_classifier::ITaskClassifier;
 
-/// 执行一个场景，返回证据。
+/// Run a scene and return the evidence.
 pub fn run_scenario(scenario: &Scenario) -> ScenarioEvidence {
     let mut failures: Vec<String> = Vec::new();
 
-    // 1. 构造场景 snapshot
+    // 1. Construct the scene snapshot
     let snapshot = (scenario.snapshot)();
 
-    // 2. Context Engine 推断 workload
+    // 2. Context Engineering extrapolation workload
     let _ctx_engine = ContextEngine::new(Arc::new(RuleBasedClassifier::new()));
     let classifier = RuleBasedClassifier::new();
     let input = build_classification_input(&snapshot);
     let inferred = classifier.classify(&input);
 
-    // 3. 构造 ContextSnapshot（模拟 Context Engine 输出）
+    // 3. Construct ContextSnapshot (simulate Context Engineering output)
     let context = ContextSnapshot {
         foreground_app: Some(scenario.foreground_app.to_string()),
         workload_type: inferred,
@@ -42,13 +42,13 @@ pub fn run_scenario(scenario: &Scenario) -> ScenarioEvidence {
         ..Default::default()
     };
 
-    // 4. Policy Engine（规则 + 预测器可选）
+    // 4. Policy Engineering (rule + predictor option)
     let predictor = Arc::new(ShortHorizonPredictor::with_defaults());
-    let _ = predictor; // 预测器在无 memory 时返回 None；本场景不带 memory
+    let _ = predictor; // Projector returns None without memory; this scenario does not have memory
     let policy_engine = RuleBasedPolicyEngine::new();
     let policy: ResourcePolicy = policy_engine.generate(&snapshot, &context);
 
-    // 5. 检查
+    // 5. Inspection
     if inferred != scenario.expected_workload {
         failures.push(format!(
             "classifier returned {:?}, expected {:?}",
@@ -64,7 +64,7 @@ pub fn run_scenario(scenario: &Scenario) -> ScenarioEvidence {
         failures.push("policy reason is empty".to_string());
     }
 
-    // 6. 模拟执行器输出（不依赖真实控制）
+    // 6. Simulator output (not dependent on real control)
     let overall_status = ExecutionOverallStatus::NoOp;
 
     ScenarioEvidence {
@@ -115,6 +115,6 @@ fn build_classification_input(
     }
 }
 
-// 保持 import 使用
+// Keep effect use
 #[allow(dead_code)]
 fn _unused(_t: ExecutionTargets, _s: PolicySource) {}

@@ -5,56 +5,56 @@ use super::{
     permission::PluginPermission,
 };
 
-/// 插件类型。
+/// Plugin type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginKind {
-    /// 平台适配器。
+    /// Platform adapter.
     Adapter,
     /// AI Provider。
     AiProvider,
-    /// 遥测源。
+    /// Telemetry source.
     Telemetry,
-    /// 通用扩展。
+    /// Universal expansion.
     Extension,
 }
 
-/// 插件信任等级。
+/// Plugin trust level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustLevel {
-    /// 随产品发布的插件。
+    /// Plugin with product release.
     BuiltIn,
-    /// 已签名 / 已验证的插件。
+    /// Signed/ validated plugins.
     Trusted,
-    /// 本地开发插件。
+    /// Local development plugin.
     LocalDev,
-    /// 未验证插件（默认拒绝控制类权限）。
+    /// No Plugin Validation (Default to Control Class Permissions).
     #[default]
     Untrusted,
 }
 
-/// 插件 manifest。
+/// plugin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub name: String,
     pub version: String,
-    /// Plugin API 版本，例如 "1.0"。
+    /// Plugin API version, for example "1.0".
     pub api_version: String,
     pub kind: PluginKind,
     #[serde(default)]
     pub trust_level: TrustLevel,
-    /// 插件声明实现哪些接口，例如 ["IGpuController"]。
+    /// The plugin states which interfaces are implemented, such as ["IGpuController"].
     pub interfaces: Vec<String>,
     #[serde(default)]
     pub permissions: Vec<PluginPermission>,
-    /// 人类可读描述。
+    /// Humans can read descriptions.
     #[serde(default)]
     pub description: String,
 }
 
 impl PluginManifest {
-    /// 校验 manifest 合法性。
+    /// Validates the legal validity of a person.
     pub fn validate(&self) -> Result<ApiVersion, crate::errors::AicoreError> {
         use crate::errors::AicoreError;
 
@@ -89,12 +89,12 @@ impl PluginManifest {
         Ok(api)
     }
 
-    /// 是否请求了控制类权限。
+    /// Whether control type privileges are requested.
     pub fn requests_control(&self) -> bool {
         self.permissions.iter().any(|p| p.is_control())
     }
 
-    /// 未验证插件请求控制类权限 → 拒绝。
+    /// Unvalidated plugin requests control class permissions.
     pub fn is_permission_allowed(&self) -> bool {
         if self.trust_level == TrustLevel::Untrusted && self.requests_control() {
             return false;

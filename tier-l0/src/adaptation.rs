@@ -12,13 +12,13 @@ use aicore_contracts::{
 };
 use aicore_core::policy::RuleBasedPolicyEngine;
 
-/// L0 adaptation provider：基于规则从观察到的状态生成资源策略建议。
+/// L0 analysis projecter: a rule-based proposal to generate resource strategies from observed states.
 ///
-/// 特点：
-/// - 不直接执行任何控制；只产出 hint。
-/// - 建议会被 Core 的 Validator 与 Executor 走同一路径处理。
-/// - 低置信度返回 `None`，让 Core 保持当前策略。
-/// - **Capability-driven**：GPU/NPU 不可用时降级相关字段并附加说明。
+/// Characteristics:
+/// - No direct implementation of any controls; output only hint.
+/// - It is suggested that the Core Validator and Execut will go along the same path.
+/// - returns `None` with low confidence, allowing Core to maintain the current policy.
+/// - **Capability-driving**: GPU/NPU not available to downgrade relevant fields with annotations.
 pub struct L0AdaptationProvider {
     engine: Arc<dyn IPolicyEngine>,
     min_confidence: f32,
@@ -61,7 +61,7 @@ impl IAdaptationProvider for L0AdaptationProvider {
         snapshot: &ComputerSnapshot,
         context: &ContextSnapshot,
     ) -> ContractResult<Option<AdaptationHint>> {
-        // L0 只处理已识别场景；Unknown workload 时保持原策略。
+        // L0 handles only recognized scenes; Unknown workload maintains the original policy.
         if context.workload_type == WorkloadType::Unknown {
             return Ok(None);
         }
@@ -82,18 +82,18 @@ impl IAdaptationProvider for L0AdaptationProvider {
         evidence.push(format!("workload={:?}", context.workload_type));
 
         if !gpu_available {
-            // 无 GPU 遥测 → 不宣称能控制 GPU。
+            // No GPU telemetry does not claim to control GPU.
             policy.gpu.priority = PolicyPriority::Normal;
             evidence.push("gpu_unavailable: gpu policy downgraded".to_string());
         }
         if !npu_available {
-            // 无 NPU → 清除 preferred。
+            // No NPU → cleared preferred.
             policy.npu.priority = PolicyPriority::Normal;
             policy.npu.preferred = false;
             evidence.push("npu_unavailable: npu policy downgraded".to_string());
         }
 
-        // 保持不变量：overall >= 所有子资源。
+        // No change: Overall > = all sub-resources.
         let overall = [
             policy.cpu.priority,
             policy.gpu.priority,
@@ -119,12 +119,12 @@ impl IAdaptationProvider for L0AdaptationProvider {
     }
 
     fn priority(&self) -> u32 {
-        // L0 最低优先级：L1/L2 显式声明优先。
+        // L0 Minimum priority: L1/L2 explicit declaration priority.
         100
     }
 }
 
-/// 供测试使用的空 policy 检查辅助。
+/// Empty policy check aids for testing.
 #[allow(dead_code)]
 pub(crate) fn policy_is_empty(p: &ResourcePolicy) -> bool {
     p.reason.trim().is_empty()

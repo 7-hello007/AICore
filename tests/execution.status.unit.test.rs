@@ -1,4 +1,4 @@
-//! ExecutionOverallStatus 语义测试。
+//! ExecutionOverallStatus semantic test.
 
 use aicore_contracts::execution::{
     result::ExecutionOutcome,

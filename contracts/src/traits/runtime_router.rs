@@ -3,14 +3,14 @@ use crate::errors::ContractResult;
 use crate::runtime::route::RuntimeRoute;
 use crate::telemetry::snapshot::ComputerSnapshot;
 
-/// Runtime 路由决策。
+/// Runtime route decision.
 pub trait IRuntimeRouter: Send + Sync {
-    /// 根据当前状态与上下文决定路由。
+    /// The route is determined according to the current status and context.
     ///
-    /// 约束：
-    /// - 不得为"AI 化"而强行改变未知 workload。
-    /// - 无明确收益 / 无法识别时返回 Native。
-    /// - 出错时必须返回 Native，不 panic。
+    /// Binding:
+    /// - No forced change of unknown workload for AI.
+    /// - No definite gain / Unidentifiable return to Native.
+    /// - We must return Native, not Panic.
     fn decide(
         &self,
         snapshot: &ComputerSnapshot,

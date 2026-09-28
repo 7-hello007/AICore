@@ -1,4 +1,4 @@
-//! TransparentExecutor 六段式测试。
+//! TransparentExecutor six-part test.
 
 use std::sync::Arc;
 
@@ -24,7 +24,7 @@ use aicore_contracts::{
 };
 use aicore_core::executor::TransparentExecutor;
 
-/// Mock executor：可配置返回状态。
+/// Test executor with a configurable return state.
 struct MockExecutor {
     status: ExecutionOverallStatus,
 }
@@ -53,7 +53,7 @@ impl IPolicyExecutor for MockExecutor {
     }
 }
 
-/// 可配置的 checker。
+/// Configure checker.
 struct MockChecker {
     result: PostConditionResult,
 }
@@ -108,7 +108,7 @@ fn success_path_produces_six_stages() {
     let tx = TransparentExecutor::new(inner);
     let trace = tx.execute_transparent(&policy("p1"), &ExecutionTargets::default(), None);
 
-    // 6 阶段：Observe / Decide / Validate / Apply / Verify / Rollback
+    // 6 Phase: Observ / Decide / Validate / Apply / Verify / Rollback
     assert_eq!(trace.stages.len(), 6);
     assert_eq!(
         trace.stage(ControlStage::Observe).unwrap().status,
@@ -142,8 +142,8 @@ fn success_path_produces_six_stages() {
 
 #[test]
 fn apply_failure_triggers_rollback_with_prior() {
-    // inner 在首次调用返回 AllFailed，回退时返回 AllSucceeded。
-    // 用状态机模拟。
+    // Inner returns AllFailed on first call and returns AllSucceeded on retreat.
+    // Simulate with a status machine.
     use std::sync::atomic::{AtomicU32, Ordering};
     struct SwitchingExecutor {
         call_count: AtomicU32,
@@ -180,7 +180,7 @@ fn apply_failure_triggers_rollback_with_prior() {
     assert!(trace.rollback.triggered);
     assert_eq!(trace.rollback.succeeded, Some(true));
     assert_eq!(trace.rollback.to_policy_id.as_deref(), Some("prior"));
-    // Apply 阶段记录成功（因为 execute 被调用），但 Verify 标记失败
+    // Apply Phase Record Successful (because execute is called), but Verify tag failed
     assert_eq!(
         trace.stage(ControlStage::Verify).unwrap().status,
         StageStatus::Failed
@@ -219,7 +219,7 @@ fn noop_does_not_trigger_rollback() {
 
     assert!(!trace.rollback.triggered);
     assert!(!trace.is_success());
-    // NoOp → Verify 不适用
+    // NoOp → Verify Not applicable
     assert_eq!(
         trace.stage(ControlStage::Verify).unwrap().status,
         StageStatus::Skipped

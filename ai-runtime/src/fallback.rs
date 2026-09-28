@@ -10,13 +10,13 @@ use aicore_contracts::{
     traits::ai_runtime::IAiRuntime,
 };
 
-/// 带 fallback 的 Runtime 组合器。
+/// Runtime mixer with fallback.
 ///
-/// 语义：
-/// - `primary` 优先。
-/// - `primary` 任何错误（load / infer / unload）→ 透明转 `fallback`。
-/// - `primary` 与 `fallback` 都失败 → 返回 `primary` 的错误。
-/// - 记录 fallback 次数，供审计。
+/// Semantics:
+/// - `primary` priority.
+/// - `primary` Any error (load / infer / unload) `fallback`。
+/// - `primary` and `fallback` failed to return `primary`.
+/// - Record the number of fallbacks for audit.
 pub struct FallbackAiRuntime {
     primary: Arc<dyn IAiRuntime>,
     fallback: Arc<dyn IAiRuntime>,
@@ -88,11 +88,11 @@ impl IAiRuntime for FallbackAiRuntime {
     }
 
     fn unload(&self, handle: &ModelHandle) -> ContractResult<()> {
-        // 尝试主 runtime
+        // Try the primary runtime
         if let Ok(()) = self.primary.unload(handle) {
             return Ok(());
         }
-        // 回退
+        // Back
         self.fallback.unload(handle)
     }
 
@@ -137,7 +137,7 @@ impl IAiRuntime for FallbackAiRuntime {
     }
 
     fn health(&self) -> RuntimeHealth {
-        // 主 runtime 健康则报主；否则报 fallback 的健康
+        // Report primary runtime health; otherwise report Fallback Health
         match self.primary.health() {
             RuntimeHealth::Healthy { loaded_models } if loaded_models > 0 => {
                 RuntimeHealth::Healthy { loaded_models }

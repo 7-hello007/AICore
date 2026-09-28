@@ -7,10 +7,10 @@ use crate::schema::SchemaVersion;
 
 use super::{mode::RuntimeMode, tick::TickOutcome};
 
-/// Daemon 对外暴露的状态快照 schema 版本。
+/// Daemon exposed state snapshot schema version.
 pub const STATE_SCHEMA_VERSION: SchemaVersion = SchemaVersion::CURRENT;
 
-/// Daemon 对外暴露的状态快照。
+/// Damon's exposed state snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DaemonStatus {
     pub version: SchemaVersion,
@@ -24,7 +24,7 @@ pub struct DaemonStatus {
     pub last_tick: Option<TickSummary>,
 }
 
-/// Tick 摘要。
+/// Tick. Summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct TickSummary {
     pub tick_id: u64,

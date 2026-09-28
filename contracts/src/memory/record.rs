@@ -6,10 +6,10 @@ use crate::execution::status::ExecutionOverallStatus;
 use crate::policy::priority::PolicySource;
 use crate::policy::resource_policy::PowerMode;
 
-/// 一条历史执行记录。
+/// A historical implementation record.
 ///
-/// 记录"某时刻、某 workload、产生某 policy、执行得到某结果"。
-/// 用于个人化、预测、审计。
+/// Record "sometimes, some workload, produce a policy, execute something."
+/// For personalization, forecasting, audit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HistoricalRecord {
     pub record_id: String,

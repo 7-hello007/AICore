@@ -1,6 +1,7 @@
+[English](THREAT_MODEL.md) | [Chinese](THREAT_MODEL.zh-CN.md)
 # Threat Model
 
-主要威胁：
+Main threats:
 
 | Threat | Control |
 |---|---|

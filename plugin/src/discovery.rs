@@ -4,14 +4,14 @@ use aicore_contracts::plugin::manifest::PluginManifest;
 
 use crate::registry::{PluginRegistry, RegistryError};
 
-/// 单个 manifest 文件的解析结果。
+/// The resolution of a single manise file.
 #[derive(Debug, Clone)]
 pub struct DiscoveredPlugin {
     pub path: PathBuf,
     pub manifest: PluginManifest,
 }
 
-/// 发现结果。
+/// Finding results.
 #[derive(Debug, Clone, Default)]
 pub struct DiscoveryReport {
     pub discovered: Vec<DiscoveredPlugin>,
@@ -24,9 +24,9 @@ pub struct RejectedPlugin {
     pub reason: String,
 }
 
-/// 扫描目录下的 `*.plugin.json`，解析并校验 manifest。
+/// Scan `*.plugin.json` in the directory, parse and validate manifest.
 ///
-/// 单个插件失败不影响其他插件。
+/// The failure of a single plugin does not affect other plugins.
 pub fn discover_from_dir(dir: impl AsRef<Path>) -> DiscoveryReport {
     let mut report = DiscoveryReport::default();
     let dir = dir.as_ref();
@@ -110,9 +110,9 @@ fn load_manifest(path: &Path) -> Result<PluginManifest, String> {
     Ok(manifest)
 }
 
-/// 把发现结果注册到 registry。
+/// Register the discovery to report.
 ///
-/// 返回成功注册的数量。
+/// Returns the number of successful registrations.
 pub fn register_discovered(
     registry: &PluginRegistry,
     report: &DiscoveryReport,

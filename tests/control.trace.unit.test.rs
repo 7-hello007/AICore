@@ -1,4 +1,4 @@
-//! ControlTrace / StageOutcome / RollbackRecord 序列化测试。
+//! ControlTrace/StageOutcome/RollbackRecord Sequenceization test.
 
 use aicore_contracts::{
     control::{
@@ -76,7 +76,7 @@ fn trace_is_success_ignores_rollback_stage() {
         rollback: RollbackRecord::not_triggered(),
         total_duration_ms: 0,
     };
-    // Rollback 阶段不参与判断，但最终 AllFailed 不能声称策略成功。
+    // The Rollback stage is not involved in judgement, but ultimately AllFailed cannot claim success.
     assert!(!trace.is_success());
 }
 

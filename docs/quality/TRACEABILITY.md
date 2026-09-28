@@ -1,3 +1,4 @@
+[English](TRACEABILITY.md) | [Chinese](TRACEABILITY.zh-CN.md)
 # Requirement Traceability
 
 ```mermaid
@@ -12,4 +13,4 @@ flowchart LR
     REQ --> MOD --> API --> CODE --> TEST --> ACCEPT
 ```
 
-每个 FR/NFR 都必须能追踪到至少一个实现入口和一个测试/验收证据。
+Every functional or nonfunctional requirement must trace to at least one implementation entry point and one item of test or acceptance evidence.

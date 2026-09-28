@@ -19,7 +19,7 @@ fn controller_reports_platform() {
 fn controller_handles_bad_pid_gracefully() {
     use aicore_contracts::policy::priority::PolicyPriority;
     let c = PlatformProcessController::new();
-    // 一个大概率不存在的 PID
+    // An PID that probably doesn't exist.
     let result = c.set_priority(999_999_999, PolicyPriority::Low);
     assert!(result.is_err(), "invalid PID must not succeed");
 }

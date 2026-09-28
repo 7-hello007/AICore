@@ -4,9 +4,9 @@ use aicore_contracts::hardware::capability::{
     HardwareCapability, HardwareCapabilityEntry, HardwareCapabilitySet,
 };
 
-/// Windows 硬件能力探测。
+/// Windows hardware capability detection.
 ///
-/// 通用 ABI 不存在时只报告已检测到的能力；vendor-specific capability 由运行时/插件提供。
+/// The common ABI reports only detected capabilities; vendor-specific capabilities come from a runtime or plugin.
 pub struct WindowsHardwareCapabilityProvider;
 impl WindowsHardwareCapabilityProvider {
     pub fn new() -> Self {

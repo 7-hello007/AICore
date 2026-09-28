@@ -6,12 +6,12 @@ use aicore_contracts::{
     task::{preferences::LatencySensitivity, TaskContract},
 };
 
-/// 将 TaskContract 覆盖到基础 ContextSnapshot 上。
+/// Overwrite TaskContract over the base ContextSnapshot.
 ///
-/// 语义：
-/// - 应用显式声明的字段覆盖 ContextEngine 的推断。
-/// - 未声明的字段保留 ContextEngine 结果。
-/// - 覆盖时 confidence 提升到 1.0，表示"应用显式声明"。
+/// Semantics:
+/// - Apply the field of the explicit declaration to the ContextEngine extrapolation.
+/// - Undeclared fields retain ContextEngine results.
+/// - Override confidence up to 1.0, meaning "apply a explicit declaration".
 pub fn apply_task_contract(base: &ContextSnapshot, contract: &TaskContract) -> ContextSnapshot {
     let mut merged = base.clone();
     let mut overridden = false;
@@ -20,7 +20,7 @@ pub fn apply_task_contract(base: &ContextSnapshot, contract: &TaskContract) -> C
         merged.workload_type = w;
         overridden = true;
     } else {
-        // 若未显式声明，但应用类别可推断，保持 base
+        // If no explicit declaration is available, but application categories can be extrapolated, base maintained
         let _ = WorkloadType::Unknown;
     }
 

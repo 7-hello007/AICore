@@ -1,16 +1,16 @@
 use crate::errors::ContractResult;
 use crate::task::{contract::TaskContract, lifecycle::TaskState};
 
-/// L2 原生任务生命周期句柄。
+/// L2 Natural mission life cycle handle.
 #[derive(Debug, Clone)]
 pub struct NativeTaskHandle {
     pub handle_id: String,
 }
 
-/// 原生任务控制提供者。
+/// Primary task control provider.
 ///
-/// **仅 L2 可实现**；L0 / L1 不得实现。
-/// Core 通过此接口管理原生任务；不关心具体 Tier。
+/// **Implemented only by L2**; L0 and L1 do not implement this contract.
+/// Core manages primary tasks through this interface; it does not concern the specific Tier.
 pub trait INativeTaskProvider: Send + Sync {
     fn submit(&self, contract: &TaskContract) -> ContractResult<NativeTaskHandle>;
 

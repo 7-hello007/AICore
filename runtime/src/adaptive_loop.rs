@@ -95,9 +95,9 @@ fn historical_record_id(timestamp_unix_ms: u64, tick_id: u64) -> String {
     )
 }
 
-/// 顶层自适应循环。
+/// Top-level adaptive loop.
 ///
-/// 每次 tick 完成一次完整闭环：
+/// Each tick completes a control loop:
 /// Observe → Understand → Decide → Validate → Execute → Measure → Learn。
 pub struct AdaptiveLoop {
     telemetry: Arc<dyn ITelemetryProvider>,
@@ -160,13 +160,13 @@ impl AdaptiveLoop {
         }
     }
 
-    /// 可选：启用记忆写入。写入前会检查用户 profile 是否允许记录。
+    /// Optionally enable memory writes, subject to the user profile's consent.
     pub fn with_memory(mut self, memory: Arc<dyn IMemoryStore>) -> Self {
         self.memory = Some(memory);
         self
     }
 
-    /// 可选：启用短期预测器。
+    /// Optionally enable short-term prediction.
     pub fn with_predictor(mut self, predictor: Arc<dyn IPredictor>) -> Self {
         self.predictor = Some(predictor);
         self
@@ -180,37 +180,37 @@ impl AdaptiveLoop {
         self
     }
 
-    /// 可选：启用透明执行器（六段式 + rollback）。
+    /// Optionally enable transparent execution (six stages and rollback).
     pub fn with_transparent_executor(mut self, exec: Arc<dyn ITransparentExecutor>) -> Self {
         self.transparent = Some(exec);
         self
     }
 
-    /// 可选：启用 Task 队列。
+    /// Optional: Enable the Task queue.
     pub fn with_task_queue(mut self, queue: Arc<dyn ITaskQueue>) -> Self {
         self.task_queue = Some(queue);
         self
     }
 
-    /// 可选：启用 Runtime Router。
+    /// Optional: Enable Runtime Router.
     pub fn with_runtime_router(mut self, router: Arc<dyn IRuntimeRouter>) -> Self {
         self.runtime_router = Some(router);
         self
     }
 
-    /// 可选：启用 Runtime Binder。
+    /// Optional: Enable Runtime Binder.
     pub fn with_runtime_binder(mut self, binder: Arc<dyn IRuntimeBinder>) -> Self {
         self.runtime_binder = Some(binder);
         self
     }
 
-    /// 注入独立 TierHub。Core 不知道 L0/L1/L2 的具体类型，只通过能力接口发现。
+    /// Inject an independent TierHub; Core discovers L0/L1/L2 through capabilities.
     pub fn with_tier_hub(mut self, hub: Arc<TierHub>) -> Self {
         self.tier_hub = Some(hub);
         self
     }
 
-    /// 注入事件总线。事件总线仅负责发布观察结果，不参与业务决策。
+    /// Inject an event bus that publishes observations without making decisions.
     pub fn with_event_bus(mut self, bus: Arc<EventBus>) -> Self {
         self.event_bus = Some(bus);
         self
@@ -254,11 +254,11 @@ impl AdaptiveLoop {
             .unwrap_or(false)
     }
 
-    /// 从 memory store 构造 MemoryContext。
+    /// Construct MemoryContext from memory store.
     ///
-    /// - 无 memory：None。
-    /// - profile 既不允许 history 也不允许 personalize：None（隐私优先）。
-    /// - 有 memory：加载最近 N 条记录并聚合。
+    /// - No memory: None.
+    /// - Neither history nor personalization is permitted: None (privacy first).
+    /// - Memory is permitted: load and aggregate the latest N records.
     fn build_memory_context(&self) -> Option<aicore_contracts::memory::context::MemoryContext> {
         let memory = self.memory.as_ref()?;
 
@@ -267,12 +267,12 @@ impl AdaptiveLoop {
             .flatten()
     }
 
-    /// 应用短期预测。
+    /// Apply short-term prediction.
     ///
-    /// 返回 (merged_context, prediction)。
-    /// - 无 predictor：返回原 context，prediction = None。
-    /// - 预测失败或低置信度：返回原 context，prediction = None。
-    /// - 预测成功：返回 workload_type 被替换的 context，prediction = Some。
+    /// Returns (merged_context, prediction).
+    /// - No predictor: preserve the original context and return None.
+    /// - Failed or low-confidence prediction: preserve the original context and return None.
+    /// - Successful prediction: replace workload_type and return Some(prediction).
     fn apply_prediction(
         &self,
         context: aicore_contracts::context::snapshot::ContextSnapshot,
@@ -306,7 +306,7 @@ impl AdaptiveLoop {
         }
     }
 
-    /// 每 tick 最多取出一小批任务；队列实现仍负责原子 dequeue。
+    /// Dequeue a bounded batch per tick; the queue performs the dequeue atomically.
     fn dequeue_tasks(&self, limit: usize) -> Vec<aicore_contracts::task::queued::QueuedTask> {
         let queue = match self.task_queue.as_ref() {
             Some(queue) => queue,
@@ -326,7 +326,7 @@ impl AdaptiveLoop {
         }
     }
 
-    /// 从 tick 收集 Dashboard 需要的字段。
+    /// Collects fields for Dashboard from tick.
     fn collect_snapshot_fields(
         &self,
         state: &aicore_core::domain::computer_state::ComputerState,
@@ -347,7 +347,7 @@ impl AdaptiveLoop {
         }
     }
 
-    /// 从 runtime binder 生成 AI Runtime 健康摘要。
+    /// Generates a health summary of AI Runtime from runtime binder.
     fn ai_runtime_health_json(&self) -> Option<String> {
         let binder = self.runtime_binder.as_ref()?;
         let models = binder.loaded_models();
@@ -364,7 +364,7 @@ impl AdaptiveLoop {
         serde_json::to_string(&summary).ok()
     }
 
-    /// 只做 Runtime 路由决策。该阶段无系统副作用。
+    /// Decide the runtime route without system side effects.
     fn decide_runtime_route(
         &self,
         state: &aicore_core::domain::computer_state::ComputerState,
@@ -380,7 +380,7 @@ impl AdaptiveLoop {
         }
     }
 
-    /// Policy 已通过 Validator 后才允许 Binder 执行。
+    /// Only execute the binder after the policy passes validation.
     fn execute_runtime_binding(
         &self,
         route: Option<&aicore_contracts::runtime::route::RuntimeRoute>,
@@ -599,14 +599,14 @@ impl AdaptiveLoop {
             "context built"
         );
 
-        // 2.5：L1 显式 task contract 优先于 L0 推断；L2 provider 独立注册。
+        // 2.5: An explicit L1 task takes priority over L0 inference; L2 registers separately.
         let tier_task = self.tier_hub.as_ref().and_then(|hub| {
             hub.best_task_source()
                 .ok()
                 .flatten()
                 .and_then(|src| src.current_task().ok().flatten())
         });
-        // 一个 tick 只执行一个 task，避免一个 policy 被错误地用于多个任务后又全部标记完成。
+        // A tick performs only one task to avoid that one policy is wrongly used for multiple tasks before all is marked.
         const MAX_TASKS_PER_TICK: usize = 1;
         let mut tasks = PreparedTaskGuard {
             tasks: self.dequeue_tasks(MAX_TASKS_PER_TICK),
@@ -661,7 +661,7 @@ impl AdaptiveLoop {
             "runtime routing complete"
         );
 
-        // 3. Decide：根据 mode 选择引擎
+        // 3. Decide: select the engine for the current mode.
         let engine: &Arc<dyn IPolicyEngine> = match mode_before {
             RuntimeMode::Normal => &self.primary_engine,
             RuntimeMode::Degraded | RuntimeMode::Safe | RuntimeMode::Recovery => {
@@ -691,7 +691,7 @@ impl AdaptiveLoop {
             }
         }
 
-        // TaskContract 是显式应用约束，必须在任何 Tier policy override 之后重新施加。
+        // TaskContract is an explicit application constraint that must be re-imposed after any Tier policy override.
         if let Some(contract) = tier_task
             .as_ref()
             .or_else(|| active_task.map(|task| &task.contract))
@@ -703,7 +703,7 @@ impl AdaptiveLoop {
             guard.constrain(&state.snapshot, &mut policy);
         }
 
-        // V4：收集 Dashboard 数据面字段
+        // V4: collect Dashboard data-plane fields.
         let snap_fields =
             self.collect_snapshot_fields(&state, &context, &policy, runtime_route.as_ref());
 
@@ -795,7 +795,7 @@ impl AdaptiveLoop {
             }));
         }
 
-        // Policy 已通过 Validator；此后才允许 Runtime Binder 产生推理/硬件副作用。
+        // The binder may produce inference or hardware side effects only after policy validation.
         let is_preparation = active_task.is_some_and(|task| {
             self.task_queue.as_ref().is_some_and(|q| {
                 q.preparation_targets(&task.task_id)
@@ -910,16 +910,16 @@ impl AdaptiveLoop {
         };
         let active_tasks = tasks.tasks.clone();
 
-        // Platform mode 可从本 tick 的真实 telemetry 推导 process targets；显式 targets 始终优先。
+        // Platform mode derives targets from this tick's telemetry; explicit targets take precedence.
         let effective_targets = preparation_targets
             .unwrap_or_else(|| derive_execution_targets(targets, &state.snapshot));
 
-        // 5. Execute（透明执行器优先）
+        // 5. Execute, preferring the transparent executor.
         let prior = self.last_applied_policy.lock().ok().and_then(|g| g.clone());
 
         let (exec_result, control_trace) = if let Some(tx) = &self.transparent {
             let trace = tx.execute_transparent(&policy, &effective_targets, prior.as_ref());
-            // 保留 Apply 的明细，并使用 Verify / Rollback 后的最终状态。
+            // Preserve Apply details and use the final state after Verify / Rollback.
             let mut result = tx.last_execution_result().unwrap_or_else(|| {
                 aicore_contracts::execution::result::ExecutionResult {
                     policy_id: policy.policy_id.clone(),
@@ -930,7 +930,7 @@ impl AdaptiveLoop {
                 }
             });
             result.overall_status = trace.final_status;
-            // 若 rollback 触发且成功，则视为 NoOp，避免 SafeMode 误判
+            // A successful rollback is NoOp, avoiding a false SafeMode failure.
             if trace.rollback.triggered && trace.rollback.succeeded == Some(true) {
                 result.overall_status = ExecutionOverallStatus::NoOp;
             }
@@ -983,7 +983,7 @@ impl AdaptiveLoop {
         let exec_failure = overall.is_failure();
         self.metrics.record_execution(exec_success);
 
-        // 更新 last_applied_policy（仅在成功时）
+        // Update last_applied_policy (only when successful)
         if exec_success {
             if let Ok(mut g) = self.last_applied_policy.lock() {
                 *g = Some(policy.clone());
@@ -998,10 +998,10 @@ impl AdaptiveLoop {
             self.metrics.record_neutral_tick(duration_ms);
         }
 
-        // 7. SafeMode 转换
-        // - 成功 → record_success（重置失败计数）
-        // - 真失败 → record_failure（累加失败计数）
-        // - NoOp（能力缺失 / 全部跳过）→ 不改变 SafeMode，避免误触发
+        // 7. SafeMode transition:
+        // - Success resets the failure count.
+        // - Real failure increments the failure count.
+        // - NoOp (unsupported or skipped actions) is neutral.
         let mode_after = if exec_success {
             self.safe_mode.record_success()
         } else if exec_failure {
@@ -1028,7 +1028,7 @@ impl AdaptiveLoop {
             }
         }
 
-        // 7.5 Task：本 tick 消费到的全部任务都完成/失败，避免队列长期堆积。
+        // 7.5 Task: All tasks consumed by this tick have been completed/failed to avoid long queue build-up.
         if let Some(queue) = &self.task_queue {
             for task in &active_tasks {
                 let result = if exec_success {
@@ -1036,7 +1036,7 @@ impl AdaptiveLoop {
                 } else if exec_failure {
                     queue.fail(&task.task_id, format!("{:?}", overall))
                 } else {
-                    // 任务没有实际执行，不能把 NoOp 记为 Completed。
+        // NoOp did not execute an action, so the task cannot be marked Completed.
                     queue.fail(&task.task_id, "NoOp: no action executed".to_string())
                 };
                 if let Err(e) = result {
@@ -1051,7 +1051,7 @@ impl AdaptiveLoop {
             }
         }
 
-        // 8. Learn：写入历史（若已启用）
+        // 8. Learn: Writing history (if enabled)
         let mut recorded = false;
         if let Some(memory) = &self.memory {
             if history_sender.is_some() || Self::should_record_history(memory) {
@@ -1169,7 +1169,7 @@ impl IRuntimeOrchestrator for AdaptiveLoop {
 }
 
 impl AdaptiveLoop {
-    /// 便捷构造：使用默认 validator。
+    /// Convenience constructor using the default validator.
     pub fn with_default_validator(
         telemetry: Arc<dyn ITelemetryProvider>,
         context_engine: Arc<ContextEngine>,
@@ -1190,12 +1190,12 @@ impl AdaptiveLoop {
     }
 }
 
-/// 用 Task hints 覆盖 context。
+/// Apply Task hints to the context.
 ///
-/// 语义：
-/// - `contract.task` 覆盖 workload_type。
-/// - `latency` 影响 interaction_level。
-/// - 只覆盖已声明的字段；未声明的保留原 context。
+/// Semantics:
+/// - `contract.task` overrides workload_type.
+/// - `latency` affects interaction_level.
+/// - Only declared fields are overridden; all others retain their original values.
 fn apply_task_contract(
     context: aicore_contracts::context::snapshot::ContextSnapshot,
     contract: &aicore_contracts::task::contract::TaskContract,
@@ -1326,7 +1326,7 @@ fn apply_task_contract_to_policy(
     }
 }
 
-/// Dashboard 数据面字段集合。
+/// Dashboard data field collection.
 #[derive(Debug, Clone, Default)]
 struct SnapshotFields {
     cpu_usage_percent: Option<f32>,

@@ -1,3 +1,4 @@
+[English](PLATFORM_CAPABILITY_MATRIX.md) | [Chinese](PLATFORM_CAPABILITY_MATRIX.zh-CN.md)
 # Platform Capability Matrix
 
 | Capability | Windows | Linux | Contract requirement |

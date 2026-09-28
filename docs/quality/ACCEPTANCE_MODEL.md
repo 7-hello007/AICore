@@ -1,8 +1,9 @@
+[English](ACCEPTANCE_MODEL.md) | [Chinese](ACCEPTANCE_MODEL.zh-CN.md)
 # Acceptance Model
 
-功能完成不能只等同于“代码存在”。
+The existence of code alone does not establish functional completion.
 
-完成条件：
+Acceptance requires:
 
 1. implementation exists
 2. integration is live

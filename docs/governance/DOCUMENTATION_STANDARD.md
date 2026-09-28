@@ -1,5 +1,6 @@
+[English](DOCUMENTATION_STANDARD.md) | [Chinese](DOCUMENTATION_STANDARD.zh-CN.md)
 # Documentation Standard
 
-文档必须回答：Purpose、Scope、Dependencies、Public Interface、Failure Model、Tests、Compatibility。
+Each document must explain its purpose, scope, dependencies, public interface, failure model, tests, and compatibility.
 
-全局 docs 不复制版本目录；版本差异进入变更记录、ADR 与发布说明，不作为运行时依赖。
+Shared documentation does not duplicate a versioned directory. Record version differences in changelogs, ADRs, and release notes.

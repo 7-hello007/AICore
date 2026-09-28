@@ -3,7 +3,7 @@ set -e
 
 case "$1" in
     configure)
-        # 创建用户与组
+        # Create Users & Group
         if ! getent group aicore >/dev/null; then
             groupadd --system aicore || true
         fi

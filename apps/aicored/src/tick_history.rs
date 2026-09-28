@@ -3,9 +3,9 @@ use std::sync::RwLock;
 
 use aicore_contracts::runtime::{daemon_status::TickSummary, tick::TickOutcome};
 
-/// 环形 tick 历史。
+/// Circle tick history.
 ///
-/// 保留最近 N 条 tick 摘要，供 CLI / UI 查询。
+/// Keeps a recent N tick digest for CLI/ UI query.
 pub struct TickHistory {
     max: usize,
     inner: RwLock<VecDeque<TickSummary>>,
@@ -19,12 +19,12 @@ impl TickHistory {
         }
     }
 
-    /// 默认 200 条。
+    /// Default 200.
     pub fn with_default_capacity() -> Self {
         Self::new(200)
     }
 
-    /// 追加一条 tick，超出容量时挤出最旧的。
+    /// Adds a tick to evicts the oldest when exceeding capacity.
     pub fn append(&self, outcome: &TickOutcome) {
         let summary = TickSummary::from_outcome(outcome);
         if let Ok(mut buf) = self.inner.write() {
@@ -35,7 +35,7 @@ impl TickHistory {
         }
     }
 
-    /// 返回最近 `limit` 条，按从旧到新排序。
+    /// Returns the recent `limit` entry, sorting from old to new.
     pub fn snapshot(&self, limit: usize) -> Vec<TickSummary> {
         let buf = match self.inner.read() {
             Ok(b) => b,

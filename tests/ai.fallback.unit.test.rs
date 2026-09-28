@@ -39,7 +39,7 @@ fn low_confidence_suggestion_keeps_rule_based_policy() {
     let ai = Arc::new(MockAiProvider::new());
     let engine = AiAssistedPolicyEngine::new(base, Some(ai), 0.95);
 
-    // Development 场景 Mock 只给 0.5 置信度，低于阈值 0.95 → 走规则
+    // Development scene Mock only gives 0.5 confidence below the threshold 0.95 go
     let snapshot = ComputerSnapshot::default();
     let (policy, suggestion) =
         engine.generate_with_meta(&snapshot, &ctx(WorkloadType::Development));
@@ -90,7 +90,7 @@ fn engine_reports_names() {
     assert!((engine.confidence_threshold() - 0.6).abs() < f32::EPSILON);
 }
 
-/// 防止空 ResourcePolicy 时 panic。
+/// Prevents panic when ResourcePolicy is empty.
 #[test]
 fn empty_input_does_not_panic() {
     let base = Arc::new(RuleBasedPolicyEngine::new());

@@ -1,29 +1,29 @@
-//! AICore 通用 schema 版本。
+//! AICore common schema version.
 //!
-//! 用于标记跨模块边界（IPC / 状态文件 / 配置文件 / Dashboard 快照）
-//! 的数据结构版本。
+//! To mark cross-module boundaries (IPC/ status file/ configuration file / Dashboard snapshot)
+//! .
 //!
-//! ## 格式
+//! Format
 //!
-//! - `Display` / `Serialize` 输出 `"MAJOR.MINOR"`，例如 `"1.0"`。
-//! - `FromStr` / `Deserialize` 接受：
-//!   - `"1"` → 视为 `1.0`（向后兼容老的无点格式）
+//! - `Display`/`Serialize` output `"MAJOR.MINOR"`, for example, `"1.0"`.
+//! - `FromStr` / `Deserialize` Accepted:
+//!   - `"1"` → is considered `1.0`.
 //!   - `"1.0"` → `1.0`
 //!   - `"2.5"` → `2.5`
-//! - 空字符串 / 非法数字 → `SchemaVersionParseError`。
+//! - Empty string/ illegal number `SchemaVersionParseError`.
 //!
-//! ## 与 ApiVersion 的区别
+//! The difference between ApiVersion
 //!
-//! - `SchemaVersion` 描述**数据结构**版本。
-//! - `ApiVersion` 描述**插件 API** 版本，并有 `is_compatible_with` 兼容性规则。
-//!   两者用途不同，不合并。
+//! - `SchemaVersion` description** data structure** version.
+//! - `ApiVersion` description** version API** with `is_compatible_with` compatibility rules.
+//!   They are different and not combined.
 
 use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// 通用 schema 版本。
+/// Generic schema version.
 ///
 /// `Default` = `1.0`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -33,15 +33,15 @@ pub struct SchemaVersion {
 }
 
 impl SchemaVersion {
-    /// 构造一个新的 schema 版本。
+    /// Construct a new schema version.
     pub const fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }
 
-    /// AICore 当前使用的 schema 版本。
+    /// AICore currently uses the schema version.
     pub const CURRENT: SchemaVersion = SchemaVersion::new(1, 0);
 
-    /// 是否为当前版本。
+    /// is the current version.
     pub const fn is_current(&self) -> bool {
         self.major == Self::CURRENT.major && self.minor == Self::CURRENT.minor
     }
@@ -98,7 +98,7 @@ impl<'de> Deserialize<'de> for SchemaVersion {
     }
 }
 
-/// `SchemaVersion` 解析错误。
+/// `SchemaVersion` parsing error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SchemaVersionParseError {
     #[error("schema version is empty")]

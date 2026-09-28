@@ -1,6 +1,7 @@
+[English](PRODUCT_EVOLUTION.md) | [Chinese](PRODUCT_EVOLUTION.zh-CN.md)
 # Product Evolution
 
-版本不是文档目录，而是能力演进：
+Versions represent capability evolution rather than separate documentation trees:
 
 ```mermaid
 flowchart LR
@@ -13,4 +14,4 @@ flowchart LR
     V1 --> V2 --> V3 --> V32 --> V4 --> V5
 ```
 
-所有版本共享同一 `docs/` 架构基线；当前状态以工程状态与验证记录为准，未来目标通过独立规划材料维护。
+All versions share the same `docs/` architecture baseline; the current status is based on engineering status and validation records, and future targets are maintained through independent planning materials.

@@ -12,18 +12,18 @@ use aicore_contracts::{
     traits::ai_provider::IAiProvider,
 };
 
-/// 确定性的 Mock AI Provider。
+/// Mark AI Provider.
 ///
-/// 行为：
-/// - AI Inference workload 且 NPU 可用：提升 NPU 优先级，标记 preferred。
-/// - 若 memory 提示用户历史偏好省电模式，且当前非重度 workload，
-///   将电源模式降为 PowerSave。
-/// - 其他 workload 返回 base_policy 副本。
+/// Conduct:
+/// - AI Reference workload and NPU is available: raise NPU priority, labeled.
+/// - If memory suggests a historical preference for power-saving patterns and the current workload is not resource-intensive,
+///   Reduce power mode to PowerSave.
+/// - Other workload returns base_policy copy.
 ///
-/// 置信度：
-/// - 命中规则：0.9
-/// - 命中历史增强：额外 +0.05（上限 1.0）
-/// - 无强信号：0.3
+/// Confidence:
+/// - Hit rule: 0.9
+/// - Increase in hit history: extra + 0.05 (ceiling 1.0)
+/// - No strong signal: 0.3
 pub struct MockAiProvider {
     available: bool,
 }

@@ -1,4 +1,4 @@
-//! L2 独立测试。
+//! L2 Independent testing.
 
 use aicore_contracts::{
     application::id::ApplicationId,
@@ -64,7 +64,7 @@ fn l2_invalid_transition_rejected() {
     let (_id, provider) = register_l2(&hub).unwrap();
     let handle = provider.submit(&ai_contract()).unwrap();
 
-    // Pending → Completed 非法
+    // Pending Completed Illegal
     assert!(provider.transition(&handle, TaskState::Completed).is_err());
 }
 

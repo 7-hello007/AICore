@@ -1,4 +1,4 @@
-//! MlWorkloadSource 单元测试。
+//! MlWorkloadSource unit test.
 
 use aicore_ai::workload::ml_source::{MlWeightTable, FEATURE_DIM};
 use aicore_ai::MlWorkloadSource;
@@ -43,7 +43,7 @@ fn high_npu_infers_ai_inference() {
 fn high_gpu_cpu_infers_gaming() {
     let p = MlWorkloadSource::with_default_weights().unwrap();
     let obs = p.observe(&snapshot(80.0, 90.0, 0.0, 40.0)).unwrap();
-    // 高 CPU + 高 GPU 可能是 Gaming 或 Rendering
+    // High CPU + High GPU
     assert!(matches!(
         obs.workload_type,
         WorkloadType::Gaming | WorkloadType::Rendering
@@ -64,7 +64,7 @@ fn low_everything_infers_background_or_office() {
 fn empty_snapshot_does_not_panic() {
     let p = MlWorkloadSource::with_default_weights().unwrap();
     let obs = p.observe(&ComputerSnapshot::default()).unwrap();
-    // 不会 panic；结果取决于权重
+    // Not Panic; results depend on weight
     assert!(obs.confidence >= 0.0 && obs.confidence <= 1.0);
 }
 

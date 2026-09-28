@@ -1,7 +1,7 @@
-//! 动态加载示例 cdylib 插件。
+//! Dynamic load example cdylib plugin.
 //!
-//! 前置：`cargo build --workspace`（构建 plugin-hello）。
-//! 若 .so 不存在，测试自动跳过并打印提示。
+//! Prefix: `cargo build --workspace` (build plugin-hello).
+//! If .so does not exist, test automatically skip and print the hint.
 
 use std::path::PathBuf;
 
@@ -40,7 +40,7 @@ fn load_example_plugin_and_execute() {
     assert_eq!(plugin.api_version, 1);
     assert!(plugin.signature.is_some());
 
-    // 执行：input * 2 + 1
+    // Implementation: input* 2 + 1
     assert_eq!(plugin.execute(1), 3);
     assert_eq!(plugin.execute(10), 21);
     assert_eq!(plugin.execute(0), 1);

@@ -35,12 +35,12 @@ fn workload_target(hint: &HardwareExecutionHint) -> Option<&'static str> {
     }
 }
 
-/// Linux 硬件执行器（尽力而为）。
+/// Linux hardware executor (best effort).
 ///
-/// 支持路径：
-/// - AMD amdgpu：`power_dpm_force_performance_level` 写入 `low` / `high` / `auto`
+/// Support path:
+/// - AMD amdgpu: `power_dpm_force_performance_level` for `low`/`high`/`auto`
 ///
-/// 不支持路径：返回 `NotSupported`，不影响 Core。
+/// Unsupported path: returns `NotSupported` without affecting Core.
 pub struct LinuxHardwareExecutor;
 
 impl LinuxHardwareExecutor {
@@ -83,7 +83,7 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
             });
         }
 
-        // 检查 amdgpu performance level 路径
+        // Check amdgpu performance level path
         let perf_path = format!("{}/power_dpm_force_performance_level", device_path);
         if !Path::new(&perf_path).exists() {
             return Ok(HardwareExecutionResult {
@@ -109,7 +109,7 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
             },
         };
 
-        // 读当前值，若已一致则 AlreadyInState
+        // Read current value, AlreadyInState if consistent
         let current = sysfs::read_trimmed(&perf_path);
         if current.as_deref() == Some(target) {
             return Ok(HardwareExecutionResult {
@@ -119,7 +119,7 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
             });
         }
 
-        // 尝试写入
+        // Try writing
         match std::fs::write(&perf_path, target) {
             Ok(()) => Ok(HardwareExecutionResult {
                 device_id: req.device_id.clone(),
@@ -147,7 +147,7 @@ impl IHardwareExecutor for LinuxHardwareExecutor {
 
     fn release(&self, device_id: &str) -> ContractResult<HardwareExecutionResult> {
         let start = Instant::now();
-        // 恢复 auto
+        // Restore auto
         self.apply(&HardwareExecutionRequest {
             device_id: device_id.to_string(),
             hint: HardwareExecutionHint::AutoMode,

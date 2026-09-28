@@ -1,4 +1,4 @@
-//! GPU 真实执行链集成测试（Mock 与真实平台组合）。
+//! GPU real-time chain integration test (Mock with real platform).
 
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use aicore_contracts::{
 };
 use aicore_runtime_router::DefaultRuntimeBinder;
 
-/// Mock 硬件执行器：可配置返回状态。
+/// Mark Hardware Executor: Configures the return state.
 struct MockExecutor {
     status: HardwareExecutionStatus,
 }

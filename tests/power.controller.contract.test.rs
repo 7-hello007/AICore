@@ -18,7 +18,7 @@ fn controller_reports_platform() {
 #[test]
 fn get_profile_does_not_panic() {
     let c = PlatformPowerController::new();
-    // 可能 Ok 也可能 Err（无权限/无接口），但绝不能 panic
+    // Possible Ok or Err, but never Panic
     let _ = c.get_profile();
 }
 

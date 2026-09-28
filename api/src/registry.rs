@@ -7,9 +7,9 @@ use aicore_contracts::{
     errors::{ContractError, ContractResult},
 };
 
-/// 应用注册中心。
+/// Application registration centres.
 ///
-/// 记录当前已注册的应用。未注册应用不允许提交 TaskContract。
+/// Records the current registered application. Unregistered applications do not allow TaskContract to be submitted.
 #[derive(Default)]
 pub struct ApplicationRegistry {
     apps: RwLock<HashMap<ApplicationId, ApplicationRegistration>>,
@@ -20,7 +20,7 @@ impl ApplicationRegistry {
         Self::default()
     }
 
-    /// 注册应用。若已存在则覆盖（视为版本更新）。
+    /// Register application. Overwrite if it already exists (as version update).
     pub fn register(
         &self,
         application_id: ApplicationId,
@@ -51,7 +51,7 @@ impl ApplicationRegistry {
         Ok(registration)
     }
 
-    /// 注销应用。返回该应用之前是否存在。
+    /// Write-off application.
     pub fn unregister(&self, application_id: &ApplicationId) -> ContractResult<bool> {
         let mut apps = self
             .apps
@@ -60,7 +60,7 @@ impl ApplicationRegistry {
         Ok(apps.remove(application_id).is_some())
     }
 
-    /// 查询应用注册信息。
+    /// Query application registration information.
     pub fn get(
         &self,
         application_id: &ApplicationId,
@@ -72,12 +72,12 @@ impl ApplicationRegistry {
         Ok(apps.get(application_id).cloned())
     }
 
-    /// 检查应用是否已注册。
+    /// Checks if application is registered.
     pub fn is_registered(&self, application_id: &ApplicationId) -> ContractResult<bool> {
         Ok(self.get(application_id)?.is_some())
     }
 
-    /// 列出所有已注册应用。
+    /// Lists all registered applications.
     pub fn list(&self) -> ContractResult<Vec<ApplicationRegistration>> {
         let apps = self
             .apps
@@ -86,7 +86,7 @@ impl ApplicationRegistry {
         Ok(apps.values().cloned().collect())
     }
 
-    /// 已注册应用数量。
+    /// Number of registered applications.
     pub fn count(&self) -> ContractResult<usize> {
         let apps = self
             .apps

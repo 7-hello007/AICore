@@ -1,9 +1,9 @@
 use crate::errors::ContractResult;
 
-/// GPU 控制抽象。
+/// GPU controls abstraction.
 ///
-/// V2-D 阶段所有平台返回 CapabilityUnavailable；
-/// 真实实现留给 V3 的 vendor runtime 接入。
+/// All platforms in phase V2-D return CapabilityUnavailable;
+/// Vendor-runtime access remains a V3 implementation concern.
 pub trait IGpuController: Send + Sync {
     fn set_workload_hint(&self, _hint: &str) -> ContractResult<()> {
         Err(crate::errors::ContractError::CapabilityUnavailable(

@@ -1,3 +1,4 @@
+[English](PLATFORM_SIMULATOR.md) | [Chinese](PLATFORM_SIMULATOR.zh-CN.md)
 # Platform Simulator
 
 `AICORE_EXECUTION_MODE=simulated-platform` runs the daemon's **Platform Mode**

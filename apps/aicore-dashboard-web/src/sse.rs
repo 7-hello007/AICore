@@ -6,9 +6,9 @@ use tokio::net::TcpStream;
 
 use crate::AppState;
 
-/// SSE 流：周期性推送 DashboardSnapshot JSON。
+/// SSE current: Periodically transfer DashboardSnapshot JSON.
 pub async fn stream(stream: &mut TcpStream, state: Arc<AppState>) -> std::io::Result<()> {
-    // 建立 SSE 连接头
+    // Create SSE connection header
     let headers = "HTTP/1.1 200 OK\r\n\
                    Content-Type: text/event-stream\r\n\
                    Cache-Control: no-cache\r\n\
@@ -24,7 +24,7 @@ pub async fn stream(stream: &mut TcpStream, state: Arc<AppState>) -> std::io::Re
 
     let mut rx = state.event_tx.subscribe();
 
-    // 立即发一次当前快照
+    // Send the current snapshot immediately.
     let snap = state.client.fetch().await;
     if let Ok(json) = serde_json::to_string(&snap) {
         let id = state
@@ -33,7 +33,7 @@ pub async fn stream(stream: &mut TcpStream, state: Arc<AppState>) -> std::io::Re
         let _ = write_event(stream, id, &json).await;
     }
 
-    // 心跳间隔
+    // Heart beat interval
     let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
     heartbeat.tick().await;
 
@@ -50,7 +50,7 @@ pub async fn stream(stream: &mut TcpStream, state: Arc<AppState>) -> std::io::Re
                 }
             }
             _ = heartbeat.tick() => {
-                // SSE 注释行作为心跳
+                // SSE Comment Line as a heartbeat
                 if stream.write_all(b": keepalive\n\n").await.is_err() {
                     return Ok(());
                 }

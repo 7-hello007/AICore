@@ -1,4 +1,4 @@
-//! 插件生命周期与隔离测试。
+//! Plugin life cycle and isolation tests.
 
 use aicore_contracts::plugin::{
     manifest::{PluginKind, PluginManifest, TrustLevel},
@@ -44,7 +44,7 @@ fn invalid_transition_rejected() {
     let reg = PluginRegistry::new();
     reg.register(manifest("p1")).unwrap();
 
-    // Discovered → Active 非法（必须先 Validating → Ready）
+    // Discovered Active is illegal.
     let err = reg.transition("p1", PluginState::Active, None).unwrap_err();
     assert!(matches!(err, RegistryError::InvalidTransition { .. }));
 }
@@ -72,7 +72,7 @@ fn rejection_terminal() {
     reg.transition("p1", PluginState::Rejected, Some("bad".to_string()))
         .unwrap();
 
-    // Rejected 是终态
+    // Projected is final
     assert!(reg.get("p1").unwrap().unwrap().state.is_terminal());
     assert!(reg.transition("p1", PluginState::Active, None).is_err());
 }
@@ -89,7 +89,7 @@ fn failure_increments_count_and_can_recover() {
         .unwrap();
     assert_eq!(reg.get("p1").unwrap().unwrap().failure_count, 1);
 
-    // Failed → Disabled → Active 恢复
+    // Failed →Disabled →Active
     reg.transition("p1", PluginState::Disabled, None).unwrap();
     reg.transition("p1", PluginState::Active, None).unwrap();
     assert_eq!(reg.get("p1").unwrap().unwrap().failure_count, 0);
@@ -127,7 +127,7 @@ fn isolation_triggers_after_threshold() {
     let iso = PluginIsolation::new("p1", 3);
     assert!(!iso.record_failure());
     assert!(!iso.record_failure());
-    assert!(iso.record_failure()); // 第 3 次触发
+    assert!(iso.record_failure()); // Trigger 3
     assert_eq!(iso.failure_count(), 3);
 }
 

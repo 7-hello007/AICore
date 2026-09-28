@@ -1,4 +1,4 @@
-//! Ed25519 签名验证测试。
+//! Ed25519 Signature validation test.
 
 use ed25519_dalek::{Signer, SigningKey};
 
@@ -69,7 +69,7 @@ fn ed25519_missing_public_key_fails() {
 fn ed25519_malformed_signature_length_fails() {
     let (_, pk) = keypair();
     let sig = PluginSignature::ed25519("00".repeat(10), hex::encode(pk));
-    // well-formed 检查会拒
+    // Well-formed inspection will reject
     assert!(!sig.is_well_formed());
 }
 

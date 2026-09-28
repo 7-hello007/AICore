@@ -1,4 +1,4 @@
-//! 进程隔离测试：spawn / ping / execute / shutdown / crash。
+//! Process isolation tests: spawn / ping / execute / shutdown / crash.
 
 use std::path::PathBuf;
 
@@ -93,13 +93,13 @@ fn crash_is_recorded_and_core_survives() {
     let h = make_host();
     let handle = h.spawn(&make_spec(&path)).unwrap();
 
-    // 通过 Shutdown 让进程自然退出，模拟"退出"
+    // Getting the process out naturally by Shutdown. Simulate exit.
     let _ = h.call(&handle, &HostRequest::Shutdown);
 
-    // 稍等进程退出
+    // Wait till the process is out.
     std::thread::sleep(std::time::Duration::from_millis(200));
 
-    // 再次调用触发 EOF / EPIPE 检测
+    // Call again to trigger EOF/ EPIPE detection
     let err = h.call(&handle, &HostRequest::Ping).unwrap_err();
     let err_text = err.to_string();
 

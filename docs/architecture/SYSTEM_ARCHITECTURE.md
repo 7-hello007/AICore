@@ -1,3 +1,4 @@
+[English](SYSTEM_ARCHITECTURE.md) | [Chinese](SYSTEM_ARCHITECTURE.zh-CN.md)
 # System Architecture
 
 ```mermaid
@@ -39,11 +40,11 @@ flowchart TD
     EXE -. result .-> MEM
 ```
 
-## 不变的依赖方向
+## Dependency direction
 
-`Application/Tier → Contracts → Core → Runtime → Adapter → OS/Hardware`。
+`Application/Tier → Contracts → Core → Runtime → Adapter → OS/Hardware`.
 
-Core 永远不直接依赖 Windows/Linux/vendor/LLM。
+Core never depends directly on Windows, Linux, a hardware vendor, or an LLM.
 
 ## AI Control Chain
 

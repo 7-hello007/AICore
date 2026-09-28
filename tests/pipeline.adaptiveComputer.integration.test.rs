@@ -89,7 +89,7 @@ fn history_disabled_by_default_means_no_records() {
 
     loop_.tick(&process.targets());
 
-    // 默认 profile.history_enabled = false，不应写入
+    // Default profile. history_enabled = false, not written
     assert_eq!(memory.record_count().unwrap(), 0);
 }
 
@@ -97,7 +97,7 @@ fn history_disabled_by_default_means_no_records() {
 #[test]
 fn history_enabled_records_tick() {
     let memory = Arc::new(InMemoryStore::new());
-    // 用户显式启用历史记录
+    // User explicitly enables history
     let profile = UserProfile {
         history_enabled: true,
         ..UserProfile::default()

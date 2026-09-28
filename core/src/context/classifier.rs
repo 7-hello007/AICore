@@ -3,10 +3,10 @@ use aicore_contracts::{
     traits::task_classifier::{ClassificationInput, ITaskClassifier},
 };
 
-/// 基于规则的 workload 分类器。
+/// A rule-based workload sorter.
 ///
-/// 规则优先、确定性、无外部模型依赖。匹配采用标准化 token / phrase，
-/// 避免 `contains` 导致短词误命中长进程名。
+/// Rules prioritize, certainty, and no external model dependence.
+/// Avoid `contains` leading to short words misdirecting long process names.
 pub struct RuleBasedClassifier;
 
 impl RuleBasedClassifier {

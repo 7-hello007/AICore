@@ -1,14 +1,16 @@
+[English](README.md) | [Chinese](README.zh-CN.md)
+
 # AICore Windows Deployment
 
-**状态**：实现候选；必须在 Windows CI / 目标机验证。
+**Status:** Implementation candidate; verification in Windows CI or on a target host is required.
 
-## 两种运行方式
+## Operating Modes
 
-- 开发模式：使用普通启动/停止脚本直接运行 `aicored.exe`。
-- Windows Service：使用 `service-install.ps1` / 对应卸载脚本注册和管理服务。
+- Development mode: run `aicored.exe` directly with the regular start and stop scripts.
+- Windows Service: register and manage the service with `service-install.ps1` and the corresponding removal script.
 
-Windows Service 路径已经存在，因此文档不再声明“未注册为 Windows Service”。生产部署仍应使用专用低权限服务账户，并验证 ACL、自动重启、升级/回滚和 Named Pipe 权限。
+The Windows Service path is implemented. Production deployment should still use a dedicated low-privilege service account and verify access control, automatic restart, upgrade and rollback behavior, and Named Pipe permissions.
 
-## Release gate
+## Release Gate
 
-在真实 Windows 主机执行 service install/start/query/stop/uninstall、IPC、Dashboard 和 upgrade/rollback smoke 后，才能把该部署路径标记为已验证。
+This deployment path can be marked as verified only after service installation, start, query, stop, removal, IPC, Dashboard, and upgrade and rollback smoke tests pass on a native Windows host.

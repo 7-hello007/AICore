@@ -1,12 +1,13 @@
+[English](DATA_LIFECYCLE.md) | [Chinese](DATA_LIFECYCLE.zh-CN.md)
 # Data Lifecycle
 
 `Create → Validate → Store → Query → Retain → Delete → Audit`
 
-Retention 必须可配置、可关闭、可审计。
+Retention must be configurable, enforced, and auditable.
 
-用户可以：
+Users can:
 
-- 查看数据类别
-- 删除历史数据
-- 删除 Profile
-- 禁止某类数据进入模型输入
+- View data categories
+- Delete historical data
+- Delete a profile
+- Exclude selected data categories from model input

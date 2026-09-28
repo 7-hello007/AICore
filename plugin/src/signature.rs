@@ -5,11 +5,11 @@ use aicore_contracts::plugin::signature::{PluginSignature, SignatureAlgorithm};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use sha2::{Digest, Sha256};
 
-/// 签名验证器。
+/// Signature certifier.
 pub struct SignatureVerifier;
 
 impl SignatureVerifier {
-    /// 计算文件的 SHA-256（十六进制小写）。
+    /// SHA-256 (hexadecimal lowercase) for calculating files.
     pub fn compute_sha256(path: impl AsRef<Path>) -> std::io::Result<PluginSignature> {
         let mut file = std::fs::File::open(path.as_ref())?;
         let mut hasher = Sha256::new();
@@ -24,7 +24,7 @@ impl SignatureVerifier {
         Ok(PluginSignature::sha256(format!("{:x}", hasher.finalize())))
     }
 
-    /// 从内存字节计算 SHA-256。
+    /// Calculates SHA-256 from memory bytes.
     pub fn compute_sha256_from_bytes(bytes: &[u8]) -> PluginSignature {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
@@ -32,7 +32,7 @@ impl SignatureVerifier {
         PluginSignature::sha256(format!("{:x}", digest))
     }
 
-    /// 验证文件签名。
+    /// Verify the signature of the document.
     pub fn verify_file(
         path: impl AsRef<Path>,
         expected: &PluginSignature,
@@ -56,7 +56,7 @@ impl SignatureVerifier {
         Self::verify_bytes(&bytes, expected)
     }
 
-    /// 验证内存字节的签名。
+    /// Verifys the signature of the memory bytes.
     pub fn verify_bytes(
         bytes: &[u8],
         expected: &PluginSignature,

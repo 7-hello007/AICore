@@ -12,14 +12,14 @@ use aicore_contracts::plugin::host::{
 
 use super::protocol::{HostRequest, HostResponse, MAX_LINE_BYTES};
 
-/// 子进程插件 Host。
+/// Subprocess plugin Host.
 ///
-/// 每个插件运行在独立进程中；Core 通过 stdin/stdout 发送 JSON 行协议。
+/// Each plugin runs in an independent process; Core sends JSON row protocols via stdin/stdout.
 ///
-/// 隔离语义：
-/// - 插件崩溃 → 只影响该子进程；Host 检测到后返回 `Crashed`。
-/// - 超时 → `kill()` 子进程（Rust 允许对 `Child` 强杀）。
-/// - Core 自身不受影响。
+/// Separator syntax:
+/// - Plugin crashes affect only the subprocess; Host detects and returns `Crashed`.
+/// - Timeout `kill()` subprocess (Rust allows the killing of `Child`).
+/// - Core does not affect itself.
 pub struct SubprocessPluginHost {
     processes: Mutex<HashMap<String, ManagedChild>>,
     next_seq: AtomicU64,
@@ -50,7 +50,7 @@ impl SubprocessPluginHost {
         self
     }
 
-    /// 发送请求并等待响应（带超时）。
+    /// Sends a request and waits for a response (with timeout).
     pub fn call(
         &self,
         handle: &PluginProcessHandle,
@@ -70,7 +70,7 @@ impl SubprocessPluginHost {
             Duration::from_millis(entry.spec.timeout_ms.max(100))
         };
 
-        // 写请求（若子进程已退出，write 会返回 EPIPE/BrokenPipe）
+        // Write Request (write returns EPIPE/BrokenPipe if the subprocess is out)
         let json = serde_json::to_string(request)
             .map_err(|e| AicoreError::PluginFailed(format!("serialize request: {}", e)))?;
         if json.len() > MAX_LINE_BYTES {
@@ -87,7 +87,7 @@ impl SubprocessPluginHost {
         })();
 
         if let Err(e) = write_result {
-            // 子进程已退出 / 管道已断 → 视为 crash
+            // Subprocess exited / Pipe broken
             let exit_code = entry.child.try_wait().ok().flatten().and_then(|s| s.code());
             self.record_crash(
                 &entry.spec.plugin_id,
@@ -102,7 +102,7 @@ impl SubprocessPluginHost {
             )));
         }
 
-        // 真正的超时：把阻塞 read 放到临时线程；超时后强杀子进程并等待线程释放 stdout。
+        // Real timeout: put block read on a temporary thread; force kill process after timeout and wait for thread release.
         let start = Instant::now();
         let mut reader = entry
             .stdout
@@ -267,13 +267,13 @@ impl IPluginHost for SubprocessPluginHost {
             AicoreError::NotFound(format!("unknown handle: {}", handle.handle_id))
         })?;
 
-        // 先尝试 Shutdown 消息
+        // Try Shutdown message first
         let shutdown = serde_json::to_string(&HostRequest::Shutdown).unwrap_or_default();
         let _ = entry.stdin.write_all(shutdown.as_bytes());
         let _ = entry.stdin.write_all(b"\n");
         let _ = entry.stdin.flush();
 
-        // 给 500ms 优雅退出，否则 kill
+        // Give 500 ms an elegant exit, or kill
         let deadline = Instant::now() + Duration::from_millis(500);
         loop {
             match entry.child.try_wait() {

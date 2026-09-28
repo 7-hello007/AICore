@@ -1,9 +1,9 @@
 use crate::errors::ContractResult;
 use crate::telemetry::{constraints::SamplingConstraints, ComputerSnapshot};
 
-/// 所有平台适配器必须实现的遥测接口。
+/// Telemetry interfaces that must be implemented by every platform adapter.
 pub trait ITelemetryProvider: Send + Sync {
-    /// 采集一次完整的系统状态快照。
+    /// Collect a complete system state snapshot.
     fn collect(&self) -> ContractResult<ComputerSnapshot>;
 
     /// Read one explicitly identified process without assuming it appears in
@@ -17,13 +17,13 @@ pub trait ITelemetryProvider: Send + Sync {
         ))
     }
 
-    /// 返回该 Provider 的名称。
+    /// Returns the name of the Provider.
     fn platform_name(&self) -> &'static str;
 
-    /// 返回支持的能力列表。
+    /// Returns the list of capabilities supported.
     fn capabilities(&self) -> Vec<&'static str>;
 
-    /// 返回采样约束。默认不限制。
+    /// Returns the sampling constraint. Default is unlimited.
     fn sampling_constraints(&self) -> SamplingConstraints {
         SamplingConstraints::default()
     }

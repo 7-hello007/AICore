@@ -19,19 +19,19 @@ use aicore_contracts::{
 use super::features::FeatureVector;
 use super::weights::{PolicyIntent, WeightTable};
 
-/// 纯 Rust 特征加权分类器。
+/// Pure Rust feature-weighted classifier.
 ///
-/// 行为：
-/// 1. 从 `AiInput` 提取归一化特征。
-/// 2. 对每个 intent 计算点积。
-/// 3. softmax 得到概率分布。
-/// 4. 若最高概率低于 `min_confidence`，返回 `AiInferenceFailed`，
-///    让上层 `AiAssistedPolicyEngine` fallback 到规则引擎。
-/// 5. 否则选最高分的 intent，转换为 policy 修改。
+/// Conduct:
+/// 1. Extracts the normalized feature from `AiInput`.
+/// 2. The weighted score for each intent.
+/// 3. Softmax receives the probability distribution.
+/// 4. If the maximum probability is below `min_confidence`, return `AiInferenceFailed`,
+///    Let the upper layer `AiAssistedPolicyEngine` fallback to the rule engine.
+/// 5. Otherwise selects the highest-scoring intent and converts it to a policy change.
 pub struct LocalFeatureProvider {
     weights: Arc<WeightTable>,
     available: bool,
-    /// 最低置信度，低于此值不输出建议，直接失败。
+    /// Minimum confidence, below which the value does not output the recommendation, directly fails.
     min_confidence: f32,
 }
 
@@ -117,7 +117,7 @@ impl IAiProvider for LocalFeatureProvider {
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .ok_or_else(|| ContractError::AiInferenceFailed("softmax failed".to_string()))?;
 
-        // 低置信度：不输出强建议，让上层 fallback
+        // Low confidence: do not output strong suggestions, let the upper layer fall back
         if best_prob < self.min_confidence {
             return Err(ContractError::AiInferenceFailed(format!(
                 "confidence {:.3} below min {:.3}",
@@ -176,8 +176,8 @@ fn apply_intent(base: &ResourcePolicy, intent: PolicyIntent) -> ResourcePolicy {
     let mut policy = base.clone();
     policy.source = aicore_contracts::policy::priority::PolicySource::AiRecommended;
 
-    // 保证生成的 policy 满足基本不变量，
-    // 即使 base 是 Default::default() 也能通过 Validator。
+    // Ensures that the generated policy meets the basic invariants,
+    // Even if the base is Default: :default() can pass through Validator.
     if policy.policy_id.trim().is_empty() {
         policy.policy_id = generate_id();
     }

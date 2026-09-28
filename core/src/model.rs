@@ -20,15 +20,15 @@ use aicore_contracts::{
     },
 };
 
-/// 模型环境中的虚拟前台进程。
+/// Virtual foreground process in the model environment.
 ///
-/// 这些 PID 只存在于模型状态中，绝不能传给真实 OS ProcessController。
+/// This PID exists only in model state and must never reach a real OS process controller.
 pub const MODEL_FOREGROUND_PID: u32 = 10_001;
 
-/// 模型环境中的虚拟后台进程。
+/// Virtual background process in the model environment.
 pub const MODEL_BACKGROUND_PID: u32 = 10_002;
 
-/// 模拟进程。
+/// Simulated process.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelProcessState {
     pub pid: u32,
@@ -52,9 +52,9 @@ impl ModelProcessState {
     }
 }
 
-/// 模型系统状态。
+/// Model system state.
 ///
-/// 所有策略执行只修改这里，不修改宿主机。
+/// All policy execution changes here only, not the host.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelSystemState {
     pub power_mode: PowerMode,
@@ -106,16 +106,16 @@ impl Default for ModelSystemState {
     }
 }
 
-/// 模型执行环境。
+/// Model execution environment.
 ///
-/// 它是整个 Model Execution Layer 的状态容器。
+/// It holds the state for the Model Execution Layer.
 ///
-/// 重要：
-/// - 不访问 PID。
-/// - 不访问 /proc。
-/// - 不写 sysfs。
-/// - 不调用真实 GPU / NPU API。
-/// - 不修改系统电源配置。
+/// Important:
+/// - Does not access real PIDs.
+/// - Does not access `/proc`.
+/// - Does not write to sysfs.
+/// - Does not call real GPU/NPU APIs.
+/// - Does not change host power settings.
 #[derive(Clone)]
 pub struct ModelEnvironment {
     state: Arc<Mutex<ModelSystemState>>,
@@ -158,11 +158,11 @@ impl ModelEnvironment {
     }
 }
 
-/// 模型目标提供器。
+/// Model target provider.
 ///
-/// 这里提供的是“虚拟 PID”，仅供模型执行器使用。
+/// Provides virtual PIDs for the model executor only.
 ///
-/// 这样 AICore 可以拥有完整的：
+/// This allows AICore to exercise the complete chain:
 ///
 /// Policy
 ///   ↓
@@ -170,7 +170,7 @@ impl ModelEnvironment {
 ///   ↓
 /// Executor
 ///
-/// 链路，同时不会碰真实系统进程。
+/// without touching host processes.
 #[derive(Debug, Clone)]
 pub struct ModelTargetProvider {
     foreground_pids: Vec<u32>,
@@ -203,15 +203,15 @@ impl ModelTargetProvider {
     }
 }
 
-/// 模型策略执行器。
+/// Model policy executor.
 ///
-/// 这是 `DefaultPolicyExecutor` 的模型替代版本。
+/// This is the model-mode alternative to `DefaultPolicyExecutor`.
 ///
-/// 与真实执行器的区别：
-/// - 不调用 IProcessController。
-/// - 不调用 IPowerController。
-/// - 不修改真实系统。
-/// - 所有资源状态写入 ModelEnvironment。
+/// Unlike the real executor:
+/// - It does not call `IProcessController`.
+/// - It does not call `IPowerController`.
+/// - It does not change host state.
+/// - It writes all resource state to `ModelEnvironment`.
 pub struct ModelPolicyExecutor {
     environment: Arc<ModelEnvironment>,
 }
@@ -226,11 +226,11 @@ impl ModelPolicyExecutor {
     }
 
     fn effective_targets(&self, targets: &ExecutionTargets) -> ExecutionTargets {
-        // 如果上层没有提供 targets，模型层仍然使用自己的虚拟默认目标。
+        // Use virtual default targets when the caller provides none.
         //
-        // 这样可以保证：
+        // This ensures that:
         // runtime.tick(&ExecutionTargets::default())
-        // 在模型模式下仍然产生真实 ExecutionOutcome。
+        // Model mode still produces an ExecutionOutcome for simulated actions.
         if !targets.process_only
             && targets.foreground_pids.is_empty()
             && targets.background_pids.is_empty()
@@ -451,14 +451,14 @@ impl IPolicyExecutor for ModelPolicyExecutor {
     }
 }
 
-/// 模型后置条件检查器。
+/// Model post-condition checker.
 ///
-/// TransparentExecutor 的 Verify 阶段会调用它。
+/// The Verify stage of TransparentExecutor calls this checker.
 ///
-/// 这样模型链不是：
+/// The model chain is not:
 /// Apply → Skipped Verify
 ///
-/// 而是：
+/// Instead, it is:
 /// Apply → Verify Passed
 pub struct ModelPostConditionChecker {
     environment: Arc<ModelEnvironment>,

@@ -1,6 +1,7 @@
+[English](PLATFORM_ARCHITECTURE.md) | [Chinese](PLATFORM_ARCHITECTURE.zh-CN.md)
 # Platform Architecture
 
-首期平台：Windows、Linux。macOS 暂不纳入当前产品边界。
+Initial platforms: Windows and Linux. macOS is outside the current product scope.
 
 ```mermaid
 flowchart TB
@@ -11,4 +12,4 @@ flowchart TB
     CORE --> LIN
 ```
 
-核心逻辑相同；平台实现只存在于 Adapter/Runtime 层。
+Core logic is shared; platform differences belong in the adapter and runtime layers.

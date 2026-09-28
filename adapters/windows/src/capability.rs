@@ -4,7 +4,7 @@ use aicore_contracts::{
     capability::entry::CapabilityEntry, traits::capability_provider::ICapabilityProvider,
 };
 
-/// Windows 能力提供者。
+/// Windows capability provider.
 ///
 /// Windows Process / Power use native OS APIs; vendor-specific hardware remains capability-gated.
 pub struct WindowsCapabilityProvider;
@@ -31,13 +31,13 @@ impl Default for WindowsCapabilityProvider {
 impl ICapabilityProvider for WindowsCapabilityProvider {
     fn capabilities_detailed(&self) -> Vec<CapabilityEntry> {
         vec![
-            // 遥测能力：始终可读
+            // Telemetry: always readable
             CapabilityEntry::supported("cpu.telemetry"),
             CapabilityEntry::supported("memory.telemetry"),
             CapabilityEntry::supported("disk.telemetry"),
             CapabilityEntry::supported("network.telemetry"),
             CapabilityEntry::supported("process.telemetry"),
-            // 进程 / 电源：已通过 Windows API 提供
+            // Process / Power: provided via Windows API
             CapabilityEntry::supported("process.priority.read"),
             CapabilityEntry::conditional(
                 "process.priority.write",
@@ -45,7 +45,7 @@ impl ICapabilityProvider for WindowsCapabilityProvider {
             ),
             CapabilityEntry::supported("power.profile.read"),
             CapabilityEntry::supported("power.profile.write"),
-            // GPU / NPU / 温度：能力取决于设备驱动/厂商运行时。
+            // GPU, NPU, and temperature capabilities depend on the detected device and vendor runtime.
             if Self::nvidia_available() {
                 CapabilityEntry::supported("gpu.telemetry")
             } else {

@@ -4,23 +4,23 @@ use aicore_contracts::platform::service::{
     IServiceController, ServiceConfig, ServiceOperationResult, ServiceState,
 };
 
-/// Mock service controller（测试用）。
+/// Lock service control.
 ///
-/// 状态机：
+/// Status machine:
 /// - NotInstalled → Stopped（install）
 /// - Stopped → Running（start）
 /// - Running → Stopped（stop）
-/// - upgrade：模拟二进制替换；可配置是否失败
-/// - rollback：恢复上一个 binary path
+/// -upgrade: simulate binary replacement; configuration failed
+/// - Rollback: restore the last binary path
 pub struct MockServiceController {
     state: Mutex<MockState>,
-    /// 下一次 upgrade 是否失败
+    /// Whether next upglade failed
     fail_next_upgrade: Mutex<bool>,
-    /// 下一次 start 是否失败
+    /// Next start failed
     fail_next_start: Mutex<bool>,
-    /// 下一次 stop 是否失败
+    /// Next stop failed
     fail_next_stop: Mutex<bool>,
-    /// 备份的 binary path 栈
+    /// Backup Binary Path Inn
     backups: Mutex<Vec<String>>,
     current_binary: Mutex<String>,
 }
@@ -142,7 +142,7 @@ impl IServiceController for MockServiceController {
         if fail {
             return ServiceOperationResult::failed(ServiceState::Stopped, "mock upgrade failure");
         }
-        // 备份当前 binary
+        // Backup Current Binary
         let current = self.current_binary.lock().unwrap().clone();
         self.backups.lock().unwrap().push(current);
         *self.current_binary.lock().unwrap() = new_binary_path.to_string();

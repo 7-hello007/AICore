@@ -1,4 +1,4 @@
-//! OnnxRuntimeBackend + RuntimeBackedProvider 集成。
+//! OnnxRuntimeBackend + RuntimeBackedProvider integration.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -90,9 +90,9 @@ fn full_lifecycle_load_infer_unload() {
 
 #[test]
 fn onnx_backend_not_used_by_runtime_backed_provider_with_feature_tensors() {
-    // RuntimeBackedProvider 目前用 features 路径（V3-F 的 FeatureWeighted 输入）。
-    // ONNX backend 需要 tensors 路径；此处只验证"若 provider 发 features-only 请求，
-    // ONNX backend 会拒绝"，证明 provider 与 backend 的输入契约边界清晰。
+    // RuntimeBackedProvider is currently using the features path (FeatureWeighted input for V3-F).
+    // ONNX backend requires a tensors path; only confirmation here "if provider sends requests-only,
+    // ONNX backend will reject" to prove that the input boundary between the program and the backend is clear.
     let factory = Arc::new(MockOnnxSessionFactory::with_default_test_session());
     let backend: Arc<dyn IAiRuntime> = Arc::new(OnnxRuntimeBackend::new(factory));
 
@@ -113,7 +113,7 @@ fn provider_still_works_with_pure_rust() {
     use aicore_ai_runtime::PureRustRuntime;
 
     let rt: Arc<dyn IAiRuntime> = Arc::new(PureRustRuntime::new());
-    // FeatureWeighted 模型
+    // FeatureWeighted model
     let json = r#"{
         "schema_version": "1.0",
         "name": "test",

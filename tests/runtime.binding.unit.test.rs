@@ -1,4 +1,4 @@
-//! DefaultRuntimeBinder 单元测试。
+//! DefaultRuntimeBinder unit test.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -177,7 +177,7 @@ fn gpu_route_without_capability_not_executed() {
 
 #[test]
 fn gpu_route_with_capability_but_no_executor_degraded() {
-    // Phase 4：有 GPU capability 但未注册 executor → 降级（不执行）。
+    // Phase 4: GPU capacity but not registered executor downgrade (not executed).
     let caps = HardwareCapabilitySet::new("gpu:test").with(HardwareCapabilityEntry::supported(
         HardwareCapability::DeviceIdentity,
     ));

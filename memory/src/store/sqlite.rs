@@ -8,10 +8,10 @@ use aicore_contracts::{
 };
 use rusqlite::{params, Connection};
 
-/// 当前 schema version。
+/// Current schema version.
 pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
-/// 每个版本的迁移 SQL。键是目标版本，值是 DDL。
+/// Migration of each version SQL. The key is the target version and the value is DDL。
 const MIGRATIONS: &[(u32, &str)] = &[(
     1,
     "CREATE TABLE IF NOT EXISTS kv (
@@ -29,21 +29,21 @@ const MIGRATIONS: &[(u32, &str)] = &[(
 const KV_SCHEMA_VERSION: &str = "schema_version";
 const KV_PROFILE: &str = "profile";
 
-/// 基于 SQLite 的本地存储。
+/// Local storage based on SQLite.
 ///
-/// - 事务型。
-/// - Schema version + 迁移。
-/// - 支持按 timestamp 删除。
+/// - Service type.
+/// - Schema version+ migration.
+/// - Supports pressing timestamp to delete.
 pub struct SqliteMemoryStore {
     path: PathBuf,
     conn: Mutex<Connection>,
 }
 
 impl SqliteMemoryStore {
-    /// 打开或创建数据库。
+    /// Opens or creates a database.
     ///
-    /// - 若文件不存在，会创建并应用迁移。
-    /// - 若文件存在，会检查 schema version 并按需迁移。
+    /// - If the document does not exist, the migration will be created and applied.
+    /// - If the file exists, check the schema version and move as required.
     pub fn open(path: impl Into<PathBuf>) -> ContractResult<Self> {
         let path = path.into();
         if let Some(parent) = path.parent() {
@@ -66,7 +66,7 @@ impl SqliteMemoryStore {
         Ok(store)
     }
 
-    /// 打开内存数据库（测试用）。
+    /// Opens the memory database (testing).
     pub fn open_in_memory() -> ContractResult<Self> {
         let conn = Connection::open_in_memory().map_err(|e| {
             ContractError::AdapterUnavailable(format!("open in-memory sqlite: {}", e))
@@ -101,7 +101,7 @@ impl SqliteMemoryStore {
             // Keep DDL, timestamp conversion and the schema marker together.
             // A failed or interrupted migration must leave the previous schema intact.
             let transaction = conn.unchecked_transaction().map_err(map_sqlite)?;
-            // 保证 kv 表存在，才可读取 schema_version
+            // To read schema_version
             transaction
                 .execute_batch(
                     "CREATE TABLE IF NOT EXISTS kv (
@@ -235,8 +235,8 @@ impl IMemoryStore for SqliteMemoryStore {
                     },
                 }
             }
-            // 反转，使结果按时间升序（旧 → 新），
-            // 与 InMemoryStore / JsonFileStore 的语义一致。
+            // Invert the results in time (old and new),
+            // The syntax of InMemoryStore/JsonFileStore.
             result.reverse();
             Ok(result)
         })

@@ -1,3 +1,4 @@
+[English](INTENT_BACKENDS.md) | [Chinese](INTENT_BACKENDS.zh-CN.md)
 # Local intent providers
 
 Core consumes `IIntentAgent` and validated `IntentProposal`; backend selection,

@@ -16,9 +16,9 @@ use super::foreground::ForegroundCache;
 use crate::hardware::telemetry::WindowsHardwareTelemetryProvider;
 use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
 
-/// Windows 遥测 Provider。
+/// Windows telemetry Provider.
 ///
-/// V2-A-1：与 Linux 对称，内部 `Mutex` 刷新。
+/// V2-A-1: internal `Mutex` refreshed with Linux.
 pub struct WindowsTelemetryProvider {
     system: Mutex<System>,
     disks: Mutex<Disks>,

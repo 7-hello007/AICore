@@ -3,41 +3,41 @@ use crate::context::snapshot::ContextSnapshot;
 use crate::errors::ContractResult;
 use crate::runtime::route::{RuntimeRoute, RuntimeRouteSource};
 
-/// 绑定请求。
+/// A binding request.
 #[derive(Debug, Clone)]
 pub struct BindingRequest {
     pub route: RuntimeRoute,
     pub context: ContextSnapshot,
-    /// 如果上游已有 inference 请求，则一并传入。
+    /// If there is an upstream request for access, it is entered together.
     pub inference: Option<InferenceRequest>,
 }
 
-/// 绑定结果。
+/// Tie the results.
 #[derive(Debug, Clone)]
 pub struct BindingResult {
     pub route_id: String,
     pub source: RuntimeRouteSource,
-    /// 是否真的执行了推理或硬件操作；仅模型可用、Native 路由或不支持均为 false。
+    /// Whether the inference or the hardware operation was actually performed; only models are available, Native routers or not supported are false.
     pub executed: bool,
-    /// 执行输出（若 `executed == true`）。
+    /// Execute output (if `executed == true`).
     pub inference: Option<InferenceResponse>,
-    /// 人类可读理由。
+    /// Human readable reasons.
     pub reason: String,
-    /// 实际耗时。
+    /// Actual time-consuming.
     pub latency_ms: u64,
 }
 
 /// Runtime Binder。
 ///
-/// 职责：
-/// - 接收 `RuntimeRoute`，绑定到具体 backend。
-/// - 执行（若 route 非 Native）。
-/// - 失败时返回 `Ok(BindingResult { executed: false, ... })`，由上层回退 Native。
+/// Duties:
+/// - Receive `RuntimeRoute`, bind to specific back.
+/// - Execute (if route is not native).
+/// - Returns `Ok(BindingResult { executed: false, ... })` when failure, retreating from the upper layer of Native.
 ///
-/// **约束**：
-/// - Binder 通过注入的 Adapter executor 执行硬件操作，不包含平台分支。
-/// - 平台 Binder 可能改变设备状态，不能放入不可取消的慢线程。
-/// - 执行失败必须 fallback 到 Native（`executed: false`）。
+/// ** Binding**:
+/// - Binder carries out hardware operations through the injection of Adapter executor, which does not contain the platform branch.
+/// - Platform Binder may change the state of the device and cannot be placed in an irrevocable slow-line.
+/// - Implementation failure must fallback to Native (`executed: false`).
 pub trait IRuntimeBinder: Send + Sync {
     /// True only for isolated inference sessions with no host state setters.
     fn preparation_safe(&self) -> bool {
@@ -46,9 +46,9 @@ pub trait IRuntimeBinder: Send + Sync {
 
     fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult>;
 
-    /// 返回 binder 名称。
+    /// returns the binder name.
     fn name(&self) -> &'static str;
 
-    /// 已加载的模型句柄（用于审计 / Dashboard）。
+    /// Loaded model handle (for audit / Dashboard).
     fn loaded_models(&self) -> Vec<ModelHandle>;
 }

@@ -1,4 +1,4 @@
-//! 本地 AI Provider 推理测试。
+//! Local AI provider inference tests.
 
 use aicore_ai::{
     local::{FeatureVector, PolicyIntent, WeightTable},
@@ -103,7 +103,7 @@ fn provider_output_is_deterministic() {
     let s1 = p.suggest(&input).unwrap();
     let s2 = p.suggest(&input).unwrap();
 
-    // 除 suggestion_id 与时间戳外，其他字段应一致
+    // Other fields should be consistent except suggestion_id and time stamp
     assert_eq!(s1.confidence, s2.confidence);
     assert_eq!(s1.reason, s2.reason);
 }
@@ -116,7 +116,7 @@ fn high_npu_prefers_boost_npu() {
         .unwrap();
     match s.payload {
         AiSuggestionPayload::Policy(policy) => {
-            // 高 NPU 时 NPU 优先级应被提升
+            // NPU priority should be raised at high NPU
             assert_eq!(policy.npu.priority, PolicyPriority::High);
         },
         _ => panic!("expected policy payload"),
@@ -157,7 +157,7 @@ fn weights_roundtrip_json() {
 #[test]
 fn invalid_weights_are_rejected() {
     let mut w = WeightTable::default_weights();
-    // 清空某个 intent
+    // Clear an intent
     w.entries.retain(|e| e.intent != PolicyIntent::BoostCpu);
     assert!(w.validate().is_err());
 }
@@ -180,7 +180,7 @@ fn custom_base_policy_is_respected() {
     let s = p.suggest(&input).unwrap();
     match s.payload {
         AiSuggestionPayload::Policy(policy) => {
-            // KeepBase 时 CPU 优先级应保留 High
+            // KeepBase Time CPU High priority should be retained
             assert_eq!(policy.cpu.priority, PolicyPriority::High);
         },
         _ => panic!("expected policy payload"),

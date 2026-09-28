@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// 权重表。
+/// Weight table.
 ///
-/// JSON 格式：
+/// JSON format:
 /// ```json
 /// {
 ///   "schema_version": "1.0",
@@ -24,7 +24,7 @@ pub struct ModelWeights {
 }
 
 impl ModelWeights {
-    /// 校验权重结构一致性。
+    /// Verify the consistency of weight structures.
     pub fn validate(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {
             return Err("name is empty".to_string());
@@ -64,9 +64,9 @@ impl ModelWeights {
         Ok(())
     }
 
-    /// 点积 + softmax 推理。
+    /// Dot-product and stable softmax inference.
     ///
-    /// 返回按分数降序排列的 `(label, score)`。
+    /// Returns `(label, score)` in descending order of fractions.
     pub fn infer(&self, features: &[f32]) -> Result<Vec<(String, f32)>, String> {
         if features.iter().any(|feature| !feature.is_finite()) {
             return Err("features contain a non-finite value".to_string());
@@ -93,7 +93,7 @@ impl ModelWeights {
             return Err("non-finite inference logit".to_string());
         }
 
-        // softmax（数值稳定）
+        // softmax (value stable)
         let max = scores
             .iter()
             .map(|(_, s)| *s)

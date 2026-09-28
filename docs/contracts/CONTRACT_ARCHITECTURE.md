@@ -1,6 +1,7 @@
+[English](CONTRACT_ARCHITECTURE.md) | [Chinese](CONTRACT_ARCHITECTURE.zh-CN.md)
 # Contract Architecture
 
-Contracts 是整个系统的长期边界。
+Contracts define the system's stable long-term boundaries.
 
 ```mermaid
 flowchart LR
@@ -20,10 +21,10 @@ flowchart LR
     DOMAIN --> TIER
 ```
 
-## 规则
+## Rule
 
-- 一个 canonical error model。
-- 一个 canonical schema version model。
-- 跨模块时间统一 `unix_ms`。
-- 不为同一业务语义维护多个重复结构。
-- Contract 改动必须有 compatibility review 和 contract tests。
+- Use one canonical error model.
+- Use one canonical schema-version model.
+- Represent cross-module timestamps consistently as `unix_ms`.
+- Do not maintain duplicate structures for the same domain concept.
+- Contract changes require review and contract tests.

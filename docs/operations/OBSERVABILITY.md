@@ -1,11 +1,12 @@
+[English](OBSERVABILITY.md) | [Chinese](OBSERVABILITY.zh-CN.md)
 # Observability
 
-三层：
+Three layers:
 
 | Layer | Contents |
 |---|---|
-| Logs | lifecycle、errors、decisions |
-| Metrics | latency、failure、resource overhead |
+| Logs | lifecycle, errors, decisions |
+| Metrics | latency, failures, resource overhead |
 | Traces | tick/control/IPC/plugin execution |
 
-所有关键 Decision 必须具备 trace_id / policy_id / task_id（如存在）。
+Every significant decision must include `trace_id`, `policy_id`, and `task_id` when available.

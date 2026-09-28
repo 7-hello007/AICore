@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// 跨模块追踪上下文。
+/// Track context across modules.
 ///
-/// 每个 tick 有唯一 `trace_id`；tick 内所有操作共享同一个 `trace_id`。
+/// Each tick has the only `trace_id`; all operations within tick share the same `trace_id`.
 ///
-/// 约定：
-/// - `trace_id` 格式为 `trace-{tick_id}-{unix_ms}`，便于日志检索。
-/// - `started_at_unix_ms` 为 trace 创建时刻。
+/// Have agreed:
+/// - `trace_id` is formatted as `trace-{tick_id}-{unix_ms}`, which facilitates log search.
+/// - `started_at_unix_ms` creates a moment for a trace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceContext {
     pub trace_id: String,
@@ -25,7 +25,7 @@ impl TraceContext {
         }
     }
 
-    /// 从当前时间计算 trace 已运行多久。
+    /// Calculates how long the track has been running from the current time.
     pub fn elapsed_ms(&self) -> u64 {
         now_unix_ms().saturating_sub(self.started_at_unix_ms)
     }

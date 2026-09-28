@@ -4,10 +4,10 @@ use crate::application::id::ApplicationId;
 
 use super::{contract::TaskContract, lifecycle::TaskState};
 
-/// 队列中的 task 实体。
+/// Queue the task entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueuedTask {
-    /// 系统分配的 task_id（若 contract 未提供，队列生成一个）。
+    /// The system allocates task_id (if not provided by contract, create a queue).
     pub task_id: String,
     pub application_id: ApplicationId,
     pub contract: TaskContract,
@@ -15,7 +15,7 @@ pub struct QueuedTask {
     pub enqueued_at_unix_ms: u64,
     pub started_at_unix_ms: Option<u64>,
     pub finished_at_unix_ms: Option<u64>,
-    /// 完成 / 失败原因。
+    /// Finish/ Failed Reason.
     pub result_message: Option<String>,
 }
 
@@ -33,7 +33,7 @@ impl QueuedTask {
         }
     }
 
-    /// 是否已过期。
+    /// Expiry.
     pub fn is_expired(&self, now: u64) -> bool {
         if let Some(deadline) = self.contract.deadline_unix_secs {
             now >= deadline && self.state == TaskState::Queued
@@ -42,9 +42,9 @@ impl QueuedTask {
         }
     }
 
-    /// 有效优先级：deadline 越近越高。
+    /// Effective priority: the closer the deadline gets.
     ///
-    /// 返回值越大优先级越高。
+    /// Returns a higher priority value.
     pub fn effective_priority(&self, now: u64) -> i64 {
         use crate::policy::priority::PolicyPriority;
         let base: i64 = match self.contract.priority {
@@ -56,17 +56,17 @@ impl QueuedTask {
             None => 400,
         };
 
-        // deadline 越近，加分越多；上限 1000。
+        // The closer the deadline, the more points; the upper 1000.
         //
-        // 语义：距 deadline 1 小时内的 task 获得显著加成；
-        // 越近加成越大，能盖过 base 优先级差异。
+        // Semantics: A significant addition to the task within 1 hour of the deadline;
+        // The closer you add, the bigger you get, the more you cover the base priority difference.
         if let Some(deadline) = self.contract.deadline_unix_secs {
             if deadline > now {
                 let time_to_deadline = (deadline - now) as i64;
                 let bonus = (3600_i64 - time_to_deadline).clamp(0, 1000);
                 base + bonus
             } else {
-                // 已过期：负分，下次 dequeue 会被 expire
+                // Expire: negative score, next dequee
                 base - 1000
             }
         } else {

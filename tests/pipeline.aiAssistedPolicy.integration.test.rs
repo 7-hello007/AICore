@@ -35,7 +35,7 @@ fn full_pipeline_with_ai_assisted_policy() {
 
     let (policy, suggestion) = ai_engine.generate_with_meta(&state.snapshot, &ctx);
 
-    // 无论走哪条路径，最终 policy 必须通过 Validator
+    // Either way, eventually policy must pass through Validator.
     let validator = DefaultPolicyValidator::new();
     let result = validator.validate(&policy);
     assert!(

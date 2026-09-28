@@ -1,3 +1,4 @@
+[English](CI_CD.md) | [Chinese](CI_CD.zh-CN.md)
 # CI/CD
 
 ```mermaid
@@ -14,4 +15,4 @@ flowchart LR
     PR --> FORMAT --> CLIPPY --> TEST --> PLATFORM --> SECURITY --> PACKAGE --> RELEASE
 ```
 
-Nightly 必须覆盖长稳；平台能力与真实 hardware tests 按 capability availability 分层执行。
+Nightly runs should cover long-term stability. Run platform and real-hardware tests according to the capabilities available on each test machine.

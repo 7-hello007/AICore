@@ -1,3 +1,4 @@
+[English](SCHEDULING_AND_FEEDBACK.md) | [Chinese](SCHEDULING_AND_FEEDBACK.zh-CN.md)
 # Accelerator admission, preparation and observed feedback
 
 ## Accelerator scheduling

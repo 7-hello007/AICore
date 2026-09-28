@@ -8,14 +8,14 @@ pub trait IPreparationAuthorization: Send + Sync {
     fn targets(&self) -> ContractResult<ExecutionTargets>;
 }
 
-/// Task 队列抽象。
+/// Task queue abstract.
 ///
-/// 约束：
-/// - **不直接访问 OS**。
-/// - 线程安全。
-/// - `dequeue` 是原子操作；并发调用不会返回同一 task。
+/// Binding:
+/// - ** Do not directly access OS**.
+/// - Line is clear.
+/// - `dequeue` is an atomic operation; the call does not return to the same task.
 pub trait ITaskQueue: Send + Sync {
-    /// 入队。返回系统分配的 task_id。
+    /// Enter. Return task_id assigned to the system.
     fn enqueue(&self, task: QueuedTask) -> ContractResult<String>;
     fn enqueue_preparation(
         &self,
@@ -31,13 +31,13 @@ pub trait ITaskQueue: Send + Sync {
         Ok(None)
     }
 
-    /// 取下一个最高优先级的 Queued task，原子地将状态置为 Running。
+    /// Take the next highest priority Queued task, atoms set the status to Running.
     ///
-    /// - 返回 `None` 表示队列为空。
-    /// - 已过期的 task 会被自动标记为 Expired，不返回。
+    /// - Return `None` to indicate that the team is empty.
+    /// - Expired task will be automatically marked Expired, not returned.
     fn dequeue(&self) -> ContractResult<Option<QueuedTask>>;
 
-    /// 批量取出最高优先级任务。默认实现逐个调用 `dequeue`，避免各实现重复维护批处理语义。
+    /// Batch removes the highest priority task. The default is to call `dequeue` on a case-by-case basis to avoid the repetition of batch maintenance semantics.
     fn dequeue_batch(&self, limit: usize) -> ContractResult<Vec<QueuedTask>> {
         let mut tasks = Vec::new();
         for _ in 0..limit {
@@ -49,29 +49,29 @@ pub trait ITaskQueue: Send + Sync {
         Ok(tasks)
     }
 
-    /// 标记 task 完成。
+    /// Mark the task finished.
     fn complete(&self, task_id: &str, message: Option<String>) -> ContractResult<()>;
 
-    /// 标记 task 失败。
+    /// Failed to mark tab.
     fn fail(&self, task_id: &str, message: String) -> ContractResult<()>;
 
-    /// 取消 task。
+    /// Cancel it.
     fn cancel(&self, task_id: &str) -> ContractResult<()>;
 
-    /// 查询 task 状态。
+    /// Query task status.
     fn get(&self, task_id: &str) -> ContractResult<Option<QueuedTask>>;
 
-    /// 返回所有 task 的快照（包括终态）。
+    /// Returns the snapshot (including terminal) of all tabs.
     fn snapshot(&self) -> ContractResult<Vec<QueuedTask>>;
 
-    /// 队列中 Queued 状态的 task 数。
+    /// The number of Queued states tab in the queue.
     fn queued_count(&self) -> ContractResult<usize>;
 
-    /// 队列名。
+    /// Team listing.
     fn queue_name(&self) -> &'static str;
 }
 
-/// 根据当前状态推导的下一个状态（辅助函数）。
+/// The next state (support function) is extrapolated from the current state.
 pub fn transition(current: TaskState, next: TaskState) -> ContractResult<()> {
     if current.can_transition_to(next) {
         Ok(())

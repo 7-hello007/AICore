@@ -1,4 +1,4 @@
-//! L1 独立测试。
+//! L1 Independent testing.
 
 use aicore_contracts::{
     application::id::ApplicationId, context::workload::WorkloadType, task::contract::TaskContract,

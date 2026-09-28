@@ -1,4 +1,4 @@
-//! Dashboard 数据面：TickOutcome 字段完整性 + TickSummary 映射 + 序列化。
+//! Dashboard Data Face: TickOutcome field integrity +TickSummary map + sequence.
 
 use aicore_contracts::{
     context::{

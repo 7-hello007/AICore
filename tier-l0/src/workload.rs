@@ -10,12 +10,12 @@ use aicore_contracts::{
 };
 use aicore_core::context::RuleBasedClassifier;
 
-/// L0 workload source：基于规则分类器从系统状态推断 workload。
+/// L0 workload source: rule-based sorter extrapolates workload from system state.
 ///
-/// 特点：
-/// - 零改动软件：不要求应用声明任何信息。
-/// - 确定性：规则优先，无 AI 推断。
-/// - 低开销：不做子进程调用（`ComputerSnapshot` 已包含全部输入）。
+/// Characteristics:
+/// - Zero change software: The application of a statement of any information is not required.
+/// - Determination: Rules take precedence, no AI extrapolation.
+/// - Low cost: no sub-process call (`ComputerSnapshot` already contains all inputs).
 pub struct L0WorkloadSource {
     classifier: Arc<dyn ITaskClassifier>,
 }
@@ -69,7 +69,7 @@ impl IWorkloadSource for L0WorkloadSource {
     }
 
     fn priority(&self) -> u32 {
-        // L0 是最低优先级：L1/L2 的显式声明会覆盖 L0 推断。
+        // L0 is the lowest priority: the L1/L2 explicit statement will cover L0 extrapolations.
         100
     }
 }

@@ -8,9 +8,9 @@ use aicore_contracts::{
     traits::memory_store::IMemoryStore,
 };
 
-/// 基于 JSON 文件的本地持久化。
+/// Local durability based on JSON files.
 ///
-/// 文件不存在时按空历史 / 默认 profile 处理，不报错。
+/// Use empty history/ default profile when the file does not exist.
 pub struct JsonFileStore {
     history_path: PathBuf,
     profile_path: PathBuf,

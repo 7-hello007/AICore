@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-/// Task 生命周期状态。
+/// Task Life Cycle Status.
 ///
-/// 转换：
+/// Conversion:
 /// - Queued → Running → Completed
 /// - Queued → Running → Failed
 /// - Queued → Cancelled
-/// - Queued → Expired（deadline 超时）
+/// - Queued Expired
 /// - Running → Cancelled
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -8,15 +8,15 @@ use aicore_contracts::plugin::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Registry 中的一条插件记录。
+/// One of the plugins in Registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginEntry {
     pub manifest: PluginManifest,
     pub state: PluginState,
-    /// 上次状态变更原因。
+    /// Last change of status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_reason: Option<String>,
-    /// 连续失败次数。
+    /// Number of consecutive failures.
     #[serde(default)]
     pub failure_count: u32,
 }
@@ -37,9 +37,9 @@ impl PluginEntry {
     }
 }
 
-/// 插件注册表。
+/// Plugin registration form.
 ///
-/// 线程安全。所有状态变更通过 `transition` 完成，强制状态机规则。
+/// Line is secure. All state changes are completed by `transition`, mandatory status machine rules.
 pub struct PluginRegistry {
     entries: RwLock<HashMap<String, PluginEntry>>,
 }
@@ -51,9 +51,9 @@ impl PluginRegistry {
         }
     }
 
-    /// 注册一个新插件（初始状态 Discovered）。
+    /// Register a new plugin (initial state)
     ///
-    /// 若 name 已存在则拒绝，避免覆盖已激活的插件。
+    /// Refuses to overwrite activated plugins if the name already exists.
     pub fn register(&self, manifest: PluginManifest) -> Result<(), RegistryError> {
         manifest
             .validate()
@@ -80,7 +80,7 @@ impl PluginRegistry {
         Ok(())
     }
 
-    /// 状态转换。
+    /// Status conversion.
     pub fn transition(
         &self,
         name: &str,
@@ -155,7 +155,7 @@ impl PluginRegistry {
         Ok(())
     }
 
-    /// 查询单个插件。
+    /// Query individual plugins.
     pub fn get(&self, name: &str) -> Result<Option<PluginEntry>, RegistryError> {
         let entries = self
             .entries
@@ -164,7 +164,7 @@ impl PluginRegistry {
         Ok(entries.get(name).cloned())
     }
 
-    /// 列出所有插件。
+    /// Lists all the plugins.
     pub fn list(&self) -> Result<Vec<PluginEntry>, RegistryError> {
         let entries = self
             .entries
@@ -175,7 +175,7 @@ impl PluginRegistry {
         Ok(out)
     }
 
-    /// 按 kind 筛选。
+    /// Press kind to filter.
     pub fn list_by_kind(&self, kind: PluginKind) -> Result<Vec<PluginEntry>, RegistryError> {
         let entries = self
             .entries
@@ -188,7 +188,7 @@ impl PluginRegistry {
             .collect())
     }
 
-    /// 按 trust level 筛选。
+    /// Filter by trust level.
     pub fn list_by_trust(&self, trust: TrustLevel) -> Result<Vec<PluginEntry>, RegistryError> {
         let entries = self
             .entries
@@ -201,7 +201,7 @@ impl PluginRegistry {
             .collect())
     }
 
-    /// 统计。
+    /// Statistics.
     pub fn count(&self) -> Result<usize, RegistryError> {
         let entries = self
             .entries
@@ -210,7 +210,7 @@ impl PluginRegistry {
         Ok(entries.len())
     }
 
-    /// 当前 Core 的 API 版本。
+    /// Current Core version of API.
     pub fn current_api_version(&self) -> ApiVersion {
         ApiVersion::CURRENT
     }

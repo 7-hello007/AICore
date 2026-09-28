@@ -1,4 +1,4 @@
-//! L0 removal 测试：删除 L0 不影响其他 Tier 与 Core。
+//! L0 test: Delete L0 without prejudice to other Tiers and Core.
 
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use aicore_contracts::{
 use aicore_tier::TierHub;
 use aicore_tier_l0::register_l0;
 
-/// Mock L1 workload source；模拟"声明型"来源。
+/// Mark L1 workload source; simulation of "declaration" source.
 struct MockL1Source;
 impl IWorkloadSource for MockL1Source {
     fn observe(&self, _s: &ComputerSnapshot) -> ContractResult<WorkloadObservation> {
@@ -36,10 +36,10 @@ impl IWorkloadSource for MockL1Source {
 fn remove_l0_keeps_l1_operational() {
     let hub = TierHub::new();
 
-    // 注册 L0（真实）
+    // Register L0 (real)
     let l0_id = register_l0(&hub).unwrap();
 
-    // 注册 mock L1
+    // Register mark L1
     let l1_id = TierId::new("l1.aware");
     hub.register_tier(
         TierRegistration::new(l1_id.clone(), TierLevel::L1, "1.0.0")
@@ -49,18 +49,18 @@ fn remove_l0_keeps_l1_operational() {
     hub.register_workload_source(l1_id.clone(), 200, Arc::new(MockL1Source))
         .unwrap();
 
-    // L1 优先级更高
+    // L1 higher priority
     let best = hub.best_workload_source().unwrap().unwrap();
     assert_eq!(best.source_name(), "l1");
 
-    // 删除 L0
+    // Delete L0
     hub.unregister_tier(&l0_id).unwrap();
 
-    // L1 仍可用
+    // L1 still available
     let best_after = hub.best_workload_source().unwrap().unwrap();
     assert_eq!(best_after.source_name(), "l1");
 
-    // 元数据只剩 L1
+    // The metadata is only L1.
     assert_eq!(hub.registry().count().unwrap(), 1);
     let remaining = hub.registry().list().unwrap();
     assert_eq!(remaining[0].id.as_str(), "l1.aware");
@@ -76,7 +76,7 @@ fn remove_l0_leaves_empty_hub_valid() {
 
     hub.unregister_tier(&l0_id).unwrap();
 
-    // 空 Hub 仍合法
+    // Empty Hub still valid
     assert!(hub.registry().is_empty().unwrap());
     assert!(hub.best_workload_source().unwrap().is_none());
     assert!(hub.best_adaptation_provider().unwrap().is_none());
@@ -88,7 +88,7 @@ fn re_register_l0_after_removal() {
     let l0_id = register_l0(&hub).unwrap();
     hub.unregister_tier(&l0_id).unwrap();
 
-    // 重新注册应成功
+    // Re-registration should be successful
     let l0_id2 = register_l0(&hub).unwrap();
     assert_eq!(l0_id2.as_str(), l0_id.as_str());
     assert!(hub.best_workload_source().unwrap().is_some());

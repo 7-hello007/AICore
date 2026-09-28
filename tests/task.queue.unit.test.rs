@@ -1,4 +1,4 @@
-//! InMemoryTaskQueue 单元测试。
+//! InMemoryTaskQueue unit test.
 
 use aicore_contracts::{
     application::id::ApplicationId,
@@ -80,10 +80,10 @@ fn deadline_overrides_priority() {
         .unwrap()
         .as_secs();
 
-    // 低优先级但 deadline 很近
+    // Low priority but deadline is close.
     q.enqueue(task("urgent", Some(PolicyPriority::Low), Some(now + 5)))
         .unwrap();
-    // 高优先级无 deadline
+    // High Priority No Deadline
     q.enqueue(task("high", Some(PolicyPriority::High), None))
         .unwrap();
 
@@ -94,7 +94,7 @@ fn deadline_overrides_priority() {
 #[test]
 fn expired_task_is_marked_expired_before_dequeue() {
     let q = InMemoryTaskQueue::new();
-    q.enqueue(task("expired", None, Some(500))).unwrap(); // deadline 已经过去
+    q.enqueue(task("expired", None, Some(500))).unwrap(); // Deadline is past.
 
     let got = q.dequeue().unwrap();
     assert!(got.is_none());
@@ -140,7 +140,7 @@ fn cancel_from_queued() {
 fn invalid_transition_rejected() {
     let q = InMemoryTaskQueue::new();
     q.enqueue(task("t1", None, None)).unwrap();
-    // 从未出队就 complete → 非法
+    // It's illegal.
     assert!(q.complete("t1", None).is_err());
 }
 

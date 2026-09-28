@@ -7,16 +7,16 @@ use aicore_contracts::{
     traits::task_source::ITaskSource,
 };
 
-/// L1 Task 来源：应用通过公开 API 声明当前任务。
+/// L1 Task Source: Apply public API to declare the current task.
 ///
-/// 语义：
-/// - 应用调用 `set_current(contract)` 声明"我现在在做 X"。
-/// - `current_task()` 返回最近一次声明的 contract。
-/// - `clear()` 表示应用主动撤销声明。
+/// Semantics:
+/// - Apply call `set_current(contract)` for "I'm doing X" now.
+/// - `current_task()` returns the last stated condition.
+/// - `clear()` indicates the active revocation of the declaration.
 ///
-/// 特性：
-/// - **不主动轮询**：完全由应用驱动。
-/// - **不修改 TaskContract**：只存储与返回。
+/// Features:
+/// -** Do not initiate a rotation**: fully applied.
+/// - ** Do not change TaskContract**: only store and return.
 pub struct L1TaskSource {
     current: RwLock<Option<TaskContract>>,
 }
@@ -28,7 +28,7 @@ impl L1TaskSource {
         }
     }
 
-    /// 应用声明当前任务。
+    /// Apply the declaration for the current task.
     pub fn set_current(&self, contract: TaskContract) -> ContractResult<()> {
         let mut slot = self.current.write().map_err(|_| {
             ContractError::AdapterUnavailable("l1 task source lock poisoned".into())
@@ -37,7 +37,7 @@ impl L1TaskSource {
         Ok(())
     }
 
-    /// 应用撤销当前声明。
+    /// Apply to revoke the current declaration.
     pub fn clear(&self) -> ContractResult<()> {
         let mut slot = self.current.write().map_err(|_| {
             ContractError::AdapterUnavailable("l1 task source lock poisoned".into())
@@ -59,7 +59,7 @@ impl L1TaskSource {
         }
     }
 
-    /// 当前是否有声明。
+    /// Is there a declaration at this time?
     pub fn has_current(&self) -> bool {
         self.current_task().ok().flatten().is_some()
     }
@@ -95,7 +95,7 @@ impl ITaskSource for L1TaskSource {
     }
 
     fn priority(&self) -> u32 {
-        // L1 显式声明优先级高于 L0 推断。
+        // L1 Manifest declaration priority above L0 extrapolation.
         500
     }
 }

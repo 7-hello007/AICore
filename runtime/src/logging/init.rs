@@ -3,21 +3,21 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 static INIT: Once = Once::new();
 
-/// 日志输出格式。
+/// Log output format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogFormat {
     Plain,
     Json,
 }
 
-/// 初始化 tracing。
+/// Initializing the traffic.
 ///
-/// 行为：
-/// - 幂等：多次调用只初始化一次，不 panic。
-/// - 从 `AICORE_LOG` 读过滤器，默认 `info`。
-/// - 从 `AICORE_LOG_FORMAT` 读格式，`json` 时启用 JSON 输出。
+/// Conduct:
+/// - Zen et al.: multiple calls are only initialized once, not Panic.
+/// - Read filter from `AICORE_LOG`, default `info`.
+/// - From `AICORE_LOG_FORMAT` Read format,`json` Enable JSON Output.
 ///
-/// 参数 `format_override` 为 `Some` 时覆盖环境变量。
+/// The parameter `format_override` is `Some` to overwrite the environment variable.
 pub fn init_tracing(format_override: Option<LogFormat>) {
     INIT.call_once(|| {
         let filter =
@@ -53,7 +53,7 @@ pub fn init_tracing(format_override: Option<LogFormat>) {
     });
 }
 
-/// 便捷：从环境变量初始化。
+/// Easy: Initialize from environmental variables.
 pub fn init_tracing_from_env() {
     init_tracing(None);
 }

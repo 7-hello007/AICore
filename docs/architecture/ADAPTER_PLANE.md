@@ -1,6 +1,7 @@
+[English](ADAPTER_PLANE.md) | [Chinese](ADAPTER_PLANE.zh-CN.md)
 # Adapter Plane
 
-Adapter 是平台/硬件差异的唯一归属层。
+The adapter plane is the only layer that contains platform- and hardware-specific behavior.
 
 ```mermaid
 flowchart TB
@@ -20,4 +21,4 @@ flowchart TB
     CONTRACT --> NPU
 ```
 
-Adapter 不包含 Policy，不负责历史数据，不持有 UI 状态。
+Adapters do not define policy, retain history, or own UI state.

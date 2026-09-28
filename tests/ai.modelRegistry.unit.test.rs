@@ -1,4 +1,4 @@
-//! Model Registry 测试。
+//! Model Registry Test.
 
 use aicore_ai::{LocalFeatureProvider, ModelEntry, ModelRegistry};
 use aicore_contracts::{

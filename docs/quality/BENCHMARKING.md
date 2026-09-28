@@ -1,8 +1,9 @@
+[English](BENCHMARKING.md) | [Chinese](BENCHMARKING.zh-CN.md)
 # Benchmarking
 
-必须有 baseline 与 regression budget。
+Set a baseline and a regression budget.
 
-核心指标：
+Core indicators:
 
 - CPU overhead
 - memory overhead
@@ -14,4 +15,4 @@
 - energy/power effect
 - task latency / throughput
 
-Benchmark 数据必须说明：平台、硬件、配置、tick 数、版本。
+Benchmark data must identify the platform, hardware, configuration, number of ticks, and version.

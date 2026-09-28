@@ -6,15 +6,15 @@ use aicore_ipc::{unwrap_response, IpcClient};
 
 use crate::snapshot::DashboardSnapshot;
 
-/// Dashboard IPC 客户端。
+/// Dashboard IPC client.
 ///
 /// V3.2：
-/// - 优先走聚合端点 `GetDashboardSnapshot`（一次拉取全字段）。
-/// - 聚合端点失败时回退到分端点轮询（V3-L 兼容）。
+/// - Prioritize the convergence endpoint `GetDashboardSnapshot` (one pull-out of the whole field).
+/// - Back to the endpoint query (V3-L compatible) when the polymer endpoint fails.
 pub struct DashboardClient {
     ipc_path: PathBuf,
     timeout: Duration,
-    /// 仅影响 legacy fallback 路径；聚合端点固定返回 10 条。
+    /// Impacts only the legacy fallback path; the aggregate endpoint returns 10 bars.
     recent_ticks_limit: usize,
 }
 
@@ -36,7 +36,7 @@ impl DashboardClient {
         &self.ipc_path
     }
 
-    /// 设置 legacy fallback 的 recent ticks 上限（1..=200）。
+    /// Sets the limit for legacy fallback to recent picks (1.. = 200).
     pub fn with_recent_ticks_limit(mut self, n: usize) -> Self {
         self.recent_ticks_limit = n.clamp(1, 200);
         self
@@ -46,7 +46,7 @@ impl DashboardClient {
         self.recent_ticks_limit
     }
 
-    /// 拉取一次聚合快照。
+    /// Pull a fusion snapshot.
     pub async fn fetch(&self) -> DashboardSnapshot {
         let mut client = match IpcClient::connect(self.ipc_path.clone()).await {
             Ok(c) => c,
@@ -57,7 +57,7 @@ impl DashboardClient {
             },
         };
 
-        // 1. 优先聚合端点
+        // 1. Priority aggregation endpoints
         let request_id = format!("dashboard-{}", now_unix_nanos());
         if let Ok(resp) = client
             .call(&request_id, Request::GetDashboardSnapshot, self.timeout)
@@ -68,7 +68,7 @@ impl DashboardClient {
             }
         }
 
-        // 2. 回退：分端点
+        // 2. Back: endpoints
         self.fetch_legacy(&mut client).await
     }
 

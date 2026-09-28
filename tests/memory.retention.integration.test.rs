@@ -1,4 +1,4 @@
-//! Retention 集成测试：调度器 + 真实 store 的完整闭环。
+//! Retention Integration Test: Full closed loop for scheduler + real store.
 
 use std::sync::Arc;
 
@@ -144,14 +144,14 @@ fn large_scale_removal() {
 
     let now = BASE_MS;
 
-    // 100 条：明确超过 retention window
+    // Article 100: expressly exceeding request window
     for i in 0..100 {
         store
             .append_record(&record(&format!("old-{}", i), now - 30 * DAY_MS - i as u64))
             .unwrap();
     }
 
-    // 5 条：明确处于 retention window 内
+    // Article 5: expressly located in the context window
     for i in 0..5 {
         store
             .append_record(&record(&format!("new-{}", i), now - DAY_MS))

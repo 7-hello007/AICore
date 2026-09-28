@@ -1,13 +1,13 @@
 //! Plugin C ABI。
 //!
-//! 插件必须导出三个符号：
+//! Plugin must export three symbols:
 //! - `aicore_plugin_api_version: extern "C" fn() -> u32`
 //! - `aicore_plugin_name: extern "C" fn() -> *const c_char`
 //! - `aicore_plugin_execute: extern "C" fn(u32) -> u32`
 
 use std::os::raw::c_char;
 
-/// 当前 ABI 版本。
+/// Current ABI version.
 pub const API_VERSION: u32 = 1;
 
 pub type VersionFn = unsafe extern "C" fn() -> u32;

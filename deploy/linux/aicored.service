@@ -6,11 +6,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# 专用非特权用户
+# Specialized non-privileged users
 User=aicore
 Group=aicore
 
-# 可执行文件与参数
+# Executable documents and parameters
 ExecStart=/usr/local/bin/aicored \
     --config /etc/aicore/config.json \
     --ipc-path /run/aicore/aicored.sock \
@@ -19,21 +19,21 @@ ExecStart=/usr/local/bin/aicored \
     --plugins-dir /usr/local/share/aicore/plugins \
     --log-format json
 
-# 优雅退出
+# An elegant exit.
 KillSignal=SIGTERM
 TimeoutStopSec=15
 
-# 重启策略
+# Restart Policy
 Restart=on-failure
 RestartSec=5
 
-# 状态目录与运行时目录
+# Status directory and running time directory
 StateDirectory=aicore
 RuntimeDirectory=aicore
 StateDirectoryMode=0750
 RuntimeDirectoryMode=0750
 
-# 安全强化
+# Security enhancements
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
@@ -47,7 +47,7 @@ LockPersonality=true
 MemoryDenyWriteExecute=false
 ReadWritePaths=/var/lib/aicore /run/aicore
 
-# 资源限制
+# Resource constraints
 LimitNOFILE=65536
 # Memory/Tasks limits are deployment-specific; configure with a systemd drop-in.
 

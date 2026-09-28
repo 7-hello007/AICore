@@ -1,4 +1,4 @@
-//! 故障恢复测试：AI/Adapter/IPC 失败时系统继续运行。
+//! Failure recovery test: AI/Adapter/IPC continues to run when the system fails.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use aicore_core::{
 };
 use aicore_runtime::AdaptiveLoop;
 
-/// 前 N 次 collect 失败，之后成功。
+/// The first N-collect failed, then succeeded.
 struct FlakyTelemetry {
     fail_count: AtomicU64,
 }
@@ -102,13 +102,13 @@ fn telemetry_failure_does_not_panic() {
     let loop_ = build_loop(telemetry);
     let targets = ExecutionTargets::default();
 
-    // 前 3 次失败
+    // Previous 3 Failures
     for _ in 0..3 {
         let o = loop_.tick(&targets);
         assert!(!o.success);
     }
 
-    // 第 4 次恢复
+    // Fourth resumption
     let o = loop_.tick(&targets);
     assert!(o.success, "expected recovery: {}", o.message);
 }
@@ -123,7 +123,7 @@ fn safe_mode_transitions_after_repeated_failures() {
         let _ = loop_.tick(&targets);
     }
 
-    // 5 次失败后应进入非 Normal 模式
+    // 5 failed should enter non-Normal mode
     let mode = loop_.current_mode();
     assert_ne!(
         mode,
@@ -143,7 +143,7 @@ fn recovery_after_failure_does_not_crash() {
     let o = loop_.tick(&targets);
 
     assert!(o.success);
-    // metrics 一致
+    // Metrics
     let m = loop_.metrics();
     assert_eq!(m.total_ticks, 3);
 }

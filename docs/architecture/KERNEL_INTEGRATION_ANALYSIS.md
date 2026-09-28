@@ -1,3 +1,4 @@
+[English](KERNEL_INTEGRATION_ANALYSIS.md) | [Chinese](KERNEL_INTEGRATION_ANALYSIS.zh-CN.md)
 # Kernel integration necessity analysis
 
 Date: 2026-09-28. Scope: analysis only. No driver, kernel hook, service,

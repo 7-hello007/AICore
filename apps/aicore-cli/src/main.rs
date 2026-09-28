@@ -302,7 +302,7 @@ async fn run_once(args: &ParsedArgs, request: Request) -> ExitCode {
 async fn run_watch(args: &ParsedArgs) -> ExitCode {
     let refresh = Duration::from_millis(args.interval_ms);
     loop {
-        // 清屏
+        // Clear
         print!("\x1b[2J\x1b[H");
 
         match call_ipc(&args.ipc_path, Request::GetStatus).await {
@@ -315,7 +315,7 @@ async fn run_watch(args: &ParsedArgs) -> ExitCode {
             },
         }
 
-        // 拉 ticks
+        // Pull picks
         if let Ok(ResponseData::RecentTicks { ticks }) =
             call_ipc(&args.ipc_path, Request::GetRecentTicks { limit: 5 }).await
         {

@@ -4,11 +4,11 @@ use aicore_contracts::telemetry::ComputerSnapshot;
 
 use crate::domain::computer_state::{ComputerState, SystemHealth};
 
-/// 将原始 ComputerSnapshot 规范化为 ComputerState。
+/// Regulates the original ComputerSnapshot to ComputerState.
 ///
 /// V2-A-1：
-/// - 计算 `freshness_ms = now - collected_at_unix_ms`。
-/// - 保留 V1 的百分比 clamp。
+/// - Calculate `freshness_ms = now - collected_at_unix_ms`.
+/// - Maintain V1 percentage clamp.
 pub struct TelemetryNormalizer;
 
 impl TelemetryNormalizer {

@@ -1,16 +1,17 @@
+[English](ARCHITECTURE_RULES.md) | [Chinese](ARCHITECTURE_RULES.zh-CN.md)
 # Architecture Rules
 
 | Rule | Requirement |
 |---|---|
-| R-01 | Core 不依赖 Platform |
-| R-02 | Core 不依赖 UI |
-| R-03 | Core 不依赖具体 AI Model |
-| R-04 | Tier 之间不互相依赖 |
-| R-05 | Adapter 只实现接口，不承载业务决策 |
-| R-06 | AI 不直接执行系统操作 |
-| R-07 | 所有策略必须经过 Validator |
-| R-08 | 所有系统控制必须经 Executor |
-| R-09 | 所有跨模块状态通过 Contract/Event/DTO |
-| R-10 | 新功能优先增加模块/插件，而不是修改 Core |
-| R-11 | 运行时失败必须可回退 |
-| R-12 | 删除任一 Tier/Plugin 不应破坏其他 Tier/Plugin |
+| R-01 | Core does not depend on a specific platform |
+| R-02 | Core does not depend on UI |
+| R-03 | Core does not depend on a specific AI model |
+| R-04 | Tiers do not depend on one another |
+| R-05 | Adapters implement contracts and do not make policy decisions |
+| R-06 | AI does not directly perform system operations |
+| R-07 | Every policy must pass through the Validator |
+| R-08 | Every system-control operation must pass through an Executor |
+| R-09 | Cross-module state is exchanged through contracts, events, and DTOs |
+| R-10 | New functionality gives priority to adding modules/plugins instead of modifying Core |
+| R-11 | Runtime failure must be reversible |
+| R-12 | Any tier or plugin can be removed without breaking the others |

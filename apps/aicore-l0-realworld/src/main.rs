@@ -1,9 +1,9 @@
-//! L0 真实 workload 验证框架。
+//! L0 real workload authentication framework.
 //!
-//! 用合成 ComputerSnapshot 喂入分类器 + 策略引擎 + 执行器，
-//! 验证"给定真实应用特征 → 分类器 → 策略 → 执行"完整链路。
+//! Feed the catalog + policy engine + implementer with synthetic ComputerSnapshot.
+//! Validate "Real application features → Context → Policy → Execute" full link.
 //!
-//! 用法：
+//! Usage:
 //!   aicore-l0-realworld --output <path>
 //!   aicore-l0-realworld --scenario <name>
 

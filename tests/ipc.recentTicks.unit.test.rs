@@ -1,4 +1,4 @@
-//! TickHistory + GetRecentTicks 协议测试。
+//! TickHistory + GetRecentTicks protocol test.
 
 use aicore_contracts::{
     context::workload::WorkloadType,
@@ -65,7 +65,7 @@ fn tick_summary_without_prediction_omits_fields() {
     let o = sample_tick(8);
     let s = TickSummary::from_outcome(&o);
     let json = serde_json::to_string(&s).unwrap();
-    // skip_serializing_if 生效
+    // skip_serializing_if in effect
     assert!(!json.contains("predicted_workload"));
     assert!(!json.contains("prediction_confidence"));
 }

@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use super::status::CapabilityStatus;
 
-/// 单条能力描述。
+/// Single capability description.
 ///
-/// 约定：
-/// - `name` 使用点分小写，例如 `process.priority.write`。
-/// - `detail` 在 `Partial` / `Conditional` / `Unsupported` 时**必须**非空，
-///   说明限制或原因。
+/// Have agreed:
+/// - `name` uses point lowercases, such as `process.priority.write`.
+/// - `detail` when `Partial`/`Conditional`/`Unsupported` ** must be ** non-empty,
+///   Indicate the limits or reasons.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityEntry {
     pub name: String,
@@ -56,7 +56,7 @@ impl CapabilityEntry {
         }
     }
 
-    /// 契约自检：非 Supported 状态必须带 detail。
+    /// Compact self-check: Non-Supported status must be accompanied by detail.
     pub fn is_well_formed(&self) -> bool {
         match self.status {
             CapabilityStatus::Supported | CapabilityStatus::ReadOnly => true,

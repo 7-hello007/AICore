@@ -8,27 +8,27 @@ use libloading::Library;
 use super::abi::{ExecuteFn, NameFn, VersionFn, API_VERSION, SYM_EXECUTE, SYM_NAME, SYM_VERSION};
 use crate::signature::{SignatureVerifier, SignatureVerifyError};
 
-/// 已加载的插件。
+/// Loaded plugins.
 ///
-/// **注意**：`LoadedPlugin` 必须保持存活，否则底层 `Library` 会被
-/// 卸载，函数指针失效。使用 `Arc<LoadedPlugin>` 共享。
+/// **Note: `LoadedPlugin` has to stay alive or the bottom `Library` will be
+/// Unmount, function pointer is invalid. Use `Arc<LoadedPlugin>` share.
 pub struct LoadedPlugin {
     pub name: String,
     pub api_version: u32,
     pub source_path: PathBuf,
     pub signature: Option<PluginSignature>,
 
-    /// 底层库。**字段顺序很重要**——必须在函数指针之前，
-    /// 保证 `drop` 时函数指针先失效。
+    /// Base library.** Field order is important.** - It must be before the function pointer.
+    /// The `drop` pointer is guaranteed to expire first.
     _lib: Library,
     execute: ExecuteFn,
 }
 
 impl LoadedPlugin {
-    /// 执行插件。
+    /// Execute plugins.
     ///
-    /// **安全性**：调用方必须保证此 `LoadedPlugin` 在整个调用期间存活。
-    /// `pub fn` 通过 `&self` 借用自动保证这一点。
+    /// **Safety**: The caller must ensure the survival of `LoadedPlugin` throughout the call.
+    /// `pub fn` secures this by borrowing `&self`.
     pub fn execute(&self, input: u32) -> u32 {
         unsafe { (self.execute)(input) }
     }
@@ -45,12 +45,12 @@ impl std::fmt::Debug for LoadedPlugin {
     }
 }
 
-/// 动态插件加载器。
+/// Dynamic plugin loader.
 pub struct DynamicPluginLoader {
-    /// 可选的签名白名单。
+    /// Optional white list of signatures.
     ///
-    /// - `None`：不校验签名（开发模式）。
-    /// - `Some(sig)`：必须匹配。
+    /// `None`: Unverified signature (development mode).
+    /// - `Some(sig)`: Must match.
     expected_signature: Option<PluginSignature>,
 }
 
@@ -70,26 +70,26 @@ impl DynamicPluginLoader {
         self.expected_signature.as_ref()
     }
 
-    /// 加载插件。
+    /// Load plugins.
     pub fn load(&self, path: impl AsRef<Path>) -> Result<Arc<LoadedPlugin>, LoadError> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
             return Err(LoadError::NotFound(path));
         }
 
-        // 1. 签名校验
+        // 1. Signature verification
         let signature = if let Some(expected) = &self.expected_signature {
             SignatureVerifier::verify_file(&path, expected).map_err(LoadError::Signature)?;
             Some(expected.clone())
         } else {
-            // 未配置签名 → 只计算（用于审计）
+            // Unconfigured signature calculation only (for audit)
             SignatureVerifier::compute_sha256(&path).ok()
         };
 
-        // 2. 打开库
+        // Opening the library
         let lib = unsafe { Library::new(&path).map_err(|e| LoadError::Open(e.to_string()))? };
 
-        // 3. 查找符号
+        // 3. Finding symbols
         let (api_version, name, execute) = unsafe {
             let version: libloading::Symbol<VersionFn> = lib.get(SYM_VERSION).map_err(|e| {
                 LoadError::MissingSymbol("aicore_plugin_api_version", e.to_string())
@@ -115,7 +115,7 @@ impl DynamicPluginLoader {
             (api_version, name, *exec)
         };
 
-        // 4. ABI 版本校验
+        // Verify ABI
         if api_version != API_VERSION {
             return Err(LoadError::ApiVersionMismatch {
                 expected: API_VERSION,

@@ -1,3 +1,4 @@
+[English](VERIFICATION_RUNBOOK.md) | [Chinese](VERIFICATION_RUNBOOK.zh-CN.md)
 # Verification Runbook
 
 ## V4 verification modes

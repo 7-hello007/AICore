@@ -1,9 +1,9 @@
-//! V1 JSON → V2 SQLite 迁移。
+//! V1 JSON → V2 SQLite migration.
 //!
-//! 语义：
-//! - 若目标 SQLite 已存在且非空，跳过迁移。
-//! - 若源 JSON 不存在，跳过。
-//! - 迁移成功后，将源 JSON 重命名为 `.migrated` 后缀，保留备份。
+//! Semantics:
+//! - If the target SQLite is present and not empty, skip the migration.
+//! - If source JSON does not exist, skip.
+//! - After successful migration, rename source JSON as `.migrated` suffix and keep backup.
 
 use std::path::Path;
 
@@ -22,17 +22,17 @@ pub struct MigrationReport {
     pub skip_reason: Option<String>,
 }
 
-/// 从 JSON 迁移到 SQLite。
+/// Move from JSON to SQLite.
 ///
-/// - `json_history`：源 JSON history 路径。
-/// - `json_profile`：源 JSON profile 路径。
-/// - `sqlite_path`：目标 SQLite 路径。
+/// - `json_history`: Source JSON history path.
+/// - `json_profile`: Source JSON path.
+/// - `sqlite_path`: Target SQLite path.
 pub fn migrate_json_to_sqlite(
     json_history: &Path,
     json_profile: &Path,
     sqlite_path: &Path,
 ) -> ContractResult<MigrationReport> {
-    // 签名已是 &Path，无需再 as_ref()
+    // Signing is & Path, no as_ref()
 
     let mut report = MigrationReport::default();
 
@@ -44,7 +44,7 @@ pub fn migrate_json_to_sqlite(
 
     let sqlite = SqliteMemoryStore::open(sqlite_path)?;
 
-    // 目标非空则跳过
+    // Target is not empty, skip
     if sqlite.record_count()? > 0 {
         report.skipped = true;
         report.skip_reason = Some("target sqlite already has records".to_string());
@@ -53,24 +53,24 @@ pub fn migrate_json_to_sqlite(
 
     let source = JsonFileStore::new(json_history, json_profile);
 
-    // 迁移 records
+    // Organisation
     let records = source.load_records(1_000_000)?;
     for r in &records {
         sqlite.append_record(r)?;
     }
     report.records_migrated = records.len();
 
-    // 迁移 profile
+    // Move profile
     let profile = source.load_profile()?;
     if profile.updated_at_unix_secs > 0 {
         sqlite.save_profile(&profile)?;
         report.profile_migrated = true;
     }
 
-    // 备份源文件
+    // Backup Source File
     let backup_path = json_history.with_extension("json.migrated");
     if let Err(e) = std::fs::rename(json_history, backup_path) {
-        // 迁移已完成，重命名失败只是警告
+        // Migration completed, renaming failed as a warning
         tracing::warn!(
             component = "memory_migration",
             event = "backup_rename_failed",
@@ -82,22 +82,22 @@ pub fn migrate_json_to_sqlite(
     Ok(report)
 }
 
-/// 默认 JSON history 路径。
+/// Default JSON history path.
 pub fn default_json_history_path() -> std::path::PathBuf {
     std::env::temp_dir().join("aicore").join("history.json")
 }
 
-/// 默认 JSON profile 路径。
+/// Default JSON profile path.
 pub fn default_json_profile_path() -> std::path::PathBuf {
     std::env::temp_dir().join("aicore").join("profile.json")
 }
 
-/// 默认 SQLite 路径。
+/// Default SQLite path.
 pub fn default_sqlite_path() -> std::path::PathBuf {
     std::env::temp_dir().join("aicore").join("memory.db")
 }
 
-/// 便捷：使用默认路径迁移。
+/// Easy: Move using the default path.
 pub fn migrate_with_defaults() -> ContractResult<MigrationReport> {
     let json_history = default_json_history_path();
     let json_profile = default_json_profile_path();

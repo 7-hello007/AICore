@@ -1,6 +1,7 @@
+[English](POLICY_SYSTEM.md) | [Chinese](POLICY_SYSTEM.zh-CN.md)
 # Policy System
 
-Policy 由 Context、Prediction、User Preference 和 AI Suggestion 共同决定。
+Policy is derived from context, prediction, user preferences, and optional AI suggestions.
 
 ```mermaid
 flowchart LR
@@ -13,4 +14,4 @@ flowchart LR
     VALIDATE --> EXECUTE[Executor]
 ```
 
-Policy 本身不执行系统调用。
+Policy itself does not execute system calls.

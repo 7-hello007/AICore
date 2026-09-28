@@ -12,17 +12,17 @@ use aicore_contracts::{
     },
 };
 
-/// 模型模式 Runtime Binder。
+/// Model mode Runtime Binder.
 ///
-/// GPU / NPU 不访问真实硬件。
+/// GPU/NPU does not access real hardware.
 ///
-/// AI Runtime / CPU 仍然可以执行真实本地模型推理：
+/// AI Runtime/CPU can still implement real local model inference:
 ///
 /// Model AI Runtime
 ///     ↓
 /// local JSON model
 ///
-/// 本身不修改宿主机状态。
+/// Do not modify the host status per se.
 pub struct ModelRuntimeBinder {
     runtime: Option<Arc<dyn IAiRuntime>>,
     model_handle: Option<ModelHandle>,
@@ -182,7 +182,7 @@ impl IRuntimeBinder for ModelRuntimeBinder {
              * ----------------------------------------------------
              * GPU
              *
-             * 只模拟，不访问真实 GPU。
+             * Just simulate, don't access real GPU.
              * ----------------------------------------------------
              */
             RuntimeRouteSource::Gpu => Ok(BindingResult {
@@ -198,7 +198,7 @@ impl IRuntimeBinder for ModelRuntimeBinder {
              * ----------------------------------------------------
              * NPU
              *
-             * 只模拟，不访问真实 NPU。
+             * Just simulate, don't access real NPU.
              * ----------------------------------------------------
              */
             RuntimeRouteSource::Npu => Ok(BindingResult {

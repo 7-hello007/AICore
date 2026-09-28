@@ -1,6 +1,6 @@
 use crate::errors::ContractResult;
 
-/// NPU 控制抽象。
+/// NPU controls abstraction.
 pub trait INpuController: Send + Sync {
     fn submit_inference_hint(&self, _hint: &str) -> ContractResult<()> {
         Err(crate::errors::ContractError::CapabilityUnavailable(

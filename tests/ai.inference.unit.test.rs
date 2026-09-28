@@ -66,7 +66,7 @@ fn mock_provider_falls_back_when_npu_unavailable() {
     let s = p
         .suggest(&make_input(WorkloadType::AiInference, false))
         .expect("suggest");
-    // 没有 NPU 时返回低置信度
+    // Return confidence when NPU is not available
     assert!(s.confidence < 0.5);
 }
 

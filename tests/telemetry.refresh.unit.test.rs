@@ -1,4 +1,4 @@
-//! 验证 Telemetry Provider 每次 collect 都返回新鲜数据。
+//! Validates that Telemetry Provider returns fresh data at each time.
 
 use std::thread;
 use std::time::Duration;

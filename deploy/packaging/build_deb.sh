@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-# 构建 .deb 包。
+# Builds the.deb package.
 #
-# 用法：
-#   ./build_deb.sh             # 版本从 workspace.package.version 读取
+# Usage:
+#   ./build_deb.sh # version read from workspace.package.version
 #   AICORE_VERSION=0.3.2 ./build_deb.sh
 #
-# 前置：
-#   - cargo build --release 已执行。
-#   - dpkg-deb 可用（Ubuntu / Debian 自带）。
+# Prefix:
+#   - Cargo built-release executed.
+#   - dpkg-deb is available (Ubuntu / Debian belt).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -42,7 +42,7 @@ mkdir -p "${STAGE}/etc/systemd/system"
 mkdir -p "${STAGE}/etc/aicore"
 mkdir -p "${STAGE}/usr/local/share/aicore/plugins"
 
-# 二进制
+# Binary
 install -m 0755 "${TARGET_DIR}/aicored" "${STAGE}/usr/local/bin/aicored"
 install -m 0755 "${TARGET_DIR}/aicore" "${STAGE}/usr/local/bin/aicore"
 install -m 0644 "${REPO_ROOT}/models/policy_classifier_v1.json" \
@@ -57,17 +57,17 @@ install -m 0644 "${REPO_ROOT}/README.md" "${STAGE}/usr/local/share/doc/aicore/RE
 install -m 0644 "${REPO_ROOT}/deploy/linux/aicored.service" \
     "${STAGE}/etc/systemd/system/aicored.service"
 
-# 控制脚本
+# Control script
 install -m 0755 "${REPO_ROOT}/deploy/packaging/debian/postinst" "${STAGE}/DEBIAN/postinst"
 install -m 0755 "${REPO_ROOT}/deploy/packaging/debian/prerm" "${STAGE}/DEBIAN/prerm"
 install -m 0755 "${REPO_ROOT}/deploy/packaging/debian/postrm" "${STAGE}/DEBIAN/postrm"
 
-# control 文件（模板替换）
+# control file (template replacement)
 sed -e "s/@VERSION@/${VERSION}/" -e "s/@ARCH@/${ARCH}/" \
     "${REPO_ROOT}/deploy/packaging/debian/control.template" \
     > "${STAGE}/DEBIAN/control"
 
-# 打包
+# Pack up.
 cd "${REPO_ROOT}/dist"
 dpkg-deb --root-owner-group --build "${PKG_NAME}" "${PKG_NAME}.deb"
 

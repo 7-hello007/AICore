@@ -1,15 +1,15 @@
 use std::sync::mpsc;
 use std::time::Duration;
 
-/// 在独立线程里执行 `f`，带超时。
+/// Run `f` in an independent line, with timeout.
 ///
-/// 语义：
-/// - `f` 正常返回 → `Ok(Some(T))`。
-/// - `f` 超时未返回 → `Ok(None)`（线程泄漏，但不阻塞调用方）。
+/// Semantics:
+/// - `f` returns normally to `Ok(Some(T))`.
+/// - `f` did not return `Ok(None)` over time (line leak without blocking callers).
 /// - `f` panic → `Err`。
 ///
-/// **注意**：超时的线程不会被强杀（Rust 无此能力），会继续运行
-/// 直到自然结束。这是有意的取舍：优先保证调用方不被阻塞。
+/// **Note: Timeout threads will not be killed.
+/// The worker may continue until it exits naturally. This trade-off keeps the caller from blocking.
 pub fn run_with_timeout<F, T>(f: F, timeout: Duration) -> Result<Option<T>, SandboxError>
 where
     F: FnOnce() -> T + Send + 'static,
@@ -27,12 +27,12 @@ where
 
     match rx.recv_timeout(timeout) {
         Ok(v) => {
-            // 线程正常结束
+            // It's over.
             let _ = handle.join();
             Ok(Some(v))
         },
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            // 超时：不 join（避免阻塞），线程会泄漏直到自然结束
+            // Timeout: nojoin, thread leaks until nature ends
             tracing::warn!(
                 component = "plugin_sandbox",
                 event = "timeout",
@@ -42,7 +42,7 @@ where
             Ok(None)
         },
         Err(mpsc::RecvTimeoutError::Disconnected) => {
-            // 线程 panic
+            // Thread Panic
             let _ = handle.join();
             Err(SandboxError::Panicked)
         },

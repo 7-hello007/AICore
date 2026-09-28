@@ -1,4 +1,4 @@
-//! Memory → AI Provider 集成：历史影响 AI 决策。
+//! Memory AI Provider integration: historical influence AI decision-making.
 
 use std::sync::Arc;
 
@@ -73,7 +73,7 @@ fn empty_memory_returns_default_context() {
 
 #[test]
 fn memory_context_is_passed_to_ai_provider() {
-    // 构造一个输入，有 memory 与没有 memory 时特征向量的 has_memory 维不同。
+    // Constructs an input with memory different from has_memory dimensions without memory.
     let base = ResourcePolicy::default();
 
     let ctx = ContextSnapshot {
@@ -105,11 +105,11 @@ fn memory_context_is_passed_to_ai_provider() {
 
     let provider = LocalFeatureProvider::with_default_weights().unwrap();
 
-    // 两者都应能推理（不 panic），且都能通过 Validator
+    // Both should be able to deduce and pass through Validator.
     let s1 = provider.suggest(&input_no_memory);
     let s2 = provider.suggest(&input_with_memory);
 
-    // 至少有一个路径能产出建议（若都失败也是合法，因为可能置信度不足）
+    // At least one path produces a proposal (which is legal if both fail because there may be a lack of confidence)
     let validator = DefaultPolicyValidator::new();
 
     if let Ok(s) = s1 {
@@ -146,12 +146,12 @@ fn ai_assisted_engine_uses_memory_context() {
         application_patterns: Vec::new(),
     });
 
-    // generate_with_memory 走 AI + memory 路径
+    // generate_with_memory Go AI + memory path
     let policy_with_memory = engine.generate_with_memory(&snapshot, &ctx, memory.clone());
-    // generate 无 memory
+    // No memory
     let policy_without = engine.generate(&snapshot, &ctx);
 
-    // 两者都必须通过 Validator
+    // Both must pass through Validator.
     let validator = DefaultPolicyValidator::new();
     assert!(validator.validate(&policy_with_memory).accepted);
     assert!(validator.validate(&policy_without).accepted);
@@ -159,13 +159,13 @@ fn ai_assisted_engine_uses_memory_context() {
 
 #[test]
 fn privacy_default_disables_memory_personalization() {
-    // 用户默认 profile 不允许 personalization
+    // User default profile does not allow personalization
     let store = InMemoryStore::new();
     let profile = store.load_profile().unwrap();
     assert!(!profile.can_record());
     assert!(!profile.can_personalize());
 
-    // 用户显式启用后可记录
+    // User explicitly permits recording
     let enabled = UserProfile {
         history_enabled: true,
         profile_enabled: true,

@@ -1,4 +1,4 @@
-//! WorkloadFusion 单元测试。
+//! WorkloadFusion unit test.
 
 use std::sync::Arc;
 
@@ -102,7 +102,7 @@ fn high_confidence_ml_accepted() {
     ));
     let obs = fusion.observe(&ComputerSnapshot::default()).unwrap();
     assert_eq!(obs.workload_type, WorkloadType::Gaming);
-    // ML 需要 >= 0.95 才直接采纳
+    // ML requires > = 0.95 for direct adoption
 }
 
 #[test]
@@ -110,8 +110,8 @@ fn medium_confidence_ml_not_directly_accepted() {
     let fusion =
         WorkloadFusion::new().with_source(src("ml", SourceKind::Ml, 50, WorkloadType::Gaming, 0.7));
     let obs = fusion.observe(&ComputerSnapshot::default()).unwrap();
-    // 0.7 < 0.95 不直接采纳；投票也仅 1 票，得 0.7 < 0.5? 不，0.7 >= 0.5 所以会返回
-    // 但 workload 保持 Gaming
+    // 0.7 < 0.95 Not accepted; vote is only 1 vote for 0.7 < 0.5? No, 0.7 > = 0.5 so return
+    // But workload keeps Gaming
     assert_eq!(obs.workload_type, WorkloadType::Gaming);
     assert!((obs.confidence - 0.7).abs() < f32::EPSILON);
 }
@@ -144,7 +144,7 @@ fn two_sources_agree_get_boost() {
         ));
     let obs = fusion.observe(&ComputerSnapshot::default()).unwrap();
     assert_eq!(obs.workload_type, WorkloadType::Development);
-    // 两源一致 → 提升 0.1（基础 0.7 → 0.8）
+    // Two-source alignment → Upgrade 0.1 (base 0.7 → 0.8)
     assert!(obs.confidence > 0.7);
     assert!(obs.evidence.iter().any(|e| e.contains("agree")));
 }
@@ -168,7 +168,7 @@ fn higher_vote_wins() {
         ))
         .with_source(src("ml", SourceKind::Ml, 50, WorkloadType::Gaming, 0.7));
     let obs = fusion.observe(&ComputerSnapshot::default()).unwrap();
-    // Development 得 2 票，Gaming 得 1 票
+    // Development 2 votes, Gaming 1 vote.
     assert_eq!(obs.workload_type, WorkloadType::Development);
 }
 
@@ -198,10 +198,10 @@ fn rule_priority_higher_than_ml() {
             WorkloadType::Development,
             0.7,
         ));
-    // 两源投票 1:1，但 Rule 优先级 200 > Ml 50，因此排序后 rule 在前
-    // 由于两者置信度相同，先统计票数，再按置信度比较
-    // 但 max_by 里先比较票数（都是 1），再比较置信度（都是 0.7）→ 顺序不确定
-    // 这是已定义的模糊场景。测试仅验证不 panic。
+    // Two-source vote 1:1, but Rule priority 200 > Ml 50, therefore sorted before rule
+    // Since both have the same confidence, counting the votes and comparing them with confidence
+    // But max_by compares the number of votes (both 1) and confidence (both 0.7).
+    // This is a defined fuzzy scene. Tests only validate non-panic.
     let obs = fusion.observe(&ComputerSnapshot::default()).unwrap();
     assert!(matches!(
         obs.workload_type,

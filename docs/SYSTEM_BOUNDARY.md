@@ -1,3 +1,4 @@
+[English](SYSTEM_BOUNDARY.md) | [Chinese](SYSTEM_BOUNDARY.zh-CN.md)
 # System Boundary
 
 ```mermaid

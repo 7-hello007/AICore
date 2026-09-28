@@ -1,6 +1,6 @@
-//! Runtime 路由 fallback 测试：
-//! - 不可用资源 → 保持 native。
-//! - 未知 workload → 保持 native。
+//! Runtime route fallback test:
+//! - No available resources to keep native.
+//! - Unknown workload hold native.
 
 use aicore_contracts::{
     context::{

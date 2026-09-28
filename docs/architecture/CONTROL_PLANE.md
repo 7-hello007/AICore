@@ -1,6 +1,7 @@
+[English](CONTROL_PLANE.md) | [Chinese](CONTROL_PLANE.zh-CN.md)
 # Control Plane
 
-Control Plane 负责决定“应该怎么运行”，不负责亲自提供平台能力。
+The control plane decides how the system should run. It does not implement platform capabilities directly.
 
 ```mermaid
 flowchart LR
@@ -18,10 +19,10 @@ flowchart LR
     VALIDATE --> DECISION
 ```
 
-| 模块 | 职责 | 禁止职责 |
+| Module | Responsibility | Must not |
 |---|---|---|
-| Context | 当前任务/环境 | 直接修改 OS |
-| Prediction | 预测未来状态 | 直接执行 |
-| Policy | 生成策略 | 直接调用 vendor API |
-| Validator | 检查安全/能力/冲突 | 创建业务策略 |
-| Decision Record | 留存原因和结果 | 修改资源 |
+| Context | Represent the current task and environment | Modify the OS directly |
+| Prediction | Forecast near-term state | Execute changes directly |
+| Policy | Produce resource policy | Call vendor APIs directly |
+| Validator | Check safety, capabilities, and conflicts | Invent business policy |
+| Decision Record | Retain reasons and outcomes | Modify resources |

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 计算机当前正在承担的 workload 类型。
+/// The computer is currently assuming the workload type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkloadType {
@@ -18,7 +18,7 @@ pub enum WorkloadType {
     Unknown,
 }
 
-/// 用户与系统的交互级别。
+/// Level of user-system interaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum InteractionLevel {

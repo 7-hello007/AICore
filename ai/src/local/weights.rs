@@ -2,23 +2,23 @@ use serde::{Deserialize, Serialize};
 
 use super::features::FEATURE_DIM;
 
-/// 策略建议类型。
+/// Type of strategy proposal.
 ///
-/// 每个类型对应一组权重；Provider 选择点积最高的。
+/// Each type corresponds to a set of weights; Provider select points with the highest volume.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyIntent {
-    /// 提升 CPU 优先级。
+    /// Raise CPU priority.
     BoostCpu,
-    /// 提升 GPU 优先级。
+    /// Raise GPU priority.
     BoostGpu,
-    /// 提升 NPU 优先级。
+    /// Raise NPU priority.
     BoostNpu,
-    /// 降低后台任务。
+    /// Lower background-task priority.
     ThrottleBackground,
-    /// 省电。
+    /// Power conservation.
     PowerSave,
-    /// 保持原策略。
+    /// Stay with the strategy.
     KeepBase,
 }
 
@@ -44,10 +44,10 @@ impl PolicyIntent {
     }
 }
 
-/// 权重表。
+/// Weight table.
 ///
-/// 结构：每个 intent 一组 `[f32; FEATURE_DIM]` 权重。
-/// 可从 JSON 加载 / 保存。
+/// Structure: A set of `[f32; FEATURE_DIM]` weights per intent.
+/// Load/ Save from JSON.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WeightTable {
     pub version: String,
@@ -61,11 +61,11 @@ pub struct WeightEntry {
 }
 
 impl WeightTable {
-    /// 默认权重。经验值，非最优。
+    /// Default weights. Empirical values, not optimal.
     ///
-    /// 特征顺序：`[cpu, gpu, npu, mem, interactive, passive, idle, has_memory]`
+    /// Feature order: `[cpu, gpu, npu, mem, interactive, passive, idle, has_memory]`
     pub fn default_weights() -> Self {
-        // 目标：在 Interactive + 高 CPU 时偏好 BoostCpu，高 NPU 时偏好 BoostNpu，等等。
+        // Target: At Interact + High CPU Time preferences BoostCpuHigh NPU Time preferences BoostNpuWait.
         let entries = vec![
             WeightEntry {
                 intent: PolicyIntent::BoostCpu,
@@ -99,7 +99,7 @@ impl WeightTable {
         }
     }
 
-    /// 查找某个 intent 的权重。
+    /// Finds the weight of an intent.
     pub fn weights_for(&self, intent: PolicyIntent) -> Option<[f32; FEATURE_DIM]> {
         let entry = self.entries.iter().find(|e| e.intent == intent)?;
         if entry.weights.len() != FEATURE_DIM {
@@ -110,7 +110,7 @@ impl WeightTable {
         Some(arr)
     }
 
-    /// 校验：每个 intent 恰好一条，维度正确。
+    /// Validation: Every intent exactly one dimension is correct.
     pub fn validate(&self) -> Result<(), String> {
         for intent in PolicyIntent::ALL {
             let count = self.entries.iter().filter(|e| e.intent == intent).count();
@@ -134,14 +134,14 @@ impl WeightTable {
         Ok(())
     }
 
-    /// 从 JSON 加载。
+    /// Load from JSON.
     pub fn from_json(s: &str) -> Result<Self, String> {
         let table: Self = serde_json::from_str(s).map_err(|e| format!("parse weights: {}", e))?;
         table.validate()?;
         Ok(table)
     }
 
-    /// 保存到 JSON。
+    /// Save to JSON.
     pub fn to_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self).map_err(|e| format!("serialize weights: {}", e))
     }

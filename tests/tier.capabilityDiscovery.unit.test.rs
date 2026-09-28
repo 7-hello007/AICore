@@ -1,4 +1,4 @@
-//! TierHub + CapabilityDiscovery 测试。
+//! TierHub + CapabilityDiscovery test.
 
 use std::sync::Arc;
 
@@ -125,7 +125,7 @@ fn unregister_tier_removes_capability() {
 
     hub.unregister_tier(&id).unwrap();
 
-    // 能力也被移除
+    // The power was removed.
     assert!(hub.best_workload_source().unwrap().is_none());
     assert!(hub.registry().is_empty().unwrap());
 }
@@ -168,14 +168,14 @@ fn unregister_one_tier_does_not_affect_others() {
     )
     .unwrap();
 
-    // 删 l0
+    // Delete l0
     hub.unregister_tier(&l0).unwrap();
 
-    // l1 仍可用
+    // l1 still available
     let best = hub.best_workload_source().unwrap().unwrap();
     assert_eq!(best.source_name(), "l1");
 
-    // registry 只剩 l1
+    // All right, registry, one.
     assert_eq!(hub.registry().count().unwrap(), 1);
 }
 
@@ -215,7 +215,7 @@ fn duplicate_tier_registration_rejected() {
         .is_err());
 }
 
-// 一个空的 provider 用于测试 trait object 兼容
+// An empty provider to test track object compatibility
 #[test]
 fn mock_source_trait_object() {
     let src: Arc<dyn IWorkloadSource> = Arc::new(MockWorkloadSource {
@@ -225,6 +225,6 @@ fn mock_source_trait_object() {
     let obs = src.observe(&ComputerSnapshot::default()).unwrap();
     assert_eq!(obs.workload_type, WorkloadType::Development);
 
-    // 保持 ContractError 导入被使用
+    // Keep ContractError import used
     let _e: ContractError = ContractError::AiInferenceFailed("x".to_string());
 }

@@ -2,18 +2,18 @@ use aicore_contracts::telemetry::npu::NpuSnapshot;
 
 use super::sysfs;
 
-/// NPU 探测。
+/// NPU detection.
 ///
-/// Linux 上没有统一 NPU 接口。检测几个已知路径：
+/// There is no single NPU interface on Linux. Several known paths are detected:
 /// - Intel VPU: `/sys/class/accel/accel*`
-/// - AMD XDNA: 无稳定 sysfs 接口
-/// - Qualcomm: 无稳定 sysfs 接口
+/// - AMD XDNA: No stable sysfs interface
+/// - Qualcomm: no stable sysfs interface
 ///
-/// 找不到时返回 `available: false`。
+/// Returns `available: false` when found.
 pub fn read_npu() -> NpuSnapshot {
     let mut snapshot = NpuSnapshot::default();
 
-    // Intel VPU / 通用 accel 设备
+    // Intel VPU/ Generic accel device
     let accel = sysfs::list_dir("/sys/class/accel");
     for entry in accel {
         if !entry.starts_with("accel") {

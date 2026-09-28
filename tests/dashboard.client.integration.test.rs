@@ -1,4 +1,4 @@
-//! Dashboard IPC client 集成测试。
+//! Dashboard IPC channel integration test.
 
 #[cfg(target_os = "linux")]
 mod linux {

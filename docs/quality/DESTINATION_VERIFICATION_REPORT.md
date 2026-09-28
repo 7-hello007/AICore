@@ -1,3 +1,4 @@
+[English](DESTINATION_VERIFICATION_REPORT.md) | [Chinese](DESTINATION_VERIFICATION_REPORT.zh-CN.md)
 # AICore destination implementation and verification report
 
 ## Continuation: 2026-09-28 (native owned targets and accelerator sessions)

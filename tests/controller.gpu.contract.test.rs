@@ -1,10 +1,10 @@
-//! GPU / NPU 控制器契约测试。
+//! GPU/NPU controller contract test.
 //!
-//! 当前契约：
-//! - status 查询本身应成功；
-//! - 当平台不具备实际控制路径时，`controllable == false`；
-//! - `detail` 必须说明不可控制的原因。
-//! - capabilities 应反映当前平台已声明的能力，而不是强制为空。
+//! Current contract:
+//! - Status query itself should be successful;
+//! - `controllable == false` when the platform does not have a physical control path;
+//! - `detail` has to explain why it's uncontrollable.
+//! - Capabilities should reflect the capabilities of the current platform that have been declared, not be forced to be empty.
 
 use aicore_contracts::traits::{gpu_controller::IGpuController, npu_controller::INpuController};
 

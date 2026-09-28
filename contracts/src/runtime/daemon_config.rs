@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use super::mode::RuntimeMode;
 
-/// 遥测采样配置。
+/// Telemetry sample configuration.
 ///
-/// V2-A-3 移交项：采样周期由 daemon 调度器使用。
+/// V2-A-3 Transfer item: The sampling cycle is used by the daemon scheduler.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetryConfig {
-    /// 采样周期，毫秒。
+    /// Sample cycle, millisecond.
     pub sampling_interval_ms: u64,
 }
 
@@ -36,15 +36,15 @@ impl TelemetryConfig {
     }
 }
 
-/// Daemon 顶层配置。
+/// Daemon top layer configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonConfig {
     pub telemetry: TelemetryConfig,
-    /// 每 N 次 tick 写一次状态文件。
+    /// Writes a status file every N tick.
     pub state_write_interval_ticks: u64,
-    /// 优雅退出的最长等待时间，毫秒。
+    /// The maximum waiting time for elegant exit, millisecond.
     pub shutdown_timeout_ms: u64,
-    /// 启动时的初始 RuntimeMode。
+    /// Initial RuntimeMode at startup.
     pub initial_mode: RuntimeMode,
 }
 

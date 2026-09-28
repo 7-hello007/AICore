@@ -1,9 +1,9 @@
-//! 示例插件进程：读取 stdin 的 JSON 行请求，输出 JSON 行响应。
+//! Example plugin process: Read JSON line request for stdin, output JSON line response.
 //!
-//! 协议（与 plugin::host::protocol 一致）：
+//! Agreements (consistent with plugin: :host: :protocol):
 //! - `{"kind":"ping"}` → `{"kind":"pong"}`
 //! - `{"kind":"execute","input":N}` → `{"kind":"result","output":2N+1}`
-//! - `{"kind":"shutdown"}` → `{"kind":"shutting_down"}` 并退出
+//! - `{"kind":"shutdown"}` → `{"kind":"shutting_down"}` and exit
 
 use std::io::{BufRead, Write};
 

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// 插件生命周期状态。
+/// Plugin life cycle status.
 ///
-/// 转换：
+/// Conversion:
 /// - Discovered → Validating
 /// - Validating → Ready | Rejected
 /// - Ready → Active | Disabled
@@ -23,17 +23,17 @@ pub enum PluginState {
 }
 
 impl PluginState {
-    /// 是否处于"可运行"状态。
+    /// Whether or not it's "runable".
     pub fn is_operational(self) -> bool {
         matches!(self, Self::Active)
     }
 
-    /// 是否处于"终态"（不再自动转换）。
+    /// Whether it is in the "end" (no longer automatically converted).
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Rejected)
     }
 
-    /// 是否允许转换到 `next`。
+    /// Whether to allow conversion to `next`.
     pub fn can_transition_to(self, next: PluginState) -> bool {
         matches!(
             (self, next),

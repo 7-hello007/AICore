@@ -1,7 +1,7 @@
-//! Linux CPU affinity 测试。
+//! Linux CPU testing.
 //!
-//! 目标：验证真实 `sched_setaffinity` / `sched_getaffinity` 路径。
-//! 权限受限时只验证错误路径；非 Linux 上跳过。
+//! Target: Verify the real `sched_setaffinity`/ `sched_getaffinity` path.
+//! Permission limited only to verify the wrong path; not Linux skip.
 
 #[cfg(target_os = "linux")]
 use aicore_adapter_linux::LinuxProcessController;
@@ -23,13 +23,13 @@ fn set_affinity_for_self_succeeds() {
     let c = LinuxProcessController::new();
     let pid = std::process::id();
 
-    // 先读原 mask
+    // Read the original first
     let original = c.get_affinity(pid).expect("get original");
 
-    // 设置为原 mask（等价于不变），必须成功
+    // Set to original mask (Equivalent) with success
     c.set_affinity(pid, &original).expect("set to original");
 
-    // 单核测试（如果原 mask 有多核）
+    // Single nuclear test (if original mask is multiple)
     if original.cores.len() > 1 {
         let single = AffinityMask::new(vec![original.cores[0]]);
         c.set_affinity(pid, &single).expect("set to single core");
@@ -37,7 +37,7 @@ fn set_affinity_for_self_succeeds() {
         let after = c.get_affinity(pid).expect("get after single");
         assert_eq!(after.cores, vec![original.cores[0]]);
 
-        // 恢复
+        // Restore
         c.set_affinity(pid, &original).expect("restore");
     }
 }

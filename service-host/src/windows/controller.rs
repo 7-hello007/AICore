@@ -7,9 +7,9 @@ use aicore_contracts::platform::service::{
 
 /// Windows Service Controller。
 ///
-/// 通过 `sc.exe` 实现；不引入 `windows-service` crate（MSRV 稳定）。
+/// By `sc.exe`; not introducing `windows-service` crate (MSRV stability).
 ///
-/// 在非 Windows 平台上所有操作返回 `NotSupported`。
+/// All operations on a non-Windows platform return `NotSupported`.
 pub struct WindowsServiceController {
     #[cfg(target_os = "windows")]
     config: std::sync::Mutex<Option<ServiceConfig>>,
@@ -230,7 +230,7 @@ impl IServiceController for WindowsServiceController {
         let _ = new_binary_path;
         #[cfg(target_os = "windows")]
         {
-            // 备份当前二进制。优先使用 install() 保存的配置。
+            // Backup the current binary. Prefer to the configuration saved by install().
             let current = match self.binary_path() {
                 Some(path) => path,
                 None => {

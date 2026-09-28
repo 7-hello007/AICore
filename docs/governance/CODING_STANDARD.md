@@ -1,6 +1,7 @@
+[English](CODING_STANDARD.md) | [Chinese](CODING_STANDARD.zh-CN.md)
 # Coding Standard
 
-核心要求：
+Core requirements:
 
 - Rust first for system service
 - no business logic in adapters

@@ -1,10 +1,10 @@
-/// Telemetry 采样约束。
+/// Telemetry sample constraint.
 ///
-/// 用于 Adapter 决定"是否应该跳过本次采集"。
-/// Adapter 不做调度；只做 advisory 检查。
+/// For Adapter to decide "should we skip this collection"?
+/// Adapter does not do scheduling; only does inspection advisory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SamplingConstraints {
-    /// 两次 collect 之间的最小间隔，毫秒。
+    /// Minimum interval, millisecond.
     pub min_interval_ms: u64,
 }
 
@@ -13,8 +13,8 @@ impl SamplingConstraints {
         Self { min_interval_ms }
     }
 
-    /// 给定 `since_last_ms`（距今一次 collect 过了多少毫秒），
-    /// 判断是否应跳过本次采集。
+    /// For example, `since_last_ms` (how many milliseconds away from this time) has been used for this project.
+    /// Whether or not to skip this collection.
     pub fn should_skip(&self, since_last_ms: u64) -> bool {
         since_last_ms < self.min_interval_ms
     }

@@ -2,7 +2,7 @@ name: Nightly
 
 on:
   schedule:
-    - cron: "0 3 * * *"  # 每日 03:00 UTC
+    - cron: "0 3 * * *"  # 0300 UTC per day
   workflow_dispatch:
 
 jobs:

@@ -1,7 +1,7 @@
-//! Tier removal 测试。
+//! Tier test.
 //!
-//! 核心不变量：
-//! **删除任一 Tier，其他 Tier 与 Core 均不受影响。**
+//! Core not variable:
+//! ** Delete any Tier, none other Tier and Core are affected.**
 
 use std::sync::Arc;
 
@@ -95,7 +95,7 @@ fn remove_l0_keeps_l1_l2() {
     assert_eq!(hub.registry().count().unwrap(), 2);
     assert_eq!(hub.all_workload_sources().unwrap().len(), 2);
 
-    // l2 优先级最高，仍是 best
+    // l2 highest priority, still best
     let best = hub.best_workload_source().unwrap().unwrap();
     assert_eq!(best.source_name(), "l2");
 }
@@ -111,7 +111,7 @@ fn remove_l1_keeps_l0_l2() {
     let all = hub.all_workload_sources().unwrap();
     assert_eq!(all.len(), 2);
 
-    // 剩下的按优先级：l2 (300) > l0 (100)
+    // Remaining by priority: l2 (300) > l0 (100)
     assert_eq!(all[0].source_name(), "l2");
     assert_eq!(all[1].source_name(), "l0");
 }
@@ -125,7 +125,7 @@ fn remove_l2_keeps_l0_l1() {
 
     assert_eq!(hub.registry().count().unwrap(), 2);
 
-    // 现在 l1 是 best（200 > 100）
+    // Now l1 is best (200 > 100)
     let best = hub.best_workload_source().unwrap().unwrap();
     assert_eq!(best.source_name(), "l1");
 }
@@ -139,7 +139,7 @@ fn remove_all_tiers_leaves_empty_but_valid() {
     hub.unregister_tier(&l1).unwrap();
     hub.unregister_tier(&l2).unwrap();
 
-    // 空状态合法
+    // Empty status valid
     assert!(hub.registry().is_empty().unwrap());
     assert!(hub.best_workload_source().unwrap().is_none());
     assert!(hub.all_workload_sources().unwrap().is_empty());
@@ -151,12 +151,12 @@ fn re_register_after_removal_works() {
     let (l0, _, _) = build_all(&hub);
 
     hub.unregister_tier(&l0).unwrap();
-    // 重新注册同名 Tier 应可成功
+    // Re-registered under the same name, Tier should be successful.
     hub.register_tier(reg("l0", TierLevel::L0)).unwrap();
     hub.register_workload_source(l0.clone(), 100, Arc::new(L0Source))
         .unwrap();
 
     assert_eq!(hub.registry().count().unwrap(), 3);
-    // 三个都有 workload source
+    // All three.
     assert_eq!(hub.all_workload_sources().unwrap().len(), 3);
 }

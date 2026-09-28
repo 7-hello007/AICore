@@ -8,11 +8,11 @@ use aicore_contracts::{
 use std::process::Command;
 use std::time::Instant;
 
-/// Windows 硬件执行器。
+/// Windows hardware implementer.
 ///
-/// 通用 GPU/NPU 控制没有跨厂商标准，因此这里采用 capability-gated 实现：
-/// - NVIDIA：通过 nvidia-smi 提供功耗上限控制。
-/// - 其他设备：明确返回 NotSupported，不伪造执行成功。
+/// Universal GPU/NPU controls have no cross-vendor standard, so use capability-gated implementations:
+/// - NVIDIA: Provide power consumption cap control through nvidia-smi.
+/// - Other devices: return `NotSupported` explicitly and do not forge execution success.
 pub struct WindowsHardwareExecutor;
 impl WindowsHardwareExecutor {
     pub fn new() -> Self {

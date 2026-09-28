@@ -1,9 +1,9 @@
 use crate::execution::{result::ExecutionResult, targets::ExecutionTargets};
 use crate::policy::resource_policy::ResourcePolicy;
 
-/// 策略执行器抽象。
+/// The policy implementer is abstract.
 ///
-/// 输入必须是已经通过 IPolicyValidator 的 ResourcePolicy。
+/// The input must be a ResourcePolicy that has passed IPolicyValidator.
 pub trait IPolicyExecutor: Send + Sync {
     fn execute(&self, policy: &ResourcePolicy, targets: &ExecutionTargets) -> ExecutionResult;
 

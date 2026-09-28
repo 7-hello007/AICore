@@ -1,8 +1,9 @@
+[English](EVENT_SYSTEM.md) | [Chinese](EVENT_SYSTEM.zh-CN.md)
 # Event System
 
-事件只描述事实，不执行策略。
+Events describe facts; they do not execute policies.
 
-核心事件：
+Core events:
 
 - `SystemStateUpdated`
 - `ContextUpdated`
@@ -12,9 +13,9 @@
 - `RuntimeModeChanged`
 - `AiSuggestionCreated`
 
-Event Bus 必须支持：
+Event Bus must support:
 
-- publish result collection
+- collect publication outcomes
 - unsubscribe
 - bounded buffering/backpressure
 - async subscribers

@@ -2,16 +2,16 @@ use crate::control::trace::ControlTrace;
 use crate::execution::{result::ExecutionResult, targets::ExecutionTargets};
 use crate::policy::resource_policy::ResourcePolicy;
 
-/// 透明控制执行器。
+/// Transparent control controller.
 ///
-/// 与 V2 `IPolicyExecutor` 的区别：
-/// - 六段式：Observe → Decide → Validate → Apply → Verify → Rollback。
-/// - 每次执行产出 `ControlTrace`。
-/// - 失败时回退到 `prior_policy`。
+/// Different from V2 `IPolicyExecutor`:
+/// - Six-part style: Observe Decide Validate Apply Verify Rollback.
+/// - Each implementation output `ControlTrace`.
+/// - Back to `prior_policy` if it fails.
 pub trait ITransparentExecutor: Send + Sync {
-    /// 执行一条已验证的 policy，并在失败时回退到 `prior_policy`。
+    /// Execute a validated policy and back to `prior_policy` if it fails.
     ///
-    /// `prior_policy` 为 `None` 时，失败后无回退目标，只记录回退失败。
+    /// When `prior_policy` is `None`, the failure does not result in a return target, but only a return failure is recorded.
     fn execute_transparent(
         &self,
         policy: &ResourcePolicy,
@@ -19,7 +19,7 @@ pub trait ITransparentExecutor: Send + Sync {
         prior_policy: Option<&ResourcePolicy>,
     ) -> ControlTrace;
 
-    /// 最近一次 Apply 的真实执行结果。实现可覆盖，用于审计/可观测性。
+    /// The latest Apply real implementation results.
     fn last_execution_result(&self) -> Option<ExecutionResult> {
         None
     }

@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-/// AdaptiveLoop 配置。
+/// AdaptiveLoop configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AdaptiveLoopConfig {
-    /// 连续失败达到此值进入 Degraded。
+    /// Could not close temporary folder: %s
     pub degraded_threshold: u32,
-    /// 连续失败达到此值进入 Safe。
+    /// Continuous failure to reach this value into Safe.
     pub safe_threshold: u32,
-    /// 连续成功达到此值回升一级。
+    /// Number of consecutive successes required before promotion.
     pub recovery_threshold: u32,
 }
 
@@ -22,7 +22,7 @@ impl Default for AdaptiveLoopConfig {
 }
 
 impl AdaptiveLoopConfig {
-    /// 基本合法性校验。返回 None 表示合法。
+    /// Validation of basic legality. Return None is legal.
     pub fn validate(&self) -> crate::errors::AicoreResult<()> {
         use crate::errors::AicoreError;
         if self.degraded_threshold == 0 {

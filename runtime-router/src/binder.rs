@@ -15,14 +15,14 @@ use aicore_contracts::{
     },
 };
 
-/// 默认 Runtime Binder。
+/// Default Runtime Binder.
 ///
-/// 语义：
-/// - **Native** → `executed: false`（不接手）。
-/// - **AiRuntime / Cpu** → 绑定 `IAiRuntime`；有 inference 时执行推理。
-/// - **Gpu / Npu** → 必须同时具备对应 hardware capability 与 executor。
-/// - 缺少 capability 或 executor → `executed: false`，让上层回退 native。
-/// - 任何执行失败 → `executed: false`，让上层回退 native。
+/// Semantics:
+/// - **Native** `executed: false` (not taken over).
+/// - **AiRuntime / Cpu** binding `IAiRuntime`; implementation of inference when available.
+/// - ** Gpu / Npu** must have a match for hardware capacity and executor.
+/// - Missing capability or execurator →`executed: false`, retreating upper layers.
+/// - Any execution failed `executed: false`, getting the upper layer back in native.
 pub struct DefaultRuntimeBinder {
     runtime: Option<Arc<dyn IAiRuntime>>,
     model_handle: Option<ModelHandle>,
@@ -42,14 +42,14 @@ impl DefaultRuntimeBinder {
         }
     }
 
-    /// 装配 AI Runtime backend。
+    /// Fit AI Runtime backend.
     pub fn with_ai_runtime(mut self, runtime: Arc<dyn IAiRuntime>, handle: ModelHandle) -> Self {
         self.runtime = Some(runtime);
         self.model_handle = Some(handle);
         self
     }
 
-    /// 装配硬件能力清单（供 GPU / NPU route 判定）。
+    /// List of installed hardware capabilities (for determination by GPU / NPU route).
     pub fn with_hardware(mut self, caps: HardwareCapabilitySet) -> Self {
         self.hardware.push(caps);
         self
@@ -188,7 +188,7 @@ impl DefaultRuntimeBinder {
             },
         };
 
-        // 执行推理
+        // Exercising inference
         match runtime.infer(handle, inference_req) {
             Ok(resp) => Ok(BindingResult {
                 route_id: request.route.route_id.clone(),

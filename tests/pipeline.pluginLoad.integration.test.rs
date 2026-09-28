@@ -1,4 +1,4 @@
-//! 插件发现 + 注册集成测试（真实文件系统）。
+//! Plugin found + registration integration test (real file system).
 
 use std::path::{Path, PathBuf};
 
@@ -72,11 +72,11 @@ fn malformed_manifest_is_rejected_but_doesnt_block_others() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
-    // 合法
+    // Legal
     write_manifest(&dir, "good.plugin.json", &good_manifest("good"));
-    // 非法 JSON
+    // Illegal JSON
     std::fs::write(dir.join("bad.plugin.json"), "{ not valid json").unwrap();
-    // 非法 API 版本
+    // Illegal API version
     let mut bad2 = good_manifest("bad2");
     bad2.api_version = "99.0".to_string();
     write_manifest(&dir, "bad2.plugin.json", &bad2);
@@ -104,10 +104,10 @@ fn untrusted_plugin_with_control_permission_is_rejected_at_register() {
     write_manifest(&dir, "untrusted.plugin.json", &m);
 
     let report = discover_from_dir(&dir);
-    // discover 阶段只看 manifest 结构，不看权限
+    // The discovery phase inspects manifest structure without granting permissions
     assert_eq!(report.discovered.len(), 1);
 
-    // register 阶段拒绝
+    // Register Phase Rejected
     let reg = PluginRegistry::new();
     let n = register_discovered(&reg, &report).unwrap();
     assert_eq!(n, 0);

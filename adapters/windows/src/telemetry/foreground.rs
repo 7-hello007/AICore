@@ -1,4 +1,4 @@
-//! 前台窗口识别（Windows）。
+//! Foreground window identification (Windows).
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -29,7 +29,7 @@ impl ForegroundCache {
     }
 
     pub fn read(&self) -> ForegroundInfo {
-        // 缓存检查
+        // Cache Check
         if let Ok(last) = self.last_read.lock() {
             if let Some(t) = *last {
                 if t.elapsed() < self.cache_interval {
@@ -68,7 +68,7 @@ fn read_foreground_now() -> ForegroundInfo {
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
 
-        // 窗口标题
+        // Window Title
         let mut buf: [u16; 512] = [0; 512];
         let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
         let title = if len > 0 {

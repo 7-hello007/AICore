@@ -1,3 +1,4 @@
+[English](PLUGIN_ARCHITECTURE.md) | [Chinese](PLUGIN_ARCHITECTURE.zh-CN.md)
 # Plugin Architecture
 
 ```mermaid
@@ -14,4 +15,4 @@ flowchart LR
     ACTIVE --> FAIL --> DISABLE
 ```
 
-Plugin 是黑盒；Core 只能访问 Plugin API 与 capability。
+A plugin is a black box; Core accesses it only through the plugin API and declared capabilities.

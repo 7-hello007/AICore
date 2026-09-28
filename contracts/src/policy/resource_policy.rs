@@ -5,28 +5,28 @@ use super::priority::{PolicyPriority, PolicySource};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CpuPolicy {
     pub priority: PolicyPriority,
-    /// 可选的 CPU 亲和性；None 表示不限制。
+    /// Optional CPU homogeneity; None indicates unlimited.
     pub affinity_cores: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GpuPolicy {
     pub priority: PolicyPriority,
-    /// 可选的 workload 偏好："graphics" / "compute" / "auto"。
+    /// Optional workload preferences: "graphics"/ "compute"/ "auto".
     pub workload_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct NpuPolicy {
     pub priority: PolicyPriority,
-    /// 是否建议优先使用 NPU 承担推理。
+    /// Whether to prefer the NPU for inference.
     pub preferred: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct MemoryPolicy {
     pub priority: PolicyPriority,
-    /// 可选的内存使用上限百分比，0.0 - 100.0。
+    /// Optional memory use ceiling percentage, 0.0 - 100.0.
     pub max_usage_percent: Option<f32>,
 }
 
@@ -46,23 +46,23 @@ pub struct PowerPolicy {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct BackgroundPolicy {
-    /// 是否抑制后台任务。
+    /// Whether to throttle background tasks.
     pub throttle: bool,
-    /// 抑制时，后台任务 CPU 使用上限百分比。
+    /// When suppressed, CPU is used as the maximum percentage.
     pub max_cpu_percent: Option<f32>,
 }
 
-/// AICore 的核心策略对象。
+/// Core policy object for AICore.
 ///
-/// 生成后必须经过 IPolicyValidator 才能进入 Executor。
+/// After generation, the policy must pass `IPolicyValidator` before reaching an executor.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ResourcePolicy {
     pub policy_id: String,
     pub task_id: Option<String>,
-    /// 整体优先级；约定 >= 所有子资源优先级。
+    /// Overall priority; agreed > = all sub-resource priorities.
     pub priority: PolicyPriority,
     pub source: PolicySource,
-    /// 人类可读的可解释原因。
+    /// Human readable explanations.
     pub reason: String,
     pub cpu: CpuPolicy,
     pub gpu: GpuPolicy,
@@ -70,6 +70,6 @@ pub struct ResourcePolicy {
     pub memory: MemoryPolicy,
     pub power: PowerPolicy,
     pub background: BackgroundPolicy,
-    /// 生成时间，Unix epoch 毫秒。
+    /// Generating time, Unix epoch millisecond.
     pub created_at_unix_ms: u64,
 }

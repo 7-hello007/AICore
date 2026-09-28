@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use aicore_contracts::platform::service::{IServiceController, ServiceState};
 
-/// 升级计划。
+/// Upgrade plan.
 ///
-/// 步骤：
-/// 1. 备份当前二进制（controller 负责具体备份）。
-/// 2. 停止服务。
-/// 3. controller.upgrade(new_binary) 覆盖二进制。
-/// 4. 启动服务。
-/// 5. 健康检查（query_state == Running）。
-/// 6. 失败 → controller.rollback() → 启动。
+/// Steps:
+/// 1. Current binary backup (controller for specific backup).
+/// 2. Termination of service.
+/// Controller.upgrade (new_binary) overwrites binary.
+/// Start-up services.
+/// Health screening (query_state = = Running).
+/// Failed Controller.rollback() starts.
 pub struct UpgradePlan {
     controller: Arc<dyn IServiceController>,
 }
@@ -28,7 +28,7 @@ impl UpgradePlan {
     }
 
     pub fn run(&self, new_binary_path: &str) -> UpgradeOutcome {
-        // 1. 停服务
+        // 1. Closure of services
         let stop = self.controller.stop();
         if !stop.success && self.controller.query_state() != ServiceState::Stopped {
             return UpgradeOutcome::Failed {
@@ -36,7 +36,7 @@ impl UpgradePlan {
             };
         }
 
-        // 2. 升级
+        // 2. Promotion
         let upgrade = self.controller.upgrade(new_binary_path);
         if !upgrade.success {
             return UpgradeOutcome::Failed {
@@ -44,13 +44,13 @@ impl UpgradePlan {
             };
         }
 
-        // 3. 启动
+        // 3. Commencement
         let start = self.controller.start();
         if !start.success {
             return self.rollback("start failed after upgrade");
         }
 
-        // 4. 健康检查
+        // 4. Health screening
         match self.health_check() {
             Ok(()) => UpgradeOutcome::Succeeded,
             Err(reason) => self.rollback(&reason),

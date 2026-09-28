@@ -1,72 +1,72 @@
-
+[English](destination.md) | [Chinese](destination.zh-CN.md)
 # AICore — AI Computer Control Layer
 
-## AI 原生计算机智能控制层项目计划书
+## Project plan for an AI-native computer control layer
 
 ---
 
-# 1. 项目总目标
+# 1. Overall objective of the project
 
-## 1.1 项目愿景
+## 1.1 Project vision
 
-AICore 的目标不是开发一个传统的“电脑优化工具”，也不是简单地在电脑上增加一个 AI 助手。
+The goal of AICore is not to develop a traditional "computer optimization tool" or simply to add an AI assistant to the computer.
 
-项目目标是建立一个位于：
+The project establishes the following architecture:
 
 ```mermaid
 flowchart TD
-    A[应用软件] --> B[AICore AI Control Layer]
-    B --> C[操作系统]
+    A[Application] --> B[AICore AI Control Layer]
+    B --> C[Operating system]
     C --> D[CPU / GPU / NPU / Memory / Network]
 ```
 
-之间的、**跨操作系统、跨硬件、可扩展、可维护、接口解耦的 AI 控制层**。
+A cross-platform, cross-hardware AI control layer with stable interfaces, scalability, and maintainability.
 
-AICore 负责理解：
-
-```text
-用户意图
-应用状态
-任务类型
-系统状态
-硬件状态
-历史运行数据
-AI 工作负载
-功耗与温度
-```
-
-然后生成：
+AICore is responsible for understanding:
 
 ```text
-资源策略
-任务优先级
-执行设备
-后台任务策略
-功耗策略
-AI workload 策略
+User intent
+Application state
+Task type
+System state
+Hardware state
+Historical runtime data
+AI workload
+Power consumption and temperature
 ```
 
-最终实现：
+It then produces:
 
-> **让计算机从“被动执行软件”逐渐转变为“能够理解上下文并主动协调自身资源”的智能计算系统。**
+```text
+Resource policy
+Task priority
+Execution device
+Background task policy
+Power policy
+AI workload policy
+```
+
+The intended outcome is:
+
+> **Gradually transform computers from passive software executors into intelligent computing systems that understand context and proactively coordinate their own resources.**
 
 ---
 
-### 项目定位
+### Project positioning
 
-AICore 定位为：
+AICore is positioned as:
 
-> **面向 Windows / Linux 的 AI 原生计算机智能控制层（AI Computer Control Layer）。**
+> **An AI Computer Control Layer for Windows and Linux.**
 
-它位于应用软件、操作系统与计算硬件之间，通过统一接口理解应用任务、用户意图与系统状态，并通过可扩展的策略与执行机制协调 CPU、GPU、NPU、内存、功耗以及后台任务。
+It sits between applications, operating systems, and computing hardware. Through stable interfaces it understands application tasks, user intent, and system state, then coordinates CPU, GPU, NPU, memory, power, and background work through extensible policy and execution mechanisms.
 
-## 1.2 产品总目标
+## 1.2 Overall product objective
 
-AICore 最终需要实现以下能力：
+AICore ultimately requires the following capabilities:
 
-### 目标 A：系统感知
+### Target A: System perception
 
-持续获取：
+Ongoing acquisition:
 
 ```text
 CPU
@@ -83,7 +83,7 @@ Foreground Task
 System Load
 ```
 
-形成统一的：
+Form a uniform:
 
 ```text
 Computer State
@@ -91,9 +91,9 @@ Computer State
 
 ---
 
-### 目标 B：任务理解
+### Objective B: Mission understanding
 
-识别当前计算任务，例如：
+Identify current computing tasks such as:
 
 ```text
 Gaming
@@ -108,7 +108,7 @@ Video Conference
 General Office
 ```
 
-并进一步识别：
+and further identify:
 
 ```text
 Interactive
@@ -122,9 +122,9 @@ Privacy Sensitive
 
 ---
 
-### 目标 C：AI 决策
+### Target C: AI Decision-making
 
-根据：
+According to:
 
 ```text
 Computer State
@@ -136,13 +136,13 @@ Task Context
 Historical Data
 ```
 
-形成：
+Formation:
 
 ```text
 Resource Policy
 ```
 
-例如：
+For example:
 
 ```text
 Task A → NPU
@@ -154,9 +154,9 @@ Task E → Deferred
 
 ---
 
-### 目标 D：资源协调
+### Objective D: Coordination of resources
 
-统一管理：
+Unified management:
 
 ```text
 CPU scheduling
@@ -169,38 +169,38 @@ Background workload
 AI model execution
 ```
 
-第一阶段通过用户态 API 实现。
+The first stage uses operating-system user-space APIs.
 
-后续根据操作系统能力逐步增加低层控制。
+Follow-up, lower-level controls are gradually increased based on operating system capabilities.
 
 ---
 
-### 目标 E：跨平台
+### Objective E: Cross-platform
 
-首期：
+First issue:
 
 ```text
 Windows
 Linux
 ```
 
-暂不开发：
+Not developed:
 
 ```text
 macOS
 ```
 
-目标不是对每个操作系统写一套完整产品，而是：
+The goal is not to write a complete set of products for each operating system, but to:
 
-> **核心业务逻辑完全与操作系统解耦。**
+> ** Core business logic fully deconciliated with operating systems.**
 
-平台差异全部收敛到 Adapter 层。
+Platform differences are reduced to Adapter.
 
 ---
 
-### 目标 F：长期可扩展
+### Objective F: Long-term scalability
 
-未来可以增加：
+The following could be added in the future:
 
 ```text
 NVIDIA
@@ -208,28 +208,28 @@ AMD
 Intel
 Qualcomm
 Apple
-新的 NPU
-新的 OS
-新的 AI Runtime
-新的控制接口
-新的 Agent
+New NPU
+New OS
+New AI runtime
+New control interface
+New agent
 ```
 
-而不修改核心调度系统。
+Instead of modifying the core movement system.
 
 ---
 
-# 2. 设计理念与设计哲学
+# 2. Design philosophy and design philosophy
 
-## 2.1 核心设计理念
+## 2.1 Core design concepts
 
-AICore 遵循：
+AICore follows:
 
-> **AI 决策、OS 执行、硬件完成。**
+> ** AI decision-making, OS implementation, hardware completion.**
 
-AI 不应该直接控制底层硬件。
+AI should not directly control the bottom hardware.
 
-正确关系：
+Correct relationship:
 
 ```mermaid
 flowchart TD
@@ -240,7 +240,7 @@ flowchart TD
     E --> F[Hardware]
 ```
 
-而不是：
+Instead of:
 
 ```text
 LLM
@@ -250,50 +250,50 @@ Kernel
 
 ---
 
-## 2.2 设计哲学一：高内聚、低耦合
+## 2.2 Design philosophy I: high-intensity, low-coherence
 
-每一个模块只负责一个清晰的职责。
+Each module has only one clear responsibility.
 
-例如：
+For example:
 
 ```text
 Telemetry
-只负责采集数据
+Only collects data
 
 Context
-只负责构建上下文
+Only builds context
 
 Policy
-只负责产生策略
+Only produces policies
 
 Validator
-只负责验证策略
+Only validates policies
 
 Executor
-只负责执行
+Only executes
 
 Adapter
-只负责平台适配
+Only adapts platforms
 
 Memory
-只负责历史记录
+Only records history
 ```
 
-禁止：
+It is prohibited:
 
 ```text
-Telemetry → 直接修改 CPU
-AI → 直接调用 Windows API
-Windows Adapter → 直接访问数据库
-Policy → 直接访问硬件
-UI → 直接访问 Kernel
+Telemetry -> directly modifies CPU
+AI -> directly calls Windows API
+Windows Adapter -> directly accesses the database
+Policy -> directly accesses hardware
+UI -> directly accesses the kernel
 ```
 
 ---
 
-## 2.3 设计哲学二：依赖抽象，不依赖实现
+## 2.3 Design philosophy II: Depend on abstractions, not implementations
 
-核心模块永远依赖：
+Core modules are always dependent on:
 
 ```text
 Interface
@@ -303,7 +303,7 @@ DTO
 Domain Model
 ```
 
-而不是：
+Instead of:
 
 ```text
 WindowsAdapter
@@ -312,13 +312,13 @@ NvidiaAdapter
 AMDAdapter
 ```
 
-例如：
+For example:
 
 ```text
 IResourceController
 ```
 
-核心只知道：
+The core only knows:
 
 ```text
 allocate()
@@ -327,28 +327,28 @@ setPriority()
 setPolicy()
 ```
 
-至于：
+As for:
 
 ```text
-Windows 怎么实现
-Linux 怎么实现
+How Windows implements it
+How Linux implements it
 ```
 
-核心完全不知道。
+The core has no idea.
 
 ---
 
-## 2.4 设计哲学三：黑盒化
+## 2.4 Design philosophy III: Black boxing
 
-每个模块内部实现都视为黑盒。
+Implementation within each module is considered a black box.
 
-模块只暴露：
+Module exposure only:
 
 ```text
 Public Interface
 ```
 
-例如：
+For example:
 
 ```text
 TelemetryModule
@@ -357,7 +357,7 @@ TelemetryModule
  └── getSnapshot()
 ```
 
-内部可能是：
+Internal may be:
 
 ```text
 WMI
@@ -371,13 +371,13 @@ Windows ML
 ONNX Runtime
 ```
 
-但是这些细节不能泄漏到上层。
+But these details can't be leaked to the top.
 
 ---
 
-## 2.5 设计哲学四：接口优先
+## 2.5 Design philosophy IV: Interface priority
 
-所有模块先定义接口：
+All modules define interfaces first:
 
 ```text
 interface
@@ -387,27 +387,27 @@ contract
 implementation
 ```
 
-而不是：
+Instead of:
 
 ```text
-先写代码
+Write code first
 ↓
-后面再考虑接口
+Consider interfaces later
 ```
 
-项目中所有跨模块通信必须经过明确接口。
+All cross-module communications in the project must be clearly interfaced.
 
 ---
 
-## 2.6 设计哲学五：AI不是唯一决策者
+## 2.6 Design philosophy V: AI is not the only decision maker
 
-AICore 不允许：
+AICore does not allow:
 
 ```text
-LLM → 直接执行
+LLM -> executes directly
 ```
 
-采用：
+Adopt:
 
 ```text
 AI Recommendation
@@ -421,13 +421,13 @@ Validator
 Executor
 ```
 
-AI 可以提出策略，但系统负责最终验证。
+AI can propose strategies, but the system is responsible for final validation.
 
 ---
 
-## 2.7 设计哲学六：慢 AI + 快控制
+## 2.7 Design philosophy VI: Slow AI + fast control
 
-系统采用双层控制回路。
+The system uses two control loops.
 
 ### Fast Loop
 
@@ -435,16 +435,16 @@ AI 可以提出策略，但系统负责最终验证。
 10ms ~ 100ms
 ```
 
-负责：
+Responsible for:
 
 ```text
-执行
-状态更新
-资源控制
-安全检查
+Execution
+State update
+Resource control
+Safety check
 ```
 
-必须：
+It is necessary to:
 
 ```text
 Deterministic
@@ -460,18 +460,18 @@ Stable
 100ms ~ seconds
 ```
 
-负责：
+Responsible for:
 
 ```text
-预测
-任务分类
-策略生成
-用户意图理解
-历史分析
-AI 推理
+Prediction
+Task classification
+Policy generation
+User intent understanding
+Historical analysis
+AI inference
 ```
 
-结构：
+Structure:
 
 ```text
                AI Brain
@@ -488,13 +488,13 @@ AI 推理
 
 ---
 
-# 3. 产品总体架构
+# 3. Overall product architecture
 
-AICore 采用：
+AICore adopts:
 
 > **Control Plane + Data Plane + Adapter Plane**
 
-三层架构。
+Three-tier architecture.
 
 ```mermaid
 flowchart TD
@@ -514,9 +514,9 @@ flowchart TD
 
 ---
 
-# 4. 数据流向
+# 4. Data flows
 
-AICore 使用闭环数据流。
+AICore uses closed loop data streams.
 
 ```mermaid
 flowchart TD
@@ -537,7 +537,7 @@ flowchart TD
     N --> G
 ```
 
-完整闭环：
+Full closed circle:
 
 ```mermaid
 flowchart TD
@@ -553,29 +553,29 @@ flowchart TD
 
 ---
 
-# 5. 项目实施阶段
+# 5. Project implementation phase
 
-项目分为 8 个主要阶段。
+The project is divided into eight main phases.
 
 ---
 
-## Phase 0：产品定义与基础架构
+## Phase 0: Product definition and infrastructure
 
-### 工作内容
+### Work
 
-| 工作内容 |
+| Work |
 |---|
-| 产品需求 |
-| 架构规范 |
-| 接口规范 |
-| 代码规范 |
-| 测试规范 |
-| 文档规范 |
-| 版本规范 |
+| Product demand |
+| Structured norms |
+| Interface specification |
+| Code Regulation |
+| Test Code |
+| Document Regulation |
+| Version Code |
 
-### 完成项
+### Completed Item
 
-| 完成项 |
+| Completed Item |
 |---|
 | Architecture Document |
 | API Contract |
@@ -584,13 +584,13 @@ flowchart TD
 | Testing Strategy |
 | Compatibility Matrix |
 
-### 阶段目标
+### Phase objectives
 
-得到一个可以持续开发的基础工程，而不是快速堆代码。
+Getting a foundationwork that can be developed on a continuous basis instead of fast stacking codes.
 
-### 交付物
+### Delivery
 
-| 交付物 |
+| Delivery |
 |---|
 | `docs/` |
 | `README.md` |
@@ -604,13 +604,13 @@ flowchart TD
 
 ## Phase 1：Computer Observer
 
-这一阶段：
+This phase:
 
-> **只观察，不控制。**
+> ** Observe only, not control.**
 
-### 实现
+### Deliverables
 
-| 采集项 |
+| Collection |
 |---|
 | CPU |
 | GPU |
@@ -624,13 +624,13 @@ flowchart TD
 | Process |
 | Application |
 
-形成：
+Formation:
 
 ```text
 ComputerSnapshot
 ```
 
-示例：
+Example:
 
 ```json
 {
@@ -650,25 +650,25 @@ ComputerSnapshot
 }
 ```
 
-### 阶段目标
+### Phase objectives
 
-建立：
+Create:
 
-> **统一跨平台计算机状态模型。**
+> ** Harmonized cross-platform computer status model.**
 
-Windows 与 Linux 无论底层采用什么 API，都转换为同一个标准结构。
+Windows and Linux are converted to the same standard structure regardless of the bottom API.
 
 ---
 
 ## Phase 2：Context Engine
 
-目标：
+Objectives:
 
-> 让电脑知道“现在发生了什么”。
+> Let the computer know what happened now.
 
-识别：
+Identification:
 
-| 识别项 |
+| Identification |
 |---|
 | Current App |
 | Foreground App |
@@ -678,7 +678,7 @@ Windows 与 Linux 无论底层采用什么 API，都转换为同一个标准结�
 | Workload Type |
 | Interaction Level |
 
-例如：
+For example:
 
 ```text
 VS Code
@@ -690,7 +690,7 @@ Browser
 Local LLM
 ```
 
-识别为：
+Recognized as:
 
 ```text
 Development + AI Workload
@@ -700,9 +700,9 @@ Development + AI Workload
 
 ## Phase 3：Policy Engine
 
-这一阶段开始建立真正的 AI Control。
+This phase began to create a real AI control.
 
-输入：
+Input:
 
 ```text
 ComputerState
@@ -711,13 +711,13 @@ Task
 UserPreference
 ```
 
-输出：
+Output:
 
 ```text
 ResourcePolicy
 ```
 
-例如：
+For example:
 
 ```json
 {
@@ -741,13 +741,13 @@ ResourcePolicy
 
 ## Phase 4：Executor
 
-目标：
+Objectives:
 
-> 让策略真正执行。
+> Let the strategy really be implemented.
 
-建立：
+Create:
 
-| 接口 |
+| Interface |
 |---|
 | `IProcessController` |
 | `IResourceController` |
@@ -773,33 +773,33 @@ Linux：
 | `LinuxGpuAdapter` |
 | `LinuxNpuAdapter` |
 
-核心代码不允许出现：
+Core code is not allowed:
 
 ```text
 if Windows
 if Linux
 ```
 
-这种平台判断。
+This platform judgement.
 
-平台判断只能存在 Adapter / Platform 层。
+The platform determines that only Adapter/ Platform layer exists.
 
 ---
 
 ## Phase 5：AI Intelligence
 
-这一阶段接入：
+This phase of access:
 
-| 能力 |
+| Capacity |
 |---|
 | Small Language Model |
 | Machine Learning |
 | Prediction Model |
 | Classifier |
 
-AI 主要负责：
+AI is responsible for:
 
-| AI 职责 |
+| AI Duty |
 |---|
 | Task Classification |
 | Load Prediction |
@@ -808,9 +808,9 @@ AI 主要负责：
 | Resource Recommendation |
 | User Intent |
 
-不要让 LLM 负责高频调度。
+Don't let LLM be responsible for high frequency dispatch.
 
-正确结构：
+Correct structure:
 
 ```text
 LLM
@@ -826,9 +826,9 @@ Executor
 
 ## Phase 6：Personalization
 
-开始引入长期数据：
+Starting to introduce long-term data:
 
-| 数据 |
+| Data |
 |---|
 | Historical Workload |
 | User Preferences |
@@ -836,39 +836,39 @@ Executor
 | Performance History |
 | Power Usage History |
 
-建立：
+Create:
 
 ```text
 Personal Computer Model
 ```
 
-例如：
+For example:
 
 ```text
-用户通常：
+Users typically:
 09:00 Coding
 12:00 Browser
 18:00 Gaming
 21:00 Local AI
 ```
 
-系统逐渐形成：
+System development:
 
 ```text
 Predictive Scheduling
 ```
 
-而不是始终被动响应。
+It's not always reactive.
 
 ---
 
 ## Phase 7：Application Integration
 
-这一阶段建立应用与 AICore 的正式接口。
+This phase creates an official interface with the AICore application.
 
-应用可以声明：
+Apply to declare:
 
-| 声明项 |
+| Declaration |
 |---|
 | Task Type |
 | Latency Sensitivity |
@@ -878,7 +878,7 @@ Predictive Scheduling
 | Privacy Requirement |
 | Deadline |
 
-例如：
+For example:
 
 ```json
 {
@@ -889,7 +889,7 @@ Predictive Scheduling
 }
 ```
 
-AICore 不需要知道：
+AICore does not need to know:
 
 ```text
 Chrome
@@ -898,9 +898,9 @@ Blender
 Game
 ```
 
-的内部实现。
+The application's internal implementation is irrelevant to AICore.
 
-应用只需要遵守：
+Application requires compliance with:
 
 ```text
 AICore Task Contract
@@ -910,7 +910,7 @@ AICore Task Contract
 
 ## Phase 8：Adaptive AI Computer
 
-最终形成：
+Eventually:
 
 ```text
 Application
@@ -932,7 +932,7 @@ Global Policy
 CPU / GPU / NPU / Memory / Power
 ```
 
-系统具有：
+The system has:
 
 ```text
 Observe
@@ -942,13 +942,13 @@ Optimize
 Learn
 ```
 
-的闭环能力。
+The closed ring capacity.
 
 ---
 
-# 6. 项目代码框架
+# 6. Project code framework
 
-推荐采用：
+Recommended for adoption:
 
 ```text
 AICore/
@@ -1044,31 +1044,31 @@ AICore/
 
 ---
 
-### 测试文件命名规范
+### Test file naming specifications
 
-| 项目 | 规范 |
+| Item | Normative |
 |---|---|
-| 文件夹结构 | 仅使用 `tests/`，不建立测试子文件夹 |
-| 基本格式 | `功能名.功能说明.[功能补充说明].test.后缀名` |
-| 驼峰式 | 功能名、功能说明、可选补充说明均采用驼峰式命名 |
-| 单词数量 | 尽量控制在五个单词以内 |
-| 语言后缀 | 根据实现语言使用 `.rs`、`.ts`、`.js` 等 |
+| Folder structure | Keep a single flat `tests/` directory; do not create category subdirectories |
+| Basic Format | `featureName.behavior[.detail].test.extension` |
+| Casing | Use lower camel case for the feature, behavior, and optional detail segments |
+| Word count | Keep each segment concise, preferably within five words |
+| Language suffix | `.rs`, `.ts`, `.js`, etc. |
 
-# 7. 模块职责
+# 7. Module duties
 
-| 模块 | 职责 | 约束 |
+| Module | Duties | Constraints |
 |---|---|---|
-| `core` | 只保存 Business Logic、Domain Logic、Policy Logic | 禁止依赖具体 OS |
-| `contracts` | 定义 Interfaces、DTO、Events、Commands、Responses | 这是整个项目最重要的“边界” |
-| `adapters` | 负责 Windows、Linux、Intel、AMD、NVIDIA、NPU、GPU、Power、Process | 只实现接口 |
-| `runtime` | 负责 Lifecycle、Scheduling、Execution、Validation、Plugin Management | — |
-| `ai` | 负责 Model、Inference、Prediction、Classification、Planning | AI 模型不是核心业务逻辑；模型可以替换 Model A → Model B → Model C，不应该修改 Core |
+| `core` | Save Business Logic, Domain Logic, Policy Logic | Prohibition of reliance on specific OS |
+| `contracts` | Definitions Interfaces, DTO, Events, Comands, Responses | This is the most important border of the project. |
+| `adapters` | Responsible for Windows, Linux, Intel, AMD, NVIDIA, NPU, GPU, Power, Process | Only achieve interfaces |
+| `runtime` | In charge of Lifecycle, Scheduling, Exchange, Validation, Plugin Management | — |
+| `ai` | In charge of Model, Inference, Prevention, Classification, Planning | The AI model is not a core business logic; the model can replace ModeL A →Model B →Model C and should not modify Core |
 
 ---
 
-# 8. 黑盒化设计
+# 8. Blackboxing design
 
-每个模块必须遵循：
+Each module must follow:
 
 ```text
 Private Implementation
@@ -1076,13 +1076,13 @@ Private Implementation
 Public Interface
 ```
 
-例如：
+For example:
 
 ```text
 NPU Module
 ```
 
-外部只能看到：
+Outside, only:
 
 ```ts
 interface INpuController {
@@ -1097,7 +1097,7 @@ interface INpuController {
 }
 ```
 
-内部可以是：
+Internal may be:
 
 ```text
 Windows ML
@@ -1108,23 +1108,23 @@ Intel Runtime
 Qualcomm Runtime
 ```
 
-但这些实现不允许泄漏到 Core。
+These implementation details must not leak into Core.
 
 ---
 
-# 9. 接口解耦设计
+# 9. Interface decoupling design
 
-接口必须做到：
+The interface must:
 
-> **可以随时增加、删除、替换实现。**
+> **Allow implementations to be added, removed, or replaced without changing consumers.**
 
-例如：
+For example:
 
 ```text
 IGpuController
 ```
 
-未来可以拥有：
+The future can have:
 
 ```text
 NvidiaGpuController
@@ -1138,7 +1138,7 @@ Core：
 IGpuController
 ```
 
-永远不需要知道：
+Never need to know:
 
 ```text
 Nvidia
@@ -1148,17 +1148,17 @@ Intel
 
 ---
 
-# 10. 插件架构
+# 10. Plugin structure
 
-推荐建立：
+Recommended creation:
 
 ```text
 Plugin Registry
 ```
 
-例如：
+For example:
 
-| Plugin 项 |
+| Plugin Item |
 |---|
 | Metadata |
 | Capabilities |
@@ -1166,7 +1166,7 @@ Plugin Registry
 | Interfaces |
 | Lifecycle |
 
-示例：
+Example:
 
 ```json
 {
@@ -1179,7 +1179,7 @@ Plugin Registry
 }
 ```
 
-加载：
+Load:
 
 ```mermaid
 flowchart TD
@@ -1188,41 +1188,41 @@ flowchart TD
     C --> D[Runtime]
 ```
 
-这样增加新硬件时不需要修改核心代码。
+The addition of new hardware would not require a change in the core code.
 
 ---
 
-# 11. API 设计原则
+# 11. API design principles
 
-API 必须：
+API must:
 
-| 原则 | 要求 |
+| Principles | Request |
 |---|---|
-| 稳定 | 不因为内部实现改变而改变。 |
-| 独立 | API 不暴露 Windows API、Linux API、AMD API、NVIDIA API。 |
-| 可版本化 | 使用 `v1`、`v2`、`v3` 或 Semantic Versioning。 |
+| Stabilization | No change due to internal changes. |
+| Independence | API does not expose Windows API, Linux API, AMD API, NVIDIA API. |
+| Versionable | Use `v1`, `v2`, `v3` or Semantic Version. |
 
-例如：
+For example:
 
 ```text
 ResourceController v1
 ```
 
-升级后：
+Upgrade:
 
 ```text
 ResourceController v2
 ```
 
-旧应用仍然可以使用 v1。
+The old application can still use v1.
 
 ---
 
-# 12. 事件系统
+# 12. Incident system
 
-模块之间尽量避免直接调用。
+avoids direct calls between modules.
 
-例如不要：
+For example:
 
 ```text
 Telemetry
@@ -1232,17 +1232,17 @@ Policy
 Executor
 ```
 
-全部强依赖。
+All depend on.
 
-可以增加：
+Add:
 
 ```text
 Event Bus
 ```
 
-例如：
+For example:
 
-| 事件 |
+| Events |
 |---|
 | `SystemStateUpdated` |
 | `TaskStarted` |
@@ -1252,7 +1252,7 @@ Event Bus
 | `PolicyUpdated` |
 | `ExecutionCompleted` |
 
-这样：
+Thus:
 
 ```mermaid
 flowchart TD
@@ -1264,48 +1264,48 @@ flowchart TD
     B --> G[Logging]
 ```
 
-彼此保持低耦合。
+Keep each other low.
 
 ---
 
-# 13. 数据层设计
+# 13. Data layer design
 
-数据分成四类。
+Data are divided into four categories.
 
-| 数据类型 | 数据 | 存储策略 |
+| Data Type | Data | Storage policy |
 |---|---|---|
-| Realtime State | CPU、GPU、NPU、RAM、Temperature、Power | 不长期保存 |
-| Historical Data | Task、Runtime、Energy、Resource usage、Policy result | 长期保存 |
+| Realtime State | CPU、GPU、NPU、RAM、Temperature、Power | Do not save for long |
+| Historical Data | Task、Runtime、Energy、Resource usage、Policy result | Long-term Save |
 | User Profile | Preferences、Work habits、Power preference、Privacy preference | — |
 | AI Memory | Prediction、Decision、Decision Result、Policy Effectiveness | — |
 
 ---
 
-# 14. 测试体系
+# 14. Test system
 
-项目必须把测试当成正式代码，而不是最后补测试。
+The project treats tests as production-quality code, not as a final afterthought.
 
-测试目录采用**扁平化设计**：只有 `tests/` 文件夹，不再建立 `unit/`、`contract/`、`integration/` 等子文件夹。
+The test layout is intentionally flat: keep one `tests/` directory and do not create `unit/`, `contract/`, or `integration/` subdirectories.
 
-测试文件统一采用：
+Test files use this format:
 
 ```text
-功能名.功能说明.[功能补充说明].test.后缀名
+featureName.behavior[.detail].test.extension
 ```
 
-其中：
+Of which:
 
-| 命名项 | 规则 |
+| Name item | Rule |
 |---|---|
-| 功能名 | 驼峰式命名 |
-| 功能说明 | 驼峰式命名 |
-| 功能补充说明 | 可选，驼峰式命名 |
-| `test` | 固定 |
-| 后缀名 | 根据实现语言使用 `.rs`、`.ts`、`.js` 等 |
+| Feature name | lower camel case |
+| Functional description | Camel Peak Naming |
+| Additional functional description | Optional, humping name. |
+| `test` | Fixed |
+| Suffix Name | `.rs`, `.ts`, `.js`, etc. |
 
-示例：
+Example:
 
-| 测试类型 | 文件名示例 |
+| Test Type | Example of filename |
 |---|---|
 | Unit Test | `context.buildState.unit.test.rs` |
 | Unit Test | `policy.generatePolicy.unit.test.rs` |
@@ -1323,9 +1323,9 @@ flowchart TD
 
 ### Unit Test
 
-测试：
+Test:
 
-| 测试项 |
+| Test Item |
 |---|
 | Context |
 | Policy |
@@ -1338,28 +1338,28 @@ flowchart TD
 
 ### Contract Test
 
-确保接口没有被破坏。
+Ensure that the interface is not destroyed.
 
-例如：
+For example:
 
 | Adapter |
 |---|
 | WindowsAdapter |
 | LinuxAdapter |
 
-必须通过完全相同的：
+It must be identical:
 
 ```text
 IProcessController Contract
 ```
 
-测试。
+Test.
 
 ---
 
 ### Adapter Test
 
-分别测试：
+Separate tests:
 
 | Adapter |
 |---|
@@ -1373,7 +1373,7 @@ IProcessController Contract
 
 ### Integration Test
 
-测试：
+Test:
 
 ```mermaid
 flowchart TD
@@ -1382,15 +1382,15 @@ flowchart TD
     C --> D[Executor]
 ```
 
-整条链。
+The whole chain.
 
 ---
 
 ### Performance Test
 
-必须测：
+It must be determined that:
 
-| 指标 |
+| Indicators |
 |---|
 | CPU overhead |
 | Memory overhead |
@@ -1403,54 +1403,54 @@ flowchart TD
 
 ### End-to-End Test
 
-例如：
+For example:
 
 ```mermaid
 flowchart TD
-    A[启动游戏] --> B[AICore 检测]
-    B --> C[识别为游戏]
-    C --> D[生成策略]
-    D --> E[执行]
-    E --> F[读取实际性能]
-    F --> G[检查策略是否生效]
+    A[Launch game] --> B[AICore detects it]
+    B --> C[Classify as a game]
+    C --> D[Generate policy]
+    D --> E[Execute]
+    E --> F[Read actual performance]
+    F --> G[Check whether the policy took effect]
 ```
 
 ---
 
 ### Failure Test
 
-故意制造：
+Intentional manufacture of:
 
-| 故障 |
+| Fault |
 |---|
-| AI 模型崩溃 |
-| Adapter 崩溃 |
-| NPU 不可用 |
-| GPU 不可用 |
-| 权限不足 |
-| 系统 API 不存在 |
-| 策略非法 |
-| 硬件突然断开 |
+| AI model crash |
+| Adapter crash |
+| NPU not available |
+| GPU not available |
+| Insufficient Permissions |
+| System API does not exist |
+| Strategy is illegal. |
+| Hardware suddenly disconnected. |
 
-系统必须：
+The system must:
 
 ```text
 Fail Safe
 ```
 
-而不是：
+Instead of:
 
 ```text
-AI 崩溃
+AI crashes
 →
-电脑崩溃
+Computer crashes
 ```
 
 ---
 
-# 15. 文档体系
+# 15. Document system
 
-项目文档必须与代码一起开发。
+The project document must be developed with the code.
 
 ```text
 docs/
@@ -1498,37 +1498,37 @@ docs/
 
 ---
 
-# 16. 软件开发基本原则
+# 16. Basic principles for software development
 
-整个项目必须遵守：
+The entire project must comply with:
 
-| 原则 | 要求 |
+| Principles | Request |
 |---|---|
-| Single Responsibility | 每个模块只负责单一职责。 |
-| Open/Closed | 新增 GPU、NPU、OS、Model 时优先 Add，而不是 Modify Core。 |
-| Liskov Substitution | 接口实现可以互换而不破坏核心行为。 |
-| Interface Segregation | 按职责拆分接口，避免不必要的依赖。 |
-| Dependency Inversion | Core 依赖接口，而不是依赖 Windows / Linux。 |
-| 高内聚 | 每个模块内部功能高度相关；例如 `PolicyEngine` 只负责 Policy。 |
-| 低耦合 | 模块之间通过 Interface、Event、Contract、DTO 交流。 |
+| Single Responsibility | Each module has a single responsibility. |
+| Open/Closed | Add a GPU, NPU, OS, or model through extension points instead of modifying Core. |
+| Liskov Substitution | Interfaces achieve interchangeability without disrupting core behaviour. |
+| Interface Segregation | Split interfaces on duty to avoid unnecessary reliance. |
+| Dependency Inversion | Core relies on interfaces rather than Windows/Linux. |
+| High cohesion | Keep closely related behavior together; for example, `PolicyEngine` is responsible only for policy. |
+| Low coupling | Communicate through interfaces, events, contracts, and DTOs. |
 
 ---
 
-# 17. 跨平台架构
+# 17. Cross-platform structure
 
-统一：
+Harmonization:
 
 ```text
 AICore Core
 ```
 
-平台差异：
+Platform differences:
 
 ```text
 Platform Adapter
 ```
 
-例如：
+For example:
 
 ```mermaid
 flowchart TD
@@ -1539,7 +1539,7 @@ flowchart TD
     D --> F[Linux API]
 ```
 
-同样：
+Similarly:
 
 ```mermaid
 flowchart TD
@@ -1548,25 +1548,25 @@ flowchart TD
     A --> D[Intel]
 ```
 
-核心代码永远不知道具体实现。
+The core code is never realized.
 
 ---
 
-# 18. 推荐技术栈
+# 18. Recommended technology warehouse
 
-| 层 | 技术 | 说明 |
+| Layer | Technology | Annotations |
 |---|---|---|
-| Core | Rust | 优先考虑。性能、安全、跨平台、低内存占用、适合系统级常驻服务。 |
-| Core（原型） | C++ | 也可以在原型阶段使用。长期建议使用 Rust 或 Rust + C/C++ Adapter。 |
-| AI | ONNX Runtime、llama.cpp、ONNX、Windows ML、Vendor Runtime | 模型可以替换，核心不绑定某个模型。 |
-| API | IPC、gRPC、Unix Domain Socket、Named Pipe | Windows 使用 Named Pipe / Local IPC；Linux 使用 Unix Domain Socket。 |
-| UI | Web UI、Electron、Tauri | 如果核心采用 Rust，更推荐 Tauri，这样常驻服务与 UI 分离。 |
+| Core | Rust | Priority. Performance, security, cross-platform, low memory occupancy, suitable for system-level resident service. |
+| Core (prototype) | C++ | You can also use it at the prototype stage. Long-term advice is to use Rust or Rust +C/C+Adapter. |
+| AI | ONNX Runtime、llama.cpp、ONNX、Windows ML、Vendor Runtime | Models can be replaced and the core does not bind a model. |
+| API | IPC、gRPC、Unix Domain Socket、Named Pipe | Windows uses Named Pipe / Local IPC; Linux uses UNIX Domain Socket. |
+| UI | Web UI、Electron、Tauri | If the core is Rust, Tauri is recommended, so the resident service is separated from UI. |
 
 ---
 
-# 19. 产品运行结构
+# 19. Product operating structure
 
-最终建议：
+Final recommendations:
 
 ```text
 AICore
@@ -1586,27 +1586,27 @@ AICore
 └── aicore-ui
 ```
 
-其中：
+Of which:
 
 ```text
 aicored
 ```
 
-永远运行。
+Always run.
 
 UI：
 
 ```text
-可开可不开
+Optional
 ```
 
-即使 UI 被关闭：
+Even if UI is closed:
 
-> AICore 仍然正常运行。
+> AICore is still functioning.
 
 ---
 
-# 20. 产品运行时数据流
+# 20. Product running time data stream
 
 ```mermaid
 flowchart TD
@@ -1642,17 +1642,17 @@ flowchart TD
     U --> M
 ```
 
-形成闭环。
+Form a closed ring.
 
 ---
 
-# 21. 安全原则
+# 21. Principles of security
 
-AICore 是系统级产品，因此必须遵守：
+AICore is a system-level product and must therefore comply with:
 
-> AI 永远不能拥有无限制的系统控制权。
+> AI can never have unlimited system control.
 
-所有操作必须经过：
+All operations must go through:
 
 ```text
 Permission
@@ -1661,23 +1661,23 @@ Validation
 Policy
 ```
 
-例如：
+For example:
 
 ```text
 AI：
 Terminate process X
 
 Validator：
-是否允许？
+Allow?
 
 Security Policy：
-否
+No
 
 Executor：
-拒绝
+Deny
 ```
 
-同时所有执行记录：
+Meanwhile, all implementation records:
 
 ```text
 Decision
@@ -1686,13 +1686,13 @@ Policy
 Result
 ```
 
-必须可追踪。
+Must be traceable.
 
 ---
 
-# 22. 可观测性
+# 22. Observation
 
-产品必须记录：
+The product must record:
 
 ```text
 AI Decision
@@ -1703,7 +1703,7 @@ Resource Effect
 Failure
 ```
 
-例如：
+For example:
 
 ```text
 10:00:01
@@ -1722,23 +1722,23 @@ Execution successful
 CPU latency improved 12%
 ```
 
-这样以后才能知道：
+That's how we know:
 
-> AI 到底有没有真正优化系统。
+> AI does not really optimize the system.
 
 ---
 
-# 23. 产品核心指标
+# 23. Core product indicators
 
-不能只看：
+We can't just watch:
 
 ```text
-AI 模型准确率
+AI model accuracy
 ```
 
-应该看：
+It should be seen:
 
-### 用户体验
+### User Experience
 
 ```text
 Latency
@@ -1747,7 +1747,7 @@ Startup Time
 Task Completion Time
 ```
 
-### 系统
+### System
 
 ```text
 CPU overhead
@@ -1765,7 +1765,7 @@ Decision Latency
 Inference Cost
 ```
 
-### 稳定性
+### Stability
 
 ```text
 Crash Rate
@@ -1776,11 +1776,11 @@ Policy Rejection Rate
 
 ---
 
-# 24. 第一版 MVP
+# 24. Release 1 MVP
 
-第一版本不要试图做完整 AI Computer。
+The first version does not attempt to complete AI Computer.
 
-建议只完成：
+Only:
 
 ```text
 Windows
@@ -1791,7 +1791,7 @@ CPU
 +
 GPU
 +
-NPU（能获取则获取）
+NPU (when available)
 +
 Process
 +
@@ -1800,7 +1800,7 @@ Memory
 Power
 ```
 
-实现：
+The MVP delivers:
 
 ```text
 1. System Observer
@@ -1822,22 +1822,22 @@ Power
 9. Plugin System
 ```
 
-第一版暂时不做：
+The first edition is suspended:
 
 ```text
 Kernel scheduler
 Advanced agent
 Deep personal model
-自动修改所有系统参数
-复杂长期学习
+Automatically modify all system parameters
+Complex long-term learning
 Mac
 ```
 
 ---
 
-# 25. MVP 产品效果
+# 25. MVP product effects
 
-用户看到的是：
+Users see:
 
 ```text
 AICore
@@ -1861,13 +1861,13 @@ Reason
 Interactive development workload detected.
 ```
 
-而不是一堆技术参数。
+Not a bunch of technical parameters.
 
 ---
 
 # 26. V2
 
-增加：
+Add:
 
 ```text
 LLM Agent
@@ -1877,15 +1877,15 @@ Predictive Scheduling
 Cross-device model support
 ```
 
-系统开始：
+System starts:
 
-> 预测用户下一步会干什么。
+> See what the users will do next.
 
 ---
 
 # 27. V3
 
-增加：
+Add:
 
 ```text
 Deep OS Integration
@@ -1896,7 +1896,7 @@ Power optimization
 AI Agent orchestration
 ```
 
-最终变成：
+Eventually:
 
 ```text
 AI-native Computer Control Layer
@@ -1904,9 +1904,9 @@ AI-native Computer Control Layer
 
 ---
 
-# 28. 最终产品架构目标
+# 28. Final product architecture objectives
 
-最终：
+Eventually:
 
 ```mermaid
 flowchart TD
@@ -1924,51 +1924,51 @@ flowchart TD
 
 ---
 
-# 29. 项目成功标准
+# 29. Project success criteria
 
-AICore 不以：
+AICore Not:
 
-> “AI 模型多大”
+> "AI Model size"
 
-或者：
+Or:
 
-> “代码多少”
+> How many codes?
 
-作为成功标准。
+As a criterion for success.
 
-而是：
+They are:
 
-| 标准 | 要求 |
+| Standard | Request |
 |---|---|
-| 第一标准 | 用户不需要手动设置复杂性能参数。 |
-| 第二标准 | 系统能够识别当前任务。 |
-| 第三标准 | 系统可以自动产生合理的资源策略。 |
-| 第四标准 | 策略真正能影响 Performance、Latency、Energy、Responsiveness。 |
-| 第五标准 | 更换 OS、Hardware、AI Model、Adapter 不会大规模修改 Core。 |
-| 第六标准 | 所有模块都有 Interface、Test、Documentation。 |
-| 第七标准 | 出现异常时，AI 可以失败，但操作系统不能因为 AI 失败而失败。 |
+| First criterion | Users do not need to manually set complex energy parameters. |
+| Second criterion | The system identifies the current task. |
+| Third criterion | The system automatically generates a rational resource strategy. |
+| Standard IV | The strategy really affects Performance, Latency, Energy, Responsibility. |
+| Fifth criterion | Replacement OS、Hardware、AI Model、Adapter No big modifications. Core。 |
+| Standard VI | All modules have Internet, Test, Documentation. |
+| Standard VII | AI can fail when an anomaly occurs, but the operating system cannot fail because AI failed. |
 
 ---
 
-# 30. 项目最终定位
+# 30. Final positioning of the project
 
-AICore 最终不是：
+AICore is not ultimately an:
 
 > AI Assistant
 
-也不是：
+Nor is it merely a:
 
 > PC Optimizer
 
-而是：
+It is an:
 
 ## **AI Computer Control Layer**
 
-即：
+That is:
 
-> **一个连接用户、应用、操作系统与计算硬件的智能控制层。**
+> **An intelligent control layer connecting users, applications, operating systems, and computing hardware.**
 
-其最终目标是：
+Its ultimate objectives are:
 
 ```text
 Software
@@ -1984,19 +1984,19 @@ Resource Orchestration
 Hardware
 ```
 
-从而让计算机从：
+So let the computer get from:
 
 > **Software-defined Computer**
 
-逐渐演变为：
+Gradually:
 
 > **AI-managed Computer**
 
 ---
 
-# 31. 推荐项目开发顺序
+# 31. Order of recommended project development
 
-实际开发严格遵循：
+Practical development is strictly governed by:
 
 ```mermaid
 flowchart TD
@@ -2014,45 +2014,45 @@ flowchart TD
     L --> M[Advanced Optimization]
 ```
 
-而不是：
+Instead of:
 
 ```text
-先做 UI
+Build the UI first
 ↓
-再拼 AI
+Then add AI
 ↓
-最后补系统功能
+Finally add system functions
 ```
 
 ---
 
-# 32. 项目最重要的工程规则
+# 32. The most important engineering rules of the project
 
-整个项目长期遵循以下规则：
+The following rules have long been observed throughout the project:
 
-| 编号 | 工程规则 |
+| Numbering | Engineering rules |
 |---:|---|
-| 1 | Core 不依赖 Platform |
-| 2 | Core 不依赖 UI |
-| 3 | Core 不依赖具体 AI Model |
-| 4 | Core 不依赖具体 Hardware Vendor |
-| 5 | Adapter 不包含业务逻辑 |
-| 6 | UI 不直接访问 OS |
-| 7 | AI 不直接执行系统操作 |
-| 8 | 所有系统操作经过 Executor |
-| 9 | 所有策略经过 Validator |
-| 10 | 所有跨模块通信通过 Interface / Event / Contract |
-| 11 | 每一个公共接口必须有测试 |
-| 12 | 每一个平台 Adapter 必须有 Contract Test |
-| 13 | 每一个重要架构决定必须记录 ADR |
-| 14 | 每个模块必须有独立文档 |
-| 15 | 任何新功能必须优先考虑是否能作为新模块/插件加入 |
+| 1 | Core does not depend on Platform |
+| 2 | Core does not depend on UI |
+| 3 | Core does not rely on specific AI Model |
+| 4 | Core does not depend on specific Hardware Vendor |
+| 5 | Adapter does not contain business logic |
+| 6 | UI does not directly access OS |
+| 7 | AI does not directly perform system operations |
+| 8 | All systems are operated by Execuator |
+| 9 | All strategies pass through Validator. |
+| 10 | All cross-module communications via Interface / Event / Contact |
+| 11 | Every public interface must be tested. |
+| 12 | Every platform Adapter must have Contractor Test |
+| 13 | Every major structural decision must record ADR |
+| 14 | Each module must have a separate document |
+| 15 | Any new functionality must give priority to being added as a new module/plugin |
 
 ---
 
-# 33. 最终目标
+# 33. Final objectives
 
-AICore 最终希望形成：
+AICore finally hopes to form:
 
 ```mermaid
 flowchart TD
@@ -2063,8 +2063,8 @@ flowchart TD
     E --> F[Hardware]
 ```
 
-真正做到：
+In concrete terms:
 
-> **应用告诉计算机“我要完成什么”，AI 控制层理解“为什么以及现在应该怎么做”，操作系统负责安全执行，硬件负责真正完成计算。**
+> **The application tells the computer what it intends to do. The AI control layer interprets the context and proposes what should happen next. The operating system executes safely, and the hardware performs the computation.**
 
-最终形成一个高内聚、低耦合、黑盒化、接口化、跨平台、可扩展的 **AI-native Computer Control Layer**。
+The result is a cohesive, loosely coupled, black-boxed, interface-driven, cross-platform, and extensible **AI-native control layer**.

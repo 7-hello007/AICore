@@ -3,13 +3,13 @@ use aicore_contracts::platform::service::{
 };
 use std::sync::Arc;
 
-/// 平台无关的服务生命周期编排。
+/// The Platform ' s unrelated service life cycle organization.
 ///
-/// 封装 controller，提供：
-/// - install（若未安装）
-/// - ensure_started（幂等启动）
-/// - ensure_stopped（幂等停止）
-/// - health_check（轮询查询，直到 Running 或超时）
+/// Cover controll, provide:
+/// - install (if not installed)
+/// - ensure_started.
+/// - ensure_stopped.
+/// - health_check (survey queries until Running or timeout)
 pub struct ServiceLifecycle {
     controller: Arc<dyn IServiceController>,
 }
@@ -27,7 +27,7 @@ impl ServiceLifecycle {
         self.controller.query_state()
     }
 
-    /// 安装服务（若已安装则幂等）。
+    /// Installation services (if installed, etc.).
     pub fn install(&self, config: &ServiceConfig) -> ServiceOperationResult {
         if let Err(e) = config.validate() {
             return ServiceOperationResult::failed(ServiceState::Failed, e.to_string());
@@ -38,7 +38,7 @@ impl ServiceLifecycle {
         self.controller.install(config)
     }
 
-    /// 幂等启动。
+    /// Wait and see.
     pub fn ensure_started(&self) -> ServiceOperationResult {
         match self.controller.query_state() {
             ServiceState::Running => ServiceOperationResult::ok(ServiceState::Running),
@@ -56,7 +56,7 @@ impl ServiceLifecycle {
         }
     }
 
-    /// 幂等停止。
+    /// Wait a minute.
     pub fn ensure_stopped(&self) -> ServiceOperationResult {
         match self.controller.query_state() {
             ServiceState::Stopped => ServiceOperationResult::ok(ServiceState::Stopped),
@@ -74,7 +74,7 @@ impl ServiceLifecycle {
         }
     }
 
-    /// 卸载。
+    /// Unmount.
     pub fn uninstall(&self) -> ServiceOperationResult {
         if self.controller.query_state() == ServiceState::NotInstalled {
             return ServiceOperationResult::ok(ServiceState::NotInstalled);
@@ -83,7 +83,7 @@ impl ServiceLifecycle {
         self.controller.uninstall()
     }
 
-    /// 轮询直到目标状态或超时（~10s）。
+    /// Round queries until target state or timeout (~10s).
     fn wait_until(&self, target: ServiceState) -> ServiceOperationResult {
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(200));

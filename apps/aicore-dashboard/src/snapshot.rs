@@ -1,5 +1,5 @@
-//! V3.2：DashboardSnapshot 已上移到 `aicore_contracts::dashboard`。
+//! V3.2: DashboardSnapshot has been moved up to `aicore_contracts::dashboard`.
 //!
-//! 本模块作为兼容 re-export，不再定义本地类型。
+//! This module is not defined as compatible local type.
 
 pub use aicore_contracts::dashboard::snapshot::DashboardSnapshot;

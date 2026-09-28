@@ -1,27 +1,33 @@
+[English](README.md) | [Chinese](README.zh-CN.md)
+
 # AICore Benchmarks
 
-## V3.2 baseline
+## V3.2 Baseline
 
-| 文件 | 说明 |
+| File | Description |
 |---|---|
-| `v3.2-baseline.json` | 500 ticks 的延迟分布 + RSS + 线程数基线 |
+| `v3.2-baseline.json` | Baseline for the latency distribution, resident memory, and thread count across 500 ticks |
 
-## 生成
+## Generation
 
 ```bash
 cargo build -p aicore-bench
 ./target/debug/aicore-bench --ticks 500 --output benchmarks/v3.2-baseline.json
-指标
-字段	说明
-p50_tick_ms / p95_tick_ms / p99_tick_ms	tick 延迟分布
-rss_mb_before / rss_mb_after	前后 RSS
-rss_growth_mb	RSS 增长（应 ≤ 32MB）
-threads_before / threads_after	线程数
-Regression Gate
-同硬件同配置下，与基线对比：
+```
 
-p99_tick_ms 增长 ≤ 2x
+## Metrics
 
-rss_growth_mb 增长 ≤ 2x
+| Field | Description |
+|---|---|
+| `p50_tick_ms` / `p95_tick_ms` / `p99_tick_ms` | Tick latency distribution |
+| `rss_mb_before` / `rss_mb_after` | Resident memory before and after the run |
+| `rss_growth_mb` | Resident memory growth, which should not exceed 32 MB |
+| `threads_before` / `threads_after` | Thread count |
 
-threads_after 增长 ≤ +8
+## Regression Gate
+
+Compare results on the same hardware with the same configuration:
+
+- `p99_tick_ms` growth must not exceed 2x.
+- `rss_growth_mb` growth must not exceed 2x.
+- `threads_after` growth must not exceed 8 threads.

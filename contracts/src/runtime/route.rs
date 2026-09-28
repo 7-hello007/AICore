@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::context::workload::WorkloadType;
 
-/// Runtime 路由源。
+/// Runtime route source.
 ///
-/// 语义：
-/// - `Native`：不改变应用默认执行路径（fallback 默认）。
-/// - `Cpu`：CPU 执行。
-/// - `Gpu`：GPU 执行。
-/// - `Npu`：NPU 执行。
-/// - `AiRuntime`：通过 AICore 的 `IAiRuntime` 执行。
+/// Semantics:
+/// - `Native`: Do not change the default execution path (fallback default).
+/// - `Cpu`: CPU execution.
+/// - `Gpu`: GPU execution.
+/// - `Npu`: NPU execution.
+/// - `AiRuntime`_: adopted AICore Yes. `IAiRuntime` Implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeRouteSource {
@@ -31,27 +31,27 @@ impl RuntimeRouteSource {
         }
     }
 
-    /// 是否是"不改变应用"的路径。
+    /// Whether it's the "no-change application" path.
     pub fn is_native(self) -> bool {
         self == Self::Native
     }
 }
 
-/// 一条 Runtime 路由决策。
+/// An Runtime route decision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeRoute {
     pub route_id: String,
-    /// 决策对应的 workload。
+    /// Decision against workload.
     pub workload_type: WorkloadType,
-    /// 选择的执行路径。
+    /// Select the execution path.
     pub source: RuntimeRouteSource,
-    /// 是否真的应用了路由（false = 保持原生）。
+    /// Whether or not the route (false = maintenance) is really applied.
     pub applied: bool,
-    /// 决策原因。
+    /// Reason for decision-making.
     pub reason: String,
-    /// 置信度，0.0 - 1.0。
+    /// Confidence, 0.0-1.0.
     pub confidence: f32,
-    /// 决策时间。
+    /// Decision time.
     pub decided_at_unix_secs: u64,
 }
 

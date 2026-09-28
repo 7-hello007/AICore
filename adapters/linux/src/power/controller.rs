@@ -7,10 +7,10 @@ use aicore_contracts::{
     traits::power_controller::IPowerController,
 };
 
-/// Linux 电源控制器。
+/// Linux power controller.
 ///
-/// 优先使用 `/sys/firmware/acpi/platform_profile`（现代内核）。
-/// 若不可用，回退到 cpufreq `scaling_governor`（按 cpu0 代表）。
+/// Prefer `/sys/firmware/acpi/platform_profile` (modern kernel).
+/// Fall back to cpufreq `scaling_governor` if not available.
 pub struct LinuxPowerController;
 
 impl LinuxPowerController {
@@ -38,7 +38,7 @@ fn parse_profile(value: &str, platform_profile: bool) -> ContractResult<PowerMod
 
 impl IPowerController for LinuxPowerController {
     fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode> {
-        // 路径 1：platform_profile
+        // Path 1: platform_profile
         let platform_path = "/sys/firmware/acpi/platform_profile";
         if std::path::Path::new(platform_path).exists() {
             let value = match mode {
@@ -55,7 +55,7 @@ impl IPowerController for LinuxPowerController {
                     )));
                 },
                 Err(e) if e.kind() == ErrorKind::NotFound => {
-                    // 落到 cpufreq 回退
+                    // Fall back to cpufreq
                 },
                 Err(e) => {
                     return Err(ContractError::AdapterUnavailable(format!(
@@ -66,7 +66,7 @@ impl IPowerController for LinuxPowerController {
             }
         }
 
-        // 路径 2：cpufreq governor；遍历所有可用 CPU，而非只写 cpu0。
+        // Path 2: cpufreq governor; all available CPU, not just cpu0.
         let value = match mode {
             PowerMode::PowerSave => "powersave",
             PowerMode::Balanced => "schedutil",

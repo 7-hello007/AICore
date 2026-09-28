@@ -1,4 +1,4 @@
-//! RetentionScheduler 单元测试。
+//! RetentionScheduler unit test.
 
 use std::sync::Arc;
 

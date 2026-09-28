@@ -1,6 +1,7 @@
+[English](DASHBOARD_ARCHITECTURE.md) | [Chinese](DASHBOARD_ARCHITECTURE.zh-CN.md)
 # Dashboard Architecture
 
-Terminal 与 Web 必须是同一数据面的两个 Renderer。
+Terminal and web views are two renderers of the same data plane.
 
 ```mermaid
 flowchart TB
@@ -13,4 +14,4 @@ flowchart TB
     IPC --> WEB
 ```
 
-禁止两个 UI 自己重复采集系统状态。
+Neither interface should collect system state independently.

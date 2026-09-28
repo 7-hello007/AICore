@@ -1,19 +1,20 @@
+[English](API_DESIGN.md) | [Chinese](API_DESIGN.zh-CN.md)
 # API Design
 
-## API 类别
+## API Categories
 
-| 类型 | 用途 |
+| Type | Purpose |
 |---|---|
-| Public API | 外部应用与 CLI |
-| Internal API | Core/Runtime 内部模块 |
-| Platform Contract | Windows/Linux Adapter |
-| AI Runtime Contract | 模型与推理后端 |
-| Tier Contract | L0/L1/L2 |
-| Plugin API | 动态插件 |
+| Public API | External applications and CLI |
+| Internal API | Modules within Core and Runtime |
+| Platform Contract | Windows and Linux adapters |
+| AI Runtime Contract | Models and inference backends |
+| Tier Contract | L0/L1/L2 integration |
+| Plugin API | Dynamically loaded plugins |
 
-## 版本策略
+## Version Policy
 
-- additive change：minor
-- backward-incompatible change：major
-- deprecated API 必须有迁移说明
-- 内部实现变化不得改变稳定 Public API
+- Additive changes increment the minor version.
+- Backward-incompatible changes increment the major version.
+- Deprecated APIs require migration guidance.
+- Internal changes must preserve the stable public API.

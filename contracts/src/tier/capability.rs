@@ -1,22 +1,22 @@
 use serde::{Deserialize, Serialize};
 
-/// Tier 可提供的能力。
+/// Capabilities offered by a tier.
 ///
-/// Core 只通过能力发现工作；不允许用 `match tier.id`。
+/// Core discovers work only through capabilities; `match tier.id` is not allowed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TierCapability {
-    /// 观察 workload（进程 / 窗口 / 资源信号）。
+    /// Watch the workload (process/ window/ resource signal).
     WorkloadObservation,
-    /// 生成 / 提供 TaskMetadata。
+    /// Generates/ provides TaskMetadata.
     TaskMetadata,
-    /// 生成 / 声明 ResourceHints。
+    /// Generate/ declare ResourceHints.
     ResourceHints,
-    /// 提供原生任务控制（仅 L2）。
+    /// Provide primary mission control (L2 only).
     NativeTaskControl,
-    /// 提供用户意图。
+    /// Provide user intent.
     UserIntent,
-    /// 透明适配（Observe → Decide → Apply）。
+    /// Transparency fit (Observe → Decide → Apply).
     TransparentAdaptation,
 }
 

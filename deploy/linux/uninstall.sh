@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# AICore daemon 卸载脚本（Linux）。
+# AICore daemon unloaded script (Linux).
 #
-# 用法：
-#   sudo ./uninstall.sh           # 保留数据
-#   sudo ./uninstall.sh --purge   # 删除用户与数据
+# Usage:
+#   Sudo. /uninstall.sh # Keep data
+#   Sudo. /uninstall.sh-purge #Delete Users and Data
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
@@ -31,22 +31,22 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# 1. 停服务
+# 1. Closure of services
 systemctl stop aicored.service 2>/dev/null || true
 systemctl disable aicored.service 2>/dev/null || true
 
-# 2. 移除 unit
+# 2. Remove unit
 rm -f "${UNIT_DIR}/aicored.service"
 systemctl daemon-reload 2>/dev/null || true
 
-# 3. 移除二进制
+# 3. Remove Binary
 for bin in aicored aicore aicore-dashboard; do
     rm -f "${BIN_DIR}/${bin}"
 done
 rm -f "${BIN_DIR}/models/policy_classifier_v1.json"
 rmdir "${BIN_DIR}/models" 2>/dev/null || true
 
-# 4. 移除 plugins 与 share
+# 4. Remove plugins and share
 rm -rf "${SHARE_DIR}"
 
 if [ "$PURGE" = true ]; then

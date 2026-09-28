@@ -1,4 +1,4 @@
-# 停止并卸载 Windows Service。
+# Stop and unload Windows Service.
 param(
     [string]$ServiceName = "aicored",
     [switch]$Purge

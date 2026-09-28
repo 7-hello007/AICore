@@ -1,18 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-/// 模型种类。
+/// Model type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelKind {
-    /// 特征加权分类器（纯 Rust）。
+    /// Feature-weighted classifier (pure Rust).
     FeatureWeighted,
-    /// ONNX Runtime 模型（V3.2）。
+    /// ONNX Runtime model (V3.2).
     Onnx,
-    /// llama.cpp GGUF 模型（V3.2 或更晚）。
+    /// llama.cpp GGUF model (V3.2 or later).
     LlamaCpp,
 }
 
-/// 张量数据类型。
+/// Tensor data type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TensorDType {
@@ -33,11 +33,11 @@ impl TensorDType {
     }
 }
 
-/// 张量 schema。
+/// Tensor schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TensorSchema {
     pub name: String,
-    /// 形状，`-1` 表示动态维度。
+    /// shape, `-1` means dynamic dimensions.
     pub shape: Vec<i64>,
     pub dtype: TensorDType,
 }
@@ -55,17 +55,17 @@ impl TensorSchema {
     }
 }
 
-/// ONNX 模型专用声明。
+/// ONNX-specific model declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OnnxModelSpec {
     pub input_schema: Vec<TensorSchema>,
     pub output_schema: Vec<TensorSchema>,
-    /// 可选的 execution provider 偏好。
+    /// Optional execution-provider preference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_provider: Option<String>,
 }
 
-/// 模型来源。
+/// Model source.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ModelSource {
@@ -73,20 +73,20 @@ pub enum ModelSource {
     Inline { json: String },
 }
 
-/// 模型声明。
+/// Model declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelSpec {
     pub name: String,
     pub version: String,
     pub kind: ModelKind,
     pub source: ModelSource,
-    /// ONNX 专用声明；仅 `kind == Onnx` 时使用。
+    /// ONNX-specific declaration, used only when `kind == Onnx`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onnx_spec: Option<OnnxModelSpec>,
 }
 
 impl ModelSpec {
-    /// 校验 kind 与专用声明的匹配。
+    /// Validate that the kind matches its specialized declaration.
     pub fn validate(&self) -> crate::errors::AicoreResult<()> {
         use crate::errors::AicoreError;
         if self.name.trim().is_empty() {
@@ -109,7 +109,7 @@ impl ModelSpec {
     }
 }
 
-/// 加载后的模型句柄。
+/// A loaded model handle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelHandle {
     pub handle_id: String,
@@ -118,17 +118,17 @@ pub struct ModelHandle {
     pub loaded_at_unix_ms: u64,
 }
 
-/// 推理请求。
+/// Inference request.
 ///
-/// V3.2：保留 `features` 作为简单输入；`tensors` 用于 ONNX 多输入。
+/// V3.2 retains `features` for simple input; `tensors` supports multiple ONNX inputs.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct InferenceRequest {
     pub features: Vec<f32>,
-    /// ONNX 多输入张量（按 `input_schema` 顺序）。
+    /// ONNX input tensors, in `input_schema` order.
     pub tensors: Vec<TensorInput>,
 }
 
-/// 单个张量输入。
+/// Single tensor input.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TensorInput {
     pub name: String,
@@ -136,14 +136,14 @@ pub struct TensorInput {
     pub data: Vec<f32>,
 }
 
-/// 单个标签的推理分数。
+/// Inference score for one label.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InferenceLabel {
     pub label: String,
     pub score: f32,
 }
 
-/// 推理响应。
+/// Inference response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InferenceResponse {
     pub labels: Vec<InferenceLabel>,
@@ -151,7 +151,7 @@ pub struct InferenceResponse {
     pub model_version: String,
 }
 
-/// Runtime 能力。
+/// Runtime capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeCapability {
@@ -162,7 +162,7 @@ pub enum RuntimeCapability {
     LlamaCppInference,
 }
 
-/// Runtime 健康状态。
+/// Runtime health state.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RuntimeHealth {
     Healthy { loaded_models: usize },

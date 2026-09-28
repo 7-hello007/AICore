@@ -16,9 +16,9 @@ use aicore_contracts::{
     traits::{ai_provider::IAiProvider, ai_runtime::IAiRuntime},
 };
 
-/// 由 `IAiRuntime` 驱动的 `IAiProvider`。
+/// `IAiProvider` driven by `IAiRuntime`.
 ///
-/// 流程：`AiInput` → 特征提取 → `runtime.infer` → 标签映射 → policy 建议。
+/// Process: `AiInput`→ feature extract →`runtime.infer` → tag map →policy proposal.
 pub struct RuntimeBackedProvider {
     runtime: Arc<dyn IAiRuntime>,
     model_handle: ModelHandle,
@@ -59,10 +59,10 @@ impl RuntimeBackedProvider {
         self.runtime.clone()
     }
 
-    /// 从 `AiInput` 提取归一化特征。
+    /// Extracts the normalized feature from `AiInput`.
     ///
-    /// 前 4 维固定为 cpu / gpu / npu / mem；
-    /// 若 `feature_dim` > 4，其余填 0。
+    /// Former 4D fixed to cpu / gpu / npu / mem;
+    /// If `feature_dim` > 4, fill 0 for the rest.
     fn features(&self, input: &AiInput) -> Vec<f32> {
         let mut f = vec![
             (input.snapshot.cpu.usage_percent / 100.0).clamp(0.0, 1.0),
@@ -78,7 +78,7 @@ impl RuntimeBackedProvider {
         f
     }
 
-    /// 把标签映射为 policy 修改。
+    /// Moves the tab to policy.
     fn apply_label(&self, base: &ResourcePolicy, label: &str) -> ResourcePolicy {
         let mut policy = base.clone();
         policy.source = PolicySource::AiRecommended;
@@ -108,7 +108,7 @@ impl RuntimeBackedProvider {
             _ => {},
         }
 
-        // 保持不变量：overall >= 所有子资源
+        // Maintenance: overall > = all sub-resources
         let overall = [
             policy.cpu.priority,
             policy.gpu.priority,

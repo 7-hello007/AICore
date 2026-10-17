@@ -126,6 +126,27 @@ fn load_profile_from(path: &PathBuf) -> Result<UserProfile, String> {
 }
 
 impl IMemoryStore for JsonFileStore {
+    fn try_process_source(
+        &self,
+        limit: usize,
+    ) -> ContractResult<aicore_contracts::traits::memory_store::ProcessMemorySource> {
+        self.check_history_loaded()?;
+        self.check_profile_loaded()?;
+        let profile = self
+            .profile
+            .try_read()
+            .map_err(|_| ContractError::ResourceUnavailable("profile busy".into()))?;
+        let records = self
+            .cache
+            .try_read()
+            .map_err(|_| ContractError::ResourceUnavailable("history busy".into()))?;
+        Ok(
+            aicore_contracts::traits::memory_store::ProcessMemorySource::Snapshot {
+                profile: profile.clone(),
+                records: records[records.len().saturating_sub(limit)..].to_vec(),
+            },
+        )
+    }
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()> {
         self.check_history_loaded()?;
         let mut cache = self

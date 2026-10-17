@@ -30,8 +30,9 @@ pub struct PluginProcessSpec {
     pub artifact_path: String,
     /// Maximum execution time (ms). Post-time, host aborting process.
     pub timeout_ms: u64,
-    /// Reserved memory budget (MB), currently only verified non-zero; SubprocessPluginHost
-    /// Linux/Windows has not yet enforced the OS RAM ceiling.
+    /// OS-enforced memory budget in MiB: Windows job committed memory (whole
+    /// process tree), Linux per-process virtual address space hard limit.
+    /// This does not provide a filesystem/network sandbox for malicious code.
     pub memory_limit_mb: u64,
 }
 
@@ -82,8 +83,8 @@ pub struct PluginCrashEvent {
 /// Plugin Host Compact (process level segregation).
 ///
 /// Platform implementations provide:
-/// - Linux: `spawn` + `cgroups` (optional)
-/// - Windows: `CreateProcess` + Job Object (optional)
+/// - Linux: pre-exec hard address-space limit and owned process group.
+/// - Windows: suspended creation, verified Job Object limits, then resume.
 pub trait IPluginHost: Send + Sync {
     /// Starts the plugin process.
     fn spawn(&self, spec: &PluginProcessSpec) -> crate::errors::AicoreResult<PluginProcessHandle>;

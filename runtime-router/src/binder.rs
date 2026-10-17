@@ -333,10 +333,16 @@ impl DefaultRuntimeBinder {
                     Ok(outcome) => {
                         result.executed = outcome.device_id == hardware_request.device_id
                             && outcome.status.is_applied();
-                        result.reason = format!("guarded hardware executor: {:?}", outcome.status);
+                        result.reason = format!(
+                            "guarded hardware executor: device={} hint={:?} status={:?}",
+                            hardware_request.device_id, hardware_request.hint, outcome.status
+                        );
                     },
                     Err(error) => {
-                        result.reason = format!("guarded hardware executor error: {error}")
+                        result.reason = format!(
+                            "guarded hardware executor: device={} error={error}",
+                            hardware_request.device_id
+                        )
                     },
                 }
             } else {

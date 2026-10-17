@@ -16,6 +16,34 @@ pub struct ApplicationRegistry {
 }
 
 impl ApplicationRegistry {
+    pub fn try_get(&self, id: &ApplicationId) -> ContractResult<Option<ApplicationRegistration>> {
+        Ok(self
+            .apps
+            .try_read()
+            .map_err(|_| ContractError::ResourceUnavailable("registry busy".into()))?
+            .get(id)
+            .cloned())
+    }
+    pub fn try_register(&self, registration: ApplicationRegistration) -> ContractResult<()> {
+        if !registration.application_id.is_valid() {
+            return Err(ContractError::ContractInvalid(
+                "invalid application_id".into(),
+            ));
+        }
+        self.apps
+            .try_write()
+            .map_err(|_| ContractError::ResourceUnavailable("registry busy".into()))?
+            .insert(registration.application_id.clone(), registration);
+        Ok(())
+    }
+    pub fn try_unregister(&self, id: &ApplicationId) -> ContractResult<bool> {
+        Ok(self
+            .apps
+            .try_write()
+            .map_err(|_| ContractError::ResourceUnavailable("registry busy".into()))?
+            .remove(id)
+            .is_some())
+    }
     pub fn new() -> Self {
         Self::default()
     }

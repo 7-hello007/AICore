@@ -22,6 +22,26 @@ pub struct L1TaskSource {
 }
 
 impl L1TaskSource {
+    pub fn try_set_current(&self, contract: TaskContract) -> ContractResult<()> {
+        *self
+            .current
+            .try_write()
+            .map_err(|_| ContractError::ResourceUnavailable("L1 source busy".into()))? =
+            Some(contract);
+        Ok(())
+    }
+    pub fn try_clear_for(&self, id: &ApplicationId) -> ContractResult<bool> {
+        let mut slot = self
+            .current
+            .try_write()
+            .map_err(|_| ContractError::ResourceUnavailable("L1 source busy".into()))?;
+        if slot.as_ref().map(|t| &t.application_id) == Some(id) {
+            *slot = None;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
     pub fn new() -> Self {
         Self {
             current: RwLock::new(None),

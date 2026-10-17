@@ -39,6 +39,14 @@ fn default_plugins_dir() -> PathBuf {
 }
 
 fn main() -> ExitCode {
+    // Private, disposable IPC worker: no daemon initialization, migrations,
+    // service registration, telemetry or hardware setup may run on this path.
+    if std::env::args().nth(1).as_deref() == Some("--ipc-handler-worker") {
+        return match ipc_handler::run_process_worker() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::from(1),
+        };
+    }
     let args = match parse_args(std::env::args().skip(1)) {
         Ok(a) => a,
         Err(e) => {

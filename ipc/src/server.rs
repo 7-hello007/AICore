@@ -8,12 +8,48 @@ use aicore_contracts::ipc::protocol::{
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 
 const CONNECTION_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const HANDLER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 use crate::transport::{server_listen, IpcListener, IpcStream, IpcTransport};
 use crate::ClientIdentity;
 
 /// Request processor implemented by the daemon to map IPC requests to internal services.
 pub trait IpcHandler: Send + Sync + 'static {
+    /// An explicitly configured worker executable. It receives one private
+    /// ProcessHandlerRequest on stdin and returns one ResponseEnvelope.
+    fn process_spec(&self) -> Option<crate::process_handler::ProcessHandlerSpec> {
+        None
+    }
+    /// Trusted state access only: implementations must use nonblocking locks,
+    /// bounded data and no IO/inference or arbitrary synchronous callbacks.
+    /// Heavy work belongs to the disposable process, never these broker steps.
+    fn prepare_process_state(
+        &self,
+        _: &Envelope,
+        _: ClientIdentity,
+        _: std::time::Instant,
+    ) -> Result<serde_json::Value, IpcError> {
+        Ok(serde_json::Value::Null)
+    }
+    fn commit_process_response(
+        &self,
+        envelope: &Envelope,
+        _: ClientIdentity,
+        _: &serde_json::Value,
+        response: serde_json::Value,
+        _: std::time::Instant,
+    ) -> Result<ResponseEnvelope, IpcError> {
+        if !crate::process_handler::response_matches(envelope, &response) {
+            return Err(IpcError::invalid_request(
+                "invalid worker response identity",
+            ));
+        }
+        serde_json::from_value(response).map_err(|e| IpcError::internal(e.to_string()))
+    }
+    #[cfg(test)]
+    fn inline_test_fixture(&self) -> bool {
+        false
+    }
     /// Process a request and return response data; error returned via `Err`.
     fn handle(&self, request: Request) -> Result<ResponseData, IpcError>;
 
@@ -42,6 +78,9 @@ mod windows_pipe_tests {
     }
 
     impl IpcHandler for IdentityStatusHandler {
+        fn inline_test_fixture(&self) -> bool {
+            true
+        }
         fn handle(&self, _request: Request) -> Result<ResponseData, IpcError> {
             Err(IpcError::not_supported("identity required"))
         }
@@ -160,6 +199,86 @@ mod windows_pipe_tests {
         shutdown.send(()).await.unwrap();
         task.await.unwrap();
     }
+
+    #[tokio::test]
+    async fn p1_shutdown_closes_existing_sessions() {
+        let path = format!(
+            r"\\.\pipe\aicore-p1-shutdown-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let handler = Arc::new(IdentityStatusHandler {
+            saw_current_peer: AtomicBool::new(false),
+        });
+        let (shutdown, rx) = mpsc::channel(1);
+        let server = IpcServer::bind(&path, handler).unwrap().with_shutdown(rx);
+        let task = tokio::spawn(server.run());
+        let mut client = IpcClient::connect(&path).await.unwrap();
+        shutdown.send(()).await.unwrap();
+        task.await.unwrap();
+        assert!(
+            client
+                .call(
+                    "after-shutdown",
+                    Request::GetStatus,
+                    std::time::Duration::from_secs(1)
+                )
+                .await
+                .is_err(),
+            "a shutdown server must not leave live sessions processing requests"
+        );
+    }
+
+    #[tokio::test]
+    async fn p1_shutdown_closes_a_session_with_an_inflight_handler() {
+        let path = format!(
+            r"\\.\pipe\aicore-p1-inflight-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let handler = Arc::new(super::deadline_tests::BlockedHandler {
+            inline_fixture: true,
+            ..Default::default()
+        });
+        let (shutdown, rx) = mpsc::channel(1);
+        let server = IpcServer::bind(&path, handler.clone())
+            .unwrap()
+            .with_shutdown(rx);
+        let server_task = tokio::spawn(server.run());
+        let mut client = IpcClient::connect(&path).await.unwrap();
+        let client_task = tokio::spawn(async move {
+            client
+                .call(
+                    "blocked",
+                    Request::GetStatus,
+                    std::time::Duration::from_secs(2),
+                )
+                .await
+        });
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+        while !handler.started.load(Ordering::SeqCst) && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert!(handler.started.load(Ordering::SeqCst));
+        shutdown.send(()).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_millis(100), server_task)
+            .await
+            .unwrap()
+            .unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), client_task).await;
+        handler.release.store(true, Ordering::SeqCst);
+        assert!(result.unwrap().unwrap().is_err());
+        while !handler.finished.load(Ordering::SeqCst) && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert!(handler.finished.load(Ordering::SeqCst));
+    }
 }
 
 /// IPC Server。
@@ -168,6 +287,7 @@ pub struct IpcServer {
     handler: Arc<dyn IpcHandler>,
     shutdown_rx: mpsc::Receiver<()>,
     max_connections: Arc<Semaphore>,
+    handler_slots: Arc<Semaphore>,
 }
 
 impl IpcServer {
@@ -180,6 +300,7 @@ impl IpcServer {
             handler,
             shutdown_rx: rx,
             max_connections: Arc::new(Semaphore::new(32)),
+            handler_slots: Arc::new(Semaphore::new(32)),
         })
     }
 
@@ -203,6 +324,7 @@ impl IpcServer {
             "ipc server started"
         );
 
+        let mut connections = tokio::task::JoinSet::new();
         loop {
             tokio::select! {
                 biased;
@@ -216,11 +338,14 @@ impl IpcServer {
                     break;
                 }
 
+                _ = connections.join_next(), if !connections.is_empty() => {}
+
                 result = self.listener.accept() => {
                     match result {
                         Ok(stream) => {
                             let handler = self.handler.clone();
                             let permits = self.max_connections.clone();
+                            let handler_slots = self.handler_slots.clone();
                             let permit = match permits.try_acquire_owned() {
                                 Ok(permit) => permit,
                                 Err(_) => {
@@ -228,8 +353,8 @@ impl IpcServer {
                                     continue;
                                 },
                             };
-                            tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, handler, permit).await {
+                            connections.spawn(async move {
+                                if let Err(e) = handle_connection(stream, handler, permit, handler_slots).await {
                                     tracing::warn!(
                                         component = "ipc_server",
                                         event = "connection_error",
@@ -252,6 +377,8 @@ impl IpcServer {
                 }
             }
         }
+        connections.abort_all();
+        while connections.join_next().await.is_some() {}
     }
 }
 
@@ -259,14 +386,15 @@ async fn handle_connection(
     mut stream: IpcStream,
     handler: Arc<dyn IpcHandler>,
     _permit: OwnedSemaphorePermit,
+    handler_slots: Arc<Semaphore>,
 ) -> std::io::Result<()> {
     let identity = stream.peer_identity();
     let mut seen = HashSet::<String>::new();
     let mut acknowledgements = false;
     let mut selected_version = IPC_PROTOCOL_VERSION;
     loop {
-        let line = match tokio::time::timeout(CONNECTION_IDLE_TIMEOUT, stream.read_message()).await
-        {
+        let deadline = tokio::time::Instant::now() + CONNECTION_IDLE_TIMEOUT;
+        let line = match tokio::time::timeout_at(deadline, stream.read_message()).await {
             Ok(Ok(Some(line))) => line,
             Ok(Ok(None)) | Err(_) => break,
             Ok(Err(error)) => return Err(error),
@@ -286,7 +414,15 @@ async fn handle_connection(
                         IpcError::invalid_request("duplicate request_id"),
                     )
                 } else if matches!(envelope.payload, Request::Handshake { .. }) {
-                    let response = dispatch_blocking(handler.clone(), envelope, identity).await;
+                    let response = dispatch_connected(
+                        &mut stream,
+                        handler.clone(),
+                        envelope,
+                        identity,
+                        handler_slots.clone(),
+                        deadline.min(tokio::time::Instant::now() + HANDLER_TIMEOUT),
+                    )
+                    .await?;
                     if let Some(ResponseData::HandshakeAck {
                         selected_version: version,
                         ..
@@ -314,8 +450,15 @@ async fn handle_connection(
                         // payload, while V2 is accepted only on this session.
                         let mut canonical = envelope;
                         canonical.version = IPC_PROTOCOL_VERSION;
-                        let mut response =
-                            dispatch_blocking(handler.clone(), canonical, identity).await;
+                        let mut response = dispatch_connected(
+                            &mut stream,
+                            handler.clone(),
+                            canonical,
+                            identity,
+                            handler_slots.clone(),
+                            deadline.min(tokio::time::Instant::now() + HANDLER_TIMEOUT),
+                        )
+                        .await?;
                         response.version = selected_version;
                         response
                     }
@@ -330,9 +473,9 @@ async fn handle_connection(
         if send_ack {
             let mut ack = ResponseEnvelope::ok(response.request_id.clone(), ResponseData::Ack);
             ack.version = selected_version;
-            write_response(&mut stream, &ack).await?;
+            write_response(&mut stream, &ack, deadline).await?;
         }
-        write_response(&mut stream, &response).await?;
+        write_response(&mut stream, &response, deadline).await?;
         if seen.len() >= 4096 {
             break;
         }
@@ -340,30 +483,154 @@ async fn handle_connection(
     Ok(())
 }
 
-async fn dispatch_blocking(
+async fn dispatch_connected(
+    stream: &mut IpcStream,
     handler: Arc<dyn IpcHandler>,
     envelope: Envelope,
     identity: ClientIdentity,
+    slots: Arc<Semaphore>,
+    deadline: tokio::time::Instant,
+) -> std::io::Result<ResponseEnvelope> {
+    if handler.process_spec().is_none() {
+        return Ok(dispatch_blocking(handler, envelope, identity, slots, deadline).await);
+    }
+    tokio::select! {
+        response = dispatch_blocking(handler, envelope, identity, slots, deadline) => Ok(response),
+        incoming = stream.read_message() => {
+            match incoming? {
+                None => Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "client disconnected; handler process reaped")),
+                Some(_) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "pipelined requests are not supported by process handlers")),
+            }
+        }
+    }
+}
+
+pub(crate) async fn dispatch_blocking(
+    handler: Arc<dyn IpcHandler>,
+    envelope: Envelope,
+    identity: ClientIdentity,
+    slots: Arc<Semaphore>,
+    deadline: tokio::time::Instant,
 ) -> ResponseEnvelope {
     let request_id = envelope.request_id.clone();
-    tokio::task::spawn_blocking(move || process_envelope(&handler, envelope, identity))
-        .await
-        .unwrap_or_else(|error| {
-            ResponseEnvelope::err(request_id, IpcError::internal(error.to_string()))
-        })
+    let permit = match slots.try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return ResponseEnvelope::err(
+                request_id,
+                IpcError::new("ERR_RESOURCE_UNAVAILABLE", "IPC handler capacity reached"),
+            )
+        },
+    };
+    if let Some(spec) = handler.process_spec() {
+        let state = match handler.prepare_process_state(&envelope, identity, deadline.into_std()) {
+            Ok(state) => state,
+            Err(error) => return ResponseEnvelope::err(request_id, error),
+        };
+        return crate::process_handler::dispatch(
+            spec,
+            crate::process_handler::ProcessHandlerRequest {
+                envelope,
+                identity,
+                state,
+            },
+            handler,
+            permit,
+            deadline,
+        )
+        .await;
+    }
+    if tokio::time::Instant::now() >= deadline {
+        return ResponseEnvelope::err(
+            request_id,
+            IpcError::new("ERR_TIMEOUT", "deadline expired before execution"),
+        );
+    }
+    #[cfg(not(test))]
+    {
+        drop(permit);
+        ResponseEnvelope::err(
+            request_id,
+            IpcError::not_supported(
+                "synchronous IPC handlers have no termination guarantee; managed process required",
+            ),
+        )
+    }
+    #[cfg(test)]
+    if !handler.inline_test_fixture() {
+        return ResponseEnvelope::err(
+            request_id,
+            IpcError::not_supported("managed process required"),
+        );
+    }
+    #[cfg(test)]
+    {
+        dispatch_inline_fixture(handler, envelope, identity, permit, deadline).await
+    }
+}
+
+#[cfg(test)]
+async fn dispatch_inline_fixture(
+    handler: Arc<dyn IpcHandler>,
+    envelope: Envelope,
+    identity: ClientIdentity,
+    permit: OwnedSemaphorePermit,
+    deadline: tokio::time::Instant,
+) -> ResponseEnvelope {
+    let request_id = envelope.request_id.clone();
+    let (finished, result) = tokio::sync::oneshot::channel();
+    let worker_id = request_id.clone();
+    let worker = std::thread::Builder::new()
+        .name("aicore-ipc-handler".into())
+        .spawn(move || {
+            // Keep capacity until synchronous work actually stops, even when the
+            // connection times out or shuts down. Never grow an unbounded pool.
+            let _permit = permit;
+            if finished.is_closed() || std::time::Instant::now() >= deadline.into_std() {
+                return;
+            }
+            let response = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                process_envelope(&handler, envelope, identity)
+            }))
+            .unwrap_or_else(|_| {
+                ResponseEnvelope::err(worker_id, IpcError::internal("IPC handler panicked"))
+            });
+            let _ = finished.send(response);
+        });
+    if let Err(error) = worker {
+        return ResponseEnvelope::err(request_id, IpcError::internal(error.to_string()));
+    }
+    match tokio::time::timeout_at(deadline, result).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => ResponseEnvelope::err(request_id, IpcError::internal(error.to_string())),
+        Err(_) => ResponseEnvelope::err(
+            request_id,
+            IpcError::new(
+                "ERR_TIMEOUT",
+                "IPC handler deadline exceeded; in-flight work may still finish",
+            ),
+        ),
+    }
 }
 
 async fn write_response(
     stream: &mut IpcStream,
     response: &ResponseEnvelope,
+    deadline: tokio::time::Instant,
 ) -> std::io::Result<()> {
     let json = serde_json::to_string(response).unwrap_or_else(|_| {
             r#"{"version":"1.0","request_id":"unknown","success":false,"error":{"code":"ERR_INTERNAL","message":"serialize failed"}}"#.to_string()
         });
-    stream.write_message(&json).await
+    tokio::time::timeout_at(deadline, stream.write_message(&json))
+        .await
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC response write timed out")
+        })?
 }
 
-fn process_envelope(
+/// Direct protocol processing for worker/local callers only. Network dispatch
+/// deliberately never calls a synchronous handler outside a managed process.
+pub fn process_envelope(
     handler: &Arc<dyn IpcHandler>,
     envelope: Envelope,
     identity: ClientIdentity,
@@ -448,6 +715,9 @@ mod tests {
     struct StatusHandler;
 
     impl IpcHandler for StatusHandler {
+        fn inline_test_fixture(&self) -> bool {
+            true
+        }
         fn handle(&self, request: Request) -> Result<ResponseData, IpcError> {
             match request {
                 Request::GetStatus => Ok(ResponseData::Status {
@@ -637,5 +907,143 @@ mod tests {
                 .code,
             "ERR_PROTOCOL_MISMATCH"
         );
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+    #[derive(Default)]
+    pub(super) struct BlockedHandler {
+        pub(super) inline_fixture: bool,
+        pub(super) started: std::sync::atomic::AtomicBool,
+        pub(super) release: std::sync::atomic::AtomicBool,
+        pub(super) finished: std::sync::atomic::AtomicBool,
+    }
+    impl IpcHandler for BlockedHandler {
+        fn inline_test_fixture(&self) -> bool {
+            self.inline_fixture
+        }
+        fn handle(&self, _: Request) -> Result<ResponseData, IpcError> {
+            use std::sync::atomic::Ordering;
+            self.started.store(true, Ordering::SeqCst);
+            let start = std::time::Instant::now();
+            while !self.release.load(Ordering::SeqCst)
+                && start.elapsed() < std::time::Duration::from_secs(1)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            self.finished.store(true, Ordering::SeqCst);
+            Ok(ResponseData::Ack)
+        }
+        fn name(&self) -> &'static str {
+            "blocked"
+        }
+    }
+
+    #[tokio::test]
+    async fn p1_expired_handler_deadline_never_starts_work() {
+        let handler = Arc::new(BlockedHandler::default());
+        let response = dispatch_blocking(
+            handler.clone(),
+            Envelope::new("expired", Request::GetStatus),
+            ClientIdentity::Internal,
+            Arc::new(Semaphore::new(1)),
+            tokio::time::Instant::now() - std::time::Duration::from_millis(1),
+        )
+        .await;
+        assert_eq!(response.error.unwrap().code, "ERR_TIMEOUT");
+        assert!(!handler.started.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn p1_timed_out_handler_keeps_capacity_until_it_actually_finishes() {
+        use std::sync::atomic::Ordering;
+        let handler = Arc::new(BlockedHandler {
+            inline_fixture: true,
+            ..Default::default()
+        });
+        let slots = Arc::new(Semaphore::new(1));
+        let response = dispatch_blocking(
+            handler.clone(),
+            Envelope::new("blocked", Request::GetStatus),
+            ClientIdentity::Internal,
+            slots.clone(),
+            tokio::time::Instant::now() + std::time::Duration::from_millis(30),
+        )
+        .await;
+        assert_eq!(response.error.unwrap().code, "ERR_TIMEOUT");
+        assert!(handler.started.load(Ordering::SeqCst));
+        let busy = dispatch_blocking(
+            handler.clone(),
+            Envelope::new("busy", Request::GetStatus),
+            ClientIdentity::Internal,
+            slots.clone(),
+            tokio::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .await;
+        assert_eq!(busy.error.unwrap().code, "ERR_RESOURCE_UNAVAILABLE");
+        handler.release.store(true, Ordering::SeqCst);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+        while slots.available_permits() == 0 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert_eq!(slots.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn p1_handler_deadline_must_not_leave_background_execution() {
+        use std::sync::atomic::Ordering;
+        let handler = Arc::new(BlockedHandler::default());
+        let response = dispatch_blocking(
+            handler.clone(),
+            Envelope::new("termination", Request::GetStatus),
+            ClientIdentity::Internal,
+            Arc::new(Semaphore::new(1)),
+            tokio::time::Instant::now() + std::time::Duration::from_millis(30),
+        )
+        .await;
+        assert_eq!(response.error.unwrap().code, "ERR_NOT_SUPPORTED");
+        assert!(
+            !handler.started.load(Ordering::SeqCst),
+            "unsafe synchronous Handler started despite no termination mechanism"
+        );
+        assert!(
+            !handler.finished.load(Ordering::SeqCst),
+            "refusal must not be represented as completed execution"
+        );
+    }
+    struct SlowHandler;
+    impl IpcHandler for SlowHandler {
+        fn inline_test_fixture(&self) -> bool {
+            true
+        }
+        fn handle(&self, _: Request) -> Result<ResponseData, IpcError> {
+            std::thread::sleep(std::time::Duration::from_secs(6));
+            Ok(ResponseData::Ack)
+        }
+        fn name(&self) -> &'static str {
+            "slow"
+        }
+    }
+    #[tokio::test]
+    async fn p1_handler_response_has_a_deadline() {
+        let start = std::time::Instant::now();
+        let response = dispatch_blocking(
+            Arc::new(SlowHandler),
+            Envelope::new("slow", Request::GetStatus),
+            ClientIdentity::Internal,
+            Arc::new(Semaphore::new(1)),
+            tokio::time::Instant::now() + HANDLER_TIMEOUT,
+        )
+        .await;
+        assert!(
+            !response.success,
+            "handler over deadline must not report success"
+        );
+        assert_eq!(response.error.unwrap().code, "ERR_TIMEOUT");
+        assert!(start.elapsed() < std::time::Duration::from_millis(5500));
+        // Finite test provider: let its detached work finish before test exit.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     }
 }

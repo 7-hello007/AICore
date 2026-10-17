@@ -1,5 +1,6 @@
 pub mod client;
 pub mod identity;
+pub mod process_handler;
 pub mod server;
 pub mod transport;
 

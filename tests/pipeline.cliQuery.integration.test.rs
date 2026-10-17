@@ -50,12 +50,45 @@ mod linux_tests {
         }
     }
 
+    #[derive(Clone)]
     struct TestHandler {
         registry: Arc<ApplicationRegistry>,
         history: Arc<TestHistory>,
     }
 
     impl IpcHandler for TestHandler {
+        fn process_spec(&self) -> Option<aicore_ipc::process_handler::ProcessHandlerSpec> {
+            Some(aicore_ipc::process_handler::ProcessHandlerSpec {
+                process:aicore_contracts::plugin::host::PluginProcessSpec { plugin_id:"history-fixture".into(),artifact_path:"/usr/bin/python3".into(),timeout_ms:1000,memory_limit_mb:64 },
+                args:vec!["-c".into(),"import sys,json; print(json.dumps(json.loads(sys.stdin.readline())['state']),flush=True)".into()],
+            })
+        }
+        fn prepare_process_state(
+            &self,
+            envelope: &aicore_contracts::ipc::protocol::Envelope,
+            peer: aicore_ipc::ClientIdentity,
+            _: std::time::Instant,
+        ) -> Result<serde_json::Value, aicore_contracts::ipc::protocol::IpcError> {
+            use aicore_contracts::ipc::protocol::{IpcError, ResponseEnvelope};
+            let response = if let Request::GetRecentTicks { limit } = envelope.payload {
+                let buf = self
+                    .history
+                    .buf
+                    .try_lock()
+                    .map_err(|_| IpcError::internal("fixture history busy"))?;
+                let start = buf.len().saturating_sub(limit.min(buf.len()));
+                ResponseEnvelope::ok(
+                    &envelope.request_id,
+                    ResponseData::RecentTicks {
+                        ticks: buf.iter().skip(start).cloned().collect(),
+                    },
+                )
+            } else {
+                let handler: Arc<dyn IpcHandler> = Arc::new(self.clone());
+                aicore_ipc::server::process_envelope(&handler, envelope.clone(), peer)
+            };
+            serde_json::to_value(response).map_err(|e| IpcError::internal(e.to_string()))
+        }
         fn handle(
             &self,
             request: Request,

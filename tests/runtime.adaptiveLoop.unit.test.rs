@@ -122,6 +122,205 @@ fn build_loop(
 }
 
 #[test]
+fn p1_l0_hint_preserves_selected_ai_feedback_and_user_policies() {
+    use aicore_contracts::{
+        context::snapshot::ContextSnapshot,
+        policy::priority::PolicySource,
+        tier::id::TierId,
+        traits::adaptation_provider::{AdaptationHint, IAdaptationProvider},
+    };
+    struct Selected(ResourcePolicy);
+    impl IPolicyEngine for Selected {
+        fn generate(&self, _: &ComputerSnapshot, _: &ContextSnapshot) -> ResourcePolicy {
+            self.0.clone()
+        }
+        fn name(&self) -> &'static str {
+            "selected"
+        }
+    }
+    struct Hint(f32, PolicySource);
+    impl IAdaptationProvider for Hint {
+        fn suggest(
+            &self,
+            _: &ComputerSnapshot,
+            _: &ContextSnapshot,
+        ) -> ContractResult<Option<AdaptationHint>> {
+            Ok(Some(AdaptationHint {
+                policy_override: Some(ResourcePolicy {
+                    policy_id: "l0".into(),
+                    source: self.1,
+                    ..Default::default()
+                }),
+                reason: "L0".into(),
+                confidence: self.0,
+            }))
+        }
+        fn source_name(&self) -> &'static str {
+            "l0.adaptation_provider"
+        }
+    }
+    for (source, hint_source, confidence, replace) in [
+        (
+            PolicySource::AiRecommended,
+            PolicySource::RuleBased,
+            1.0,
+            false,
+        ),
+        (PolicySource::RuleBased, PolicySource::RuleBased, 1.0, false),
+        (
+            PolicySource::UserSpecified,
+            PolicySource::RuleBased,
+            1.0,
+            false,
+        ),
+        (
+            PolicySource::DefaultFallback,
+            PolicySource::RuleBased,
+            1.0,
+            true,
+        ),
+        (
+            PolicySource::DefaultFallback,
+            PolicySource::RuleBased,
+            0.49,
+            false,
+        ),
+        (
+            PolicySource::DefaultFallback,
+            PolicySource::RuleBased,
+            f32::NAN,
+            false,
+        ),
+        (
+            PolicySource::AiRecommended,
+            PolicySource::UserSpecified,
+            1.0,
+            true,
+        ),
+        (
+            PolicySource::UserSpecified,
+            PolicySource::UserSpecified,
+            1.0,
+            false,
+        ),
+    ] {
+        let selected = ResourcePolicy {
+            policy_id: "selected".into(),
+            source,
+            reason: "verified-effect regression fallback".into(),
+            ..Default::default()
+        };
+        let hub = Arc::new(aicore_tier::TierHub::new());
+        hub.register_adaptation_provider(
+            TierId::new("l0"),
+            100,
+            Arc::new(Hint(confidence, hint_source)),
+        )
+        .unwrap();
+        let engine = Arc::new(Selected(selected.clone()));
+        let runtime = AdaptiveLoop::with_default_validator(
+            Arc::new(MockTelemetry::ok()),
+            Arc::new(ContextEngine::new(Arc::new(RuleBasedClassifier::new()))),
+            engine.clone(),
+            engine,
+            Arc::new(OkExecutor),
+            AdaptiveLoopConfig::default(),
+        )
+        .with_tier_hub(hub);
+        let outcome = runtime.tick(&ExecutionTargets::default());
+        assert!(outcome.success);
+        let actual: ResourcePolicy =
+            serde_json::from_str(outcome.current_policy_json.as_deref().unwrap()).unwrap();
+        if replace {
+            assert_eq!(actual.policy_id, "l0");
+        } else {
+            assert_eq!(
+                actual, selected,
+                "L0 must preserve selected source {source:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn p1_binding_identity_and_published_route_match_actual_execution() {
+    use aicore_contracts::{
+        context::snapshot::ContextSnapshot,
+        runtime::route::{RuntimeRoute, RuntimeRouteSource},
+        traits::{
+            runtime_binder::{BindingRequest, BindingResult, IRuntimeBinder},
+            runtime_router::IRuntimeRouter,
+        },
+    };
+    struct Router;
+    impl IRuntimeRouter for Router {
+        fn decide(
+            &self,
+            _: &ComputerSnapshot,
+            context: &ContextSnapshot,
+        ) -> ContractResult<RuntimeRoute> {
+            let mut route = RuntimeRoute::routed(
+                context.workload_type,
+                RuntimeRouteSource::Cpu,
+                "selected",
+                1.0,
+            );
+            route.route_id = "selected-route".into();
+            Ok(route)
+        }
+        fn name(&self) -> &'static str {
+            "test_router"
+        }
+    }
+    struct Binder(u8);
+    impl IRuntimeBinder for Binder {
+        fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult> {
+            Ok(BindingResult {
+                route_id: if self.0 == 0 {
+                    "other-route".into()
+                } else {
+                    request.route.route_id.clone()
+                },
+                source: if self.0 == 1 {
+                    RuntimeRouteSource::Gpu
+                } else {
+                    request.route.source
+                },
+                executed: self.0 != 2,
+                inference: None,
+                reason: "test binding".into(),
+                latency_ms: 0,
+            })
+        }
+        fn name(&self) -> &'static str {
+            "test_binder"
+        }
+        fn loaded_models(&self) -> Vec<aicore_contracts::ai::runtime::ModelHandle> {
+            vec![]
+        }
+    }
+    for case in 0..4 {
+        let runtime = build_loop(
+            Arc::new(MockTelemetry::ok()),
+            Arc::new(OkExecutor),
+            AdaptiveLoopConfig::default(),
+        )
+        .with_runtime_router(Arc::new(Router))
+        .with_runtime_binder(Arc::new(Binder(case)));
+        let outcome = runtime.tick(&ExecutionTargets::default());
+        assert_eq!(
+            outcome.runtime_binding_executed == Some(true),
+            case == 3,
+            "wrong route/source must never be attributed to this tick"
+        );
+        let route: RuntimeRoute =
+            serde_json::from_str(outcome.runtime_route_json.as_deref().unwrap()).unwrap();
+        assert_eq!(route.route_id, "selected-route");
+        assert_eq!(route.applied, case == 3, "selection alone is not execution");
+    }
+}
+
+#[test]
 fn tick_with_success_returns_outcome() {
     let telemetry = Arc::new(MockTelemetry::ok());
     let executor = Arc::new(OkExecutor);

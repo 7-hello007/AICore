@@ -1,5 +1,5 @@
 /// Identity observed by the IPC transport, never supplied by the request body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ClientIdentity {
     /// Linux SO_PEERCRED plus process start tick observed at accept time.
     #[cfg(target_os = "linux")]

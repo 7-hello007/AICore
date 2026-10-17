@@ -1,7 +1,7 @@
 //! V1 JSON → V2 SQLite migration.
 //!
 //! Semantics:
-//! - If the target SQLite is present and not empty, skip the migration.
+//! - Resume matching partial imports; refuse to merge unrelated databases.
 //! - If source JSON does not exist, skip.
 //! - After successful migration, rename source JSON as `.migrated` suffix and keep backup.
 
@@ -44,32 +44,26 @@ pub fn migrate_json_to_sqlite(
 
     let sqlite = SqliteMemoryStore::open(sqlite_path)?;
 
-    // Target is not empty, skip
-    if sqlite.record_count()? > 0 {
-        report.skipped = true;
-        report.skip_reason = Some("target sqlite already has records".to_string());
-        return Ok(report);
-    }
-
     let source = JsonFileStore::new(json_history, json_profile);
-
-    // Organisation
-    let records = source.load_records(1_000_000)?;
-    for r in &records {
-        sqlite.append_record(r)?;
-    }
-    report.records_migrated = records.len();
-
-    // Move profile
+    // Read and validate the complete source before committing anything. Records,
+    // profile and completion marker share one SQLite transaction.
+    let records = source.load_records(usize::MAX)?;
     let profile = source.load_profile()?;
-    if profile.updated_at_unix_secs > 0 {
-        sqlite.save_profile(&profile)?;
-        report.profile_migrated = true;
+    let identity = std::fs::canonicalize(json_history)
+        .map_err(|e| ContractError::AdapterUnavailable(e.to_string()))?;
+    report = sqlite.import_json_snapshot(&identity.to_string_lossy(), &records, &profile)?;
+    if report.skipped {
+        return Ok(report);
     }
 
     // Backup Source File
     let backup_path = json_history.with_extension("json.migrated");
-    if let Err(e) = std::fs::rename(json_history, backup_path) {
+    // Unlike rename, creating a hard link cannot replace an existing archive.
+    // If archiving/removal fails, keep the source; the committed marker makes
+    // the next import idempotent without overwriting any older backup.
+    if let Err(e) = std::fs::hard_link(json_history, backup_path)
+        .and_then(|()| std::fs::remove_file(json_history))
+    {
         // Migration completed, renaming failed as a warning
         tracing::warn!(
             component = "memory_migration",
@@ -107,19 +101,6 @@ pub fn migrate_with_defaults() -> ContractResult<MigrationReport> {
         return Ok(MigrationReport {
             skipped: true,
             skip_reason: Some("no legacy json history".to_string()),
-            ..Default::default()
-        });
-    }
-
-    if sqlite_path.exists()
-        && SqliteMemoryStore::open(&sqlite_path)
-            .and_then(|s| s.record_count())
-            .unwrap_or(0)
-            > 0
-    {
-        return Ok(MigrationReport {
-            skipped: true,
-            skip_reason: Some("sqlite already initialized".to_string()),
             ..Default::default()
         });
     }

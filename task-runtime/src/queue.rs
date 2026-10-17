@@ -48,6 +48,99 @@ impl Default for InMemoryTaskQueue {
 }
 
 impl ITaskQueue for InMemoryTaskQueue {
+    fn try_enqueue(&self, task: QueuedTask) -> ContractResult<String> {
+        let mut state = self
+            .state
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("queue busy".into()))?;
+        insert_task(&mut state, task)
+    }
+    fn try_enqueue_preparation(
+        &self,
+        task: QueuedTask,
+        ready: u64,
+        authorization: Arc<dyn IPreparationAuthorization>,
+    ) -> ContractResult<String> {
+        if task.contract.deadline_unix_secs.is_none()
+            || task
+                .contract
+                .deadline_unix_secs
+                .is_some_and(|d| ready >= d.saturating_mul(1000))
+        {
+            return Err(ContractError::InvalidRequest(
+                "preparation requires a ready time before expiry".into(),
+            ));
+        }
+        let mut state = self
+            .state
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("queue busy".into()))?;
+        let id = insert_task(&mut state, task)?;
+        state
+            .preparations
+            .insert(id.clone(), (ready, authorization));
+        Ok(id)
+    }
+    fn try_get(&self, id: &str) -> ContractResult<Option<QueuedTask>> {
+        Ok(self
+            .state
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("queue busy".into()))?
+            .tasks
+            .get(id)
+            .cloned())
+    }
+    fn try_cancel(&self, id: &str) -> ContractResult<()> {
+        let mut state = self
+            .state
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("queue busy".into()))?;
+        let task = state
+            .tasks
+            .get_mut(id)
+            .ok_or_else(|| ContractError::ResourceUnavailable(format!("task not found: {id}")))?;
+        transition(task.state, TaskState::Cancelled)?;
+        task.state = TaskState::Cancelled;
+        task.finished_at_unix_ms = Some(now_unix_ms());
+        task.result_message = None;
+        state.preparations.remove(id);
+        Ok(())
+    }
+    fn try_cancel_application(
+        &self,
+        app: &aicore_contracts::application::id::ApplicationId,
+        deadline: std::time::Instant,
+    ) -> ContractResult<()> {
+        let mut state = self
+            .state
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("queue busy".into()))?;
+        let mut ids = Vec::new();
+        for (id, task) in &state.tasks {
+            if std::time::Instant::now() >= deadline {
+                return Err(ContractError::ResourceUnavailable(
+                    "queue snapshot deadline".into(),
+                ));
+            }
+            if &task.contract.application_id == app && task.state.is_active() {
+                ids.push(id.clone());
+            }
+        }
+        for id in ids {
+            if std::time::Instant::now() >= deadline {
+                return Err(ContractError::ResourceUnavailable(
+                    "partial application cancellation; deadline".into(),
+                ));
+            }
+            let task = state.tasks.get_mut(&id).unwrap();
+            transition(task.state, TaskState::Cancelled)?;
+            task.state = TaskState::Cancelled;
+            task.finished_at_unix_ms = Some(now_unix_ms());
+            task.result_message = None;
+            state.preparations.remove(&id);
+        }
+        Ok(())
+    }
     fn enqueue(&self, task: QueuedTask) -> ContractResult<String> {
         let mut state = self.lock()?;
         insert_task(&mut state, task)

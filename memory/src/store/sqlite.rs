@@ -6,7 +6,8 @@ use aicore_contracts::{
     memory::{profile::UserProfile, record::HistoricalRecord},
     traits::memory_store::IMemoryStore,
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
+use sha2::{Digest, Sha256};
 
 /// Current schema version.
 pub const CURRENT_SCHEMA_VERSION: u32 = 2;
@@ -40,6 +41,16 @@ pub struct SqliteMemoryStore {
 }
 
 impl SqliteMemoryStore {
+    /// Worker reads never create a DB, migrate a schema or change PRAGMAs.
+    pub fn open_read_only(path: impl Into<PathBuf>) -> ContractResult<Self> {
+        let path = path.into();
+        let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(map_sqlite)?;
+        Ok(Self {
+            path,
+            conn: Mutex::new(conn),
+        })
+    }
     /// Opens or creates a database.
     ///
     /// - If the document does not exist, the migration will be created and applied.
@@ -83,6 +94,58 @@ impl SqliteMemoryStore {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub(super) fn import_json_snapshot(
+        &self,
+        source: &str,
+        records: &[HistoricalRecord],
+        profile: &UserProfile,
+    ) -> ContractResult<super::migrate::MigrationReport> {
+        let serialized = serde_json::to_string(&(records, profile))
+            .map_err(|e| ContractError::InvalidRequest(e.to_string()))?;
+        // Bookkeeping must not retain another copy of historical/profile data
+        // after consent changes or retention removes the real records.
+        let fingerprint = format!("{:x}", Sha256::digest(serialized.as_bytes()));
+        let marker = format!("json_migration:{:x}", Sha256::digest(source.as_bytes()));
+        self.with_conn(|conn| {
+            let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate).map_err(map_sqlite)?;
+            let completed: Option<String> = tx.query_row("SELECT value FROM kv WHERE key=?1", [&marker], |row| row.get(0)).optional().map_err(map_sqlite)?;
+            if completed.as_deref() == Some(fingerprint.as_str()) { return Ok(Default::default()); }
+            let count: i64 = tx.query_row("SELECT COUNT(*) FROM records", [], |row| row.get(0)).map_err(map_sqlite)?;
+            if count > 0 {
+                let mut overlaps = false;
+                for record in records {
+                    let found: Option<i64> = tx.query_row("SELECT 1 FROM records WHERE record_id=?1", [&record.record_id], |row| row.get(0)).optional().map_err(map_sqlite)?;
+                    overlaps |= found.is_some();
+                }
+                // Preserve the existing refusal to merge an unrelated database.
+                // An old interrupted import is recognized by shared record IDs.
+                if !overlaps { return Ok(super::migrate::MigrationReport { skipped: true, skip_reason: Some("target sqlite already has unrelated records".into()), ..Default::default() }); }
+            }
+            let mut report = super::migrate::MigrationReport::default();
+            for record in records {
+                let existing: Option<String> = tx.query_row("SELECT payload_json FROM records WHERE record_id=?1", [&record.record_id], |row| row.get(0)).optional().map_err(map_sqlite)?;
+                if let Some(payload) = existing {
+                    let previous: HistoricalRecord = serde_json::from_str(&payload).map_err(|e| ContractError::InvalidRequest(e.to_string()))?;
+                    if previous != *record { return Err(ContractError::InvalidRequest(format!("migration record conflict: {}", record.record_id))); }
+                } else {
+                    let payload = serde_json::to_string(record).map_err(|e| ContractError::InvalidRequest(e.to_string()))?;
+                    tx.execute("INSERT INTO records (record_id,timestamp_unix_ms,payload_json) VALUES (?1,?2,?3)", params![record.record_id, record.timestamp_unix_ms as i64, payload]).map_err(map_sqlite)?;
+                    report.records_migrated += 1;
+                }
+            }
+            let previous: Option<String> = tx.query_row("SELECT value FROM kv WHERE key=?1", [KV_PROFILE], |row| row.get(0)).optional().map_err(map_sqlite)?;
+            let previous: Option<UserProfile> = previous.map(|value| serde_json::from_str(&value)).transpose().map_err(|e| ContractError::InvalidRequest(e.to_string()))?;
+            if profile.updated_at_unix_secs > 0 && previous.as_ref().map_or(true, |old| old.updated_at_unix_secs < profile.updated_at_unix_secs) {
+                let payload = serde_json::to_string(profile).map_err(|e| ContractError::InvalidRequest(e.to_string()))?;
+                tx.execute("INSERT INTO kv (key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![KV_PROFILE, payload]).map_err(map_sqlite)?;
+                report.profile_migrated = true;
+            }
+            tx.execute("INSERT INTO kv (key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![marker, fingerprint]).map_err(map_sqlite)?;
+            tx.commit().map_err(map_sqlite)?;
+            Ok(report)
+        })
     }
 
     fn with_conn<F, T>(&self, f: F) -> ContractResult<T>
@@ -188,6 +251,22 @@ fn write_schema_version(conn: &Connection, version: u32) -> ContractResult<()> {
 }
 
 impl IMemoryStore for SqliteMemoryStore {
+    fn try_process_source(
+        &self,
+        _: usize,
+    ) -> ContractResult<aicore_contracts::traits::memory_store::ProcessMemorySource> {
+        let path = self.path.to_string_lossy();
+        if path.is_empty() || path == ":memory:" || path.starts_with("file:") {
+            return Err(ContractError::NotSupported(
+                "SQLite source is not a reopenable file path for managed IPC".into(),
+            ));
+        }
+        Ok(
+            aicore_contracts::traits::memory_store::ProcessMemorySource::Sqlite {
+                path: self.path.clone(),
+            },
+        )
+    }
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()> {
         let payload = serde_json::to_string(record)
             .map_err(|e| ContractError::AdapterUnavailable(format!("serialize record: {}", e)))?;
@@ -315,6 +394,33 @@ impl IMemoryStore for SqliteMemoryStore {
 #[cfg(test)]
 mod migration_tests {
     use super::*;
+
+    #[test]
+    fn p1_completion_marker_does_not_retain_replaced_profile() {
+        let store = SqliteMemoryStore::open_in_memory().unwrap();
+        let profile = UserProfile {
+            version: "private-old-profile".into(),
+            updated_at_unix_secs: 100,
+            ..Default::default()
+        };
+        store
+            .import_json_snapshot("fixture-source", &[], &profile)
+            .unwrap();
+        store.save_profile(&UserProfile::default()).unwrap();
+        let values = store
+            .with_conn(|conn| {
+                let mut statement = conn.prepare("SELECT value FROM kv").map_err(map_sqlite)?;
+                let rows = statement
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(map_sqlite)?;
+                rows.collect::<Result<Vec<_>, _>>().map_err(map_sqlite)
+            })
+            .unwrap();
+        assert!(
+            !values.join(" ").contains("private-old-profile"),
+            "migration bookkeeping must not retain an extra copy of replaced personal data"
+        );
+    }
 
     #[test]
     fn failed_legacy_conversion_rolls_back_schema_and_data() {

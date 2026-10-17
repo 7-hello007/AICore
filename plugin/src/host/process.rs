@@ -26,9 +26,11 @@ pub struct SubprocessPluginHost {
     next_seq: AtomicU64,
     default_timeout: Duration,
     crashes: Mutex<Vec<PluginCrashEvent>>,
+    line_limit: usize,
 }
 
 struct ManagedChild {
+    isolation: crate::isolation::ProcessIsolation,
     child: Mutex<Child>,
     operation: Mutex<()>,
     requests: mpsc::Sender<IoRequest>,
@@ -52,6 +54,7 @@ impl ManagedChild {
         let mut workers = self.workers.lock().unwrap_or_else(|e| e.into_inner());
         self.terminated.store(true, Ordering::Release);
         let mut child = self.child.lock().unwrap_or_else(|e| e.into_inner());
+        self.isolation.terminate();
         let _ = child.kill();
         let _ = child.wait();
         drop(child);
@@ -78,11 +81,19 @@ impl SubprocessPluginHost {
             next_seq: AtomicU64::new(1),
             default_timeout: Duration::from_secs(5),
             crashes: Mutex::new(Vec::new()),
+            line_limit: MAX_LINE_BYTES,
         }
     }
 
     pub fn with_default_timeout(mut self, d: Duration) -> Self {
         self.default_timeout = d;
+        self
+    }
+
+    /// IPC brokers use the existing IPC frame ceiling; plugin JSON keeps its
+    /// original 64 KiB ceiling. Never accept an unbounded line allocation.
+    pub fn with_line_limit(mut self, bytes: usize) -> Self {
+        self.line_limit = bytes.clamp(1, 1024 * 1024);
         self
     }
 
@@ -93,18 +104,37 @@ impl SubprocessPluginHost {
         request: &HostRequest,
     ) -> AicoreResult<HostResponse> {
         let start = Instant::now();
+        let json = serde_json::to_string(request)
+            .map_err(|e| AicoreError::PluginFailed(format!("serialize request: {}", e)))?;
+        let line = self.call_json_started(handle, &json, start)?;
+        serde_json::from_str::<HostResponse>(line.trim())
+            .map_err(|e| AicoreError::PluginFailed(format!("invalid response: {}", e)))
+    }
+
+    /// Bounded JSON-line exchange for a managed subprocess protocol. The
+    /// caller validates its typed response; raw newlines are never accepted.
+    pub fn call_json(&self, handle: &PluginProcessHandle, json: &str) -> AicoreResult<String> {
+        self.call_json_started(handle, json, Instant::now())
+    }
+
+    fn call_json_started(
+        &self,
+        handle: &PluginProcessHandle,
+        json: &str,
+        start: Instant,
+    ) -> AicoreResult<String> {
         let entry = self.lookup(handle)?;
         let timeout = if entry.spec.timeout_ms == 0 {
             self.default_timeout
         } else {
             Duration::from_millis(entry.spec.timeout_ms.max(100))
         };
-
-        // One budget includes serialization, waiting behind another call,
-        // every write (including the delimiter/flush), and the response read.
-        let json = serde_json::to_string(request)
-            .map_err(|e| AicoreError::PluginFailed(format!("serialize request: {}", e)))?;
-        if json.len() > MAX_LINE_BYTES {
+        if json.contains(['\n', '\r']) {
+            return Err(AicoreError::InvalidRequest(
+                "JSON must be a single line".into(),
+            ));
+        }
+        if json.len() > self.line_limit {
             return Err(AicoreError::InvalidRequest(
                 "plugin request too large".to_string(),
             ));
@@ -125,7 +155,7 @@ impl SubprocessPluginHost {
                 "plugin process exited".to_string(),
             ));
         }
-        let result = exchange(&entry, json, deadline);
+        let result = exchange(&entry, json.to_owned(), deadline);
         // Keep the operation lock until cleanup completes: no caller can reuse
         // a partially written request or consume the preceding response.
         let line = match result {
@@ -135,10 +165,21 @@ impl SubprocessPluginHost {
                 return Err(error);
             },
         };
-        let response = serde_json::from_str::<HostResponse>(line.trim())
-            .map_err(|e| AicoreError::PluginFailed(format!("invalid response: {}", e)));
         drop(operation);
-        response
+        Ok(line)
+    }
+
+    /// Force cancellation, reap the whole owned process tree and join pipe
+    /// workers. Unlike stop(), this does not attempt graceful protocol IO.
+    pub fn abort(&self, handle: &PluginProcessHandle) {
+        let entry = self
+            .processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&handle.handle_id);
+        if let Some(entry) = entry {
+            entry.terminate();
+        }
     }
 
     fn lookup(&self, handle: &PluginProcessHandle) -> AicoreResult<Arc<ManagedChild>> {
@@ -204,14 +245,45 @@ impl Drop for SubprocessPluginHost {
 
 impl IPluginHost for SubprocessPluginHost {
     fn spawn(&self, spec: &PluginProcessSpec) -> AicoreResult<PluginProcessHandle> {
-        spec.validate()?;
+        self.spawn_with_args(spec, &[])
+    }
 
-        let mut child = Command::new(&spec.artifact_path)
+    fn stop(&self, handle: &PluginProcessHandle) -> AicoreResult<()> {
+        self.stop_process(handle)
+    }
+
+    fn state(&self, handle: &PluginProcessHandle) -> PluginHostState {
+        self.process_state(handle)
+    }
+    fn recent_crashes(&self) -> Vec<PluginCrashEvent> {
+        self.crashes.lock().map(|c| c.clone()).unwrap_or_default()
+    }
+    fn clear_crashes(&self) {
+        if let Ok(mut c) = self.crashes.lock() {
+            c.clear();
+        }
+    }
+    fn host_name(&self) -> &'static str {
+        "subprocess_plugin_host"
+    }
+}
+
+impl SubprocessPluginHost {
+    pub fn spawn_with_args(
+        &self,
+        spec: &PluginProcessSpec,
+        args: &[String],
+    ) -> AicoreResult<PluginProcessHandle> {
+        spec.validate()?;
+        let mut command = Command::new(&spec.artifact_path);
+        command.args(args);
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| AicoreError::PluginFailed(format!("spawn failed: {}", e)))?;
+            .stderr(Stdio::piped());
+        let (mut child, isolation) =
+            crate::isolation::ProcessIsolation::spawn(&mut command, spec.memory_limit_mb)
+                .map_err(|e| AicoreError::PluginFailed(format!("spawn failed: {}", e)))?;
 
         let stdin = child
             .stdin
@@ -242,13 +314,15 @@ impl IPluginHost for SubprocessPluginHost {
                 configure_pipe(stderr)?;
             }
             let cancellation = PipeCancellation::new(&stdin, &stdout, stderr.as_ref())?;
-            let io_worker = spawn_io_worker(stdin, stdout, rx, terminated.clone())?;
+            let io_worker =
+                spawn_io_worker(stdin, stdout, rx, terminated.clone(), self.line_limit)?;
             let mut workers = vec![io_worker];
             if let Some(stderr) = stderr {
                 match spawn_stderr_drain(spec.plugin_id.clone(), stderr, terminated.clone()) {
                     Ok(worker) => workers.push(worker),
                     Err(error) => {
                         terminated.store(true, Ordering::Release);
+                        isolation.terminate();
                         let _ = child.kill();
                         let _ = child.wait();
                         for worker in workers {
@@ -263,6 +337,7 @@ impl IPluginHost for SubprocessPluginHost {
         let (workers, cancellation) = match workers {
             Ok(workers) => workers,
             Err(error) => {
+                isolation.terminate();
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(AicoreError::PluginFailed(format!(
@@ -272,6 +347,7 @@ impl IPluginHost for SubprocessPluginHost {
             },
         };
         let managed = Arc::new(ManagedChild {
+            isolation,
             child: Mutex::new(child),
             operation: Mutex::new(()),
             requests,
@@ -304,7 +380,7 @@ impl IPluginHost for SubprocessPluginHost {
         Ok(handle)
     }
 
-    fn stop(&self, handle: &PluginProcessHandle) -> AicoreResult<()> {
+    fn stop_process(&self, handle: &PluginProcessHandle) -> AicoreResult<()> {
         let deadline = Instant::now() + Duration::from_millis(500);
         let entry = self
             .processes
@@ -322,13 +398,11 @@ impl IPluginHost for SubprocessPluginHost {
                 let shutdown = serde_json::to_string(&HostRequest::Shutdown).unwrap_or_default();
                 let _ = exchange(&entry, shutdown, deadline);
                 while Instant::now() < deadline {
-                    let status = entry
-                        .child
-                        .lock()
-                        .map_err(|_| {
-                            AicoreError::LockPoisoned("plugin child lock poisoned".to_string())
-                        })?
-                        .try_wait();
+                    let mut child = entry.child.lock().map_err(|_| {
+                        AicoreError::LockPoisoned("plugin child lock poisoned".to_string())
+                    })?;
+                    let status = entry.isolation.try_wait(&mut child);
+                    drop(child);
                     match status {
                         Ok(Some(_)) => break,
                         Ok(None) => std::thread::sleep(Duration::from_millis(1)),
@@ -347,7 +421,7 @@ impl IPluginHost for SubprocessPluginHost {
         Ok(())
     }
 
-    fn state(&self, handle: &PluginProcessHandle) -> PluginHostState {
+    fn process_state(&self, handle: &PluginProcessHandle) -> PluginHostState {
         let entry = match self.lookup(handle) {
             Ok(entry) => entry,
             Err(AicoreError::NotFound(_)) => return PluginHostState::Stopped,
@@ -357,8 +431,11 @@ impl IPluginHost for SubprocessPluginHost {
             Ok(child) => child,
             Err(_) => return PluginHostState::Failed,
         };
-        match child.try_wait() {
+        let status = entry.isolation.try_wait(&mut child);
+        drop(child);
+        match status {
             Ok(Some(status)) => {
+                entry.terminate();
                 if status.success() {
                     PluginHostState::Stopped
                 } else {
@@ -377,20 +454,6 @@ impl IPluginHost for SubprocessPluginHost {
             Err(_) => PluginHostState::Failed,
         }
     }
-
-    fn recent_crashes(&self) -> Vec<PluginCrashEvent> {
-        self.crashes.lock().map(|c| c.clone()).unwrap_or_default()
-    }
-
-    fn clear_crashes(&self) {
-        if let Ok(mut c) = self.crashes.lock() {
-            c.clear();
-        }
-    }
-
-    fn host_name(&self) -> &'static str {
-        "subprocess_plugin_host"
-    }
 }
 
 fn now_unix_ms() -> u64 {
@@ -398,6 +461,35 @@ fn now_unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod resource_tests {
+    use super::*;
+    #[test]
+    fn exited_leader_releases_group_before_pid_can_be_reused() {
+        let host = SubprocessPluginHost::new();
+        let handle = host
+            .spawn(&PluginProcessSpec {
+                plugin_id: "natural-exit".into(),
+                artifact_path: "/bin/true".into(),
+                timeout_ms: 1000,
+                memory_limit_mb: 16,
+            })
+            .unwrap();
+        let entry = host.lookup(&handle).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while host.state(&handle) == PluginHostState::Running {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(host.state(&handle), PluginHostState::Stopped);
+        assert!(
+            !entry.isolation.group_reserved(),
+            "reaped leader left a stale process-group identity"
+        );
+        host.stop(&handle).unwrap();
+    }
 }
 
 fn lock_until(lock: &Mutex<()>, deadline: Instant) -> AicoreResult<MutexGuard<'_, ()>> {
@@ -448,6 +540,7 @@ fn spawn_io_worker(
     stdout: ChildStdout,
     requests: mpsc::Receiver<IoRequest>,
     terminated: Arc<AtomicBool>,
+    line_limit: usize,
 ) -> io::Result<JoinHandle<()>> {
     std::thread::Builder::new()
         .name("aicore-plugin-io".to_string())
@@ -477,7 +570,7 @@ fn spawn_io_worker(
                                 error
                             ))
                         })?;
-                    match read_bounded_line(&mut stdout) {
+                    match read_bounded_line(&mut stdout, line_limit) {
                         Ok(Some(line)) => Ok(line),
                         Ok(None) => Err(AicoreError::PluginFailed(
                             "plugin process exited".to_string(),
@@ -652,15 +745,15 @@ impl PipeCancellation {
     }
 }
 
-fn read_bounded_line<R: BufRead>(reader: &mut R) -> io::Result<Option<String>> {
+fn read_bounded_line<R: BufRead>(reader: &mut R, limit: usize) -> io::Result<Option<String>> {
     let mut bytes = Vec::new();
     let count = reader
-        .take((MAX_LINE_BYTES + 1) as u64)
+        .take((limit + 1) as u64)
         .read_until(b'\n', &mut bytes)?;
     if count == 0 {
         return Ok(None);
     }
-    if count > MAX_LINE_BYTES {
+    if count > limit {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "plugin response exceeds MAX_LINE_BYTES",
@@ -681,7 +774,7 @@ fn spawn_stderr_drain(
         .spawn(move || {
             let mut reader = BufReader::new(Interruptible { stream: stderr, terminated: terminated.clone() });
             while !terminated.load(Ordering::Acquire) {
-                match read_bounded_line(&mut reader) {
+                match read_bounded_line(&mut reader, MAX_LINE_BYTES) {
                     Ok(Some(line)) if !line.trim().is_empty() => {
                         tracing::warn!(component="subprocess_plugin_host", plugin_id=%plugin_id, event="plugin_stderr", message=%line, "plugin stderr");
                     }

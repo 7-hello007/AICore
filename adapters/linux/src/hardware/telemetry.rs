@@ -193,7 +193,7 @@ fn now_unix_ms() -> u64 {
 }
 
 // Resolve IDs only by enumerating actual OS records. Never use caller text as a path.
-fn stable_device_id(kind: &str, device_path: &Path) -> Option<String> {
+pub(crate) fn stable_device_id(kind: &str, device_path: &Path) -> Option<String> {
     device_path
         .canonicalize()
         .ok()

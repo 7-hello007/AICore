@@ -13,9 +13,32 @@ mod linux {
     use aicore_dashboard::DashboardClient;
     use aicore_ipc::{IpcHandler, IpcServer};
 
+    #[derive(Clone)]
     struct MockHandler;
 
     impl IpcHandler for MockHandler {
+        fn process_spec(&self) -> Option<aicore_ipc::process_handler::ProcessHandlerSpec> {
+            Some(aicore_ipc::process_handler::ProcessHandlerSpec {
+                process: aicore_contracts::plugin::host::PluginProcessSpec { plugin_id:"dashboard-fixture".into(), artifact_path:"/usr/bin/python3".into(), timeout_ms:1000, memory_limit_mb:64 },
+                args:vec!["-c".into(),"import sys,json; print(json.dumps(json.loads(sys.stdin.readline())['state']),flush=True)".into()],
+            })
+        }
+        fn prepare_process_state(
+            &self,
+            envelope: &aicore_contracts::ipc::protocol::Envelope,
+            peer: aicore_ipc::ClientIdentity,
+            _: std::time::Instant,
+        ) -> Result<serde_json::Value, IpcError> {
+            // Finite data fixture only. Production daemon preparation is tested
+            // by the actual aicored executable, not this snapshot echo worker.
+            let handler: Arc<dyn IpcHandler> = Arc::new(self.clone());
+            serde_json::to_value(aicore_ipc::server::process_envelope(
+                &handler,
+                envelope.clone(),
+                peer,
+            ))
+            .map_err(|e| IpcError::internal(e.to_string()))
+        }
         fn handle(&self, request: Request) -> Result<ResponseData, IpcError> {
             match request {
                 Request::GetStatus => Ok(ResponseData::Status {

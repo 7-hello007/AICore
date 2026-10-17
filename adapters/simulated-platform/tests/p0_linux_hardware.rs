@@ -4,6 +4,8 @@
 mod executor;
 #[path = "../../linux/src/gpu.rs"]
 mod gpu;
+#[path = "../../linux/src/telemetry/gpu.rs"]
+mod gpu_telemetry;
 #[path = "../../linux/src/telemetry/npu.rs"]
 mod npu;
 #[path = "../../linux/src/capability.rs"]

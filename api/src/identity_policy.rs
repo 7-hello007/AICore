@@ -43,6 +43,14 @@ pub struct ApplicationIdentityPolicy {
 }
 
 impl ApplicationIdentityPolicy {
+    pub fn try_approval(&self, id: &ApplicationId) -> ContractResult<Option<ApprovedApplication>> {
+        Ok(self
+            .pins
+            .try_read()
+            .map_err(|_| ContractError::ResourceUnavailable("application policy busy".into()))?
+            .get(id)
+            .cloned())
+    }
     pub fn new() -> Self {
         Self::default()
     }

@@ -15,6 +15,41 @@ pub trait IPreparationAuthorization: Send + Sync {
 /// - Line is clear.
 /// - `dequeue` is an atomic operation; the call does not return to the same task.
 pub trait ITaskQueue: Send + Sync {
+    // IPC state commits may not fall back to the blocking virtual methods.
+    fn try_enqueue(&self, _task: QueuedTask) -> ContractResult<String> {
+        Err(crate::errors::ContractError::NotSupported(
+            "nonblocking queue commit unavailable".into(),
+        ))
+    }
+    fn try_enqueue_preparation(
+        &self,
+        _task: QueuedTask,
+        _ready: u64,
+        _authorization: std::sync::Arc<dyn IPreparationAuthorization>,
+    ) -> ContractResult<String> {
+        Err(crate::errors::ContractError::NotSupported(
+            "nonblocking preparation commit unavailable".into(),
+        ))
+    }
+    fn try_get(&self, _id: &str) -> ContractResult<Option<QueuedTask>> {
+        Err(crate::errors::ContractError::NotSupported(
+            "nonblocking queue read unavailable".into(),
+        ))
+    }
+    fn try_cancel(&self, _id: &str) -> ContractResult<()> {
+        Err(crate::errors::ContractError::NotSupported(
+            "nonblocking queue cancel unavailable".into(),
+        ))
+    }
+    fn try_cancel_application(
+        &self,
+        _id: &crate::application::id::ApplicationId,
+        _deadline: std::time::Instant,
+    ) -> ContractResult<()> {
+        Err(crate::errors::ContractError::NotSupported(
+            "nonblocking application cancellation unavailable".into(),
+        ))
+    }
     /// Enter. Return task_id assigned to the system.
     fn enqueue(&self, task: QueuedTask) -> ContractResult<String>;
     fn enqueue_preparation(

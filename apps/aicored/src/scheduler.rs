@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::{mpsc as sync_mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use aicore_ai::configured_intent_agent;
 use aicore_api::{ApplicationIdentityPolicy, ApplicationRegistry, ApprovedApplication};
 use aicore_contracts::{
     capability::entry::CapabilityEntry,
@@ -20,7 +19,7 @@ use tokio::sync::mpsc;
 
 use crate::ipc_handler::{DaemonIpcHandler, PeerExecutableArtifactResolver};
 use crate::runtime::DaemonRuntime;
-use crate::state::write_status_atomic;
+use crate::state::{write_status_atomic, StatusWriter};
 use crate::tick_history::TickHistory;
 
 pub struct SchedulerConfig {
@@ -276,11 +275,7 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     let project = std::env::var_os("AICORE_PROJECT_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
-    if let Some(agent) =
-        configured_intent_agent(&project).map_err(|e| std::io::Error::other(e.to_string()))?
-    {
-        handler = handler.with_intent_agent(agent);
-    }
+    handler = handler.with_process_worker(std::env::current_exe()?, project);
     let handler = Arc::new(handler);
 
     let stale_reaper = if once {
@@ -341,6 +336,7 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
     }
 
     let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+    let state_writer = StatusWriter::start(state_path.clone())?;
     interval.tick().await;
 
     loop {
@@ -387,12 +383,11 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
                 }
 
                 if count % write_every == 0 {
-                    let guard = status.lock().expect("status lock");
-                    if let Err(e) = write_status_atomic(&state_path, &guard) {
+                    let snapshot = status.lock().expect("status lock").clone();
+                    if !state_writer.submit(snapshot) {
                         tracing::warn!(
                             component = "aicored",
                             event = "state_write_failed",
-                            error = %e,
                             "failed to write state file"
                         );
                     }
@@ -401,12 +396,19 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         }
     }
 
-    let _ = ipc_shutdown_tx.send(()).await;
+    let shutdown_deadline =
+        std::time::Instant::now() + Duration::from_millis(config.shutdown_timeout_ms);
+    let _ = ipc_shutdown_tx.try_send(());
     if let Some(task) = stale_reaper {
         task.abort();
     }
-    if let Some(task) = ipc_task {
-        let _ = tokio::time::timeout(Duration::from_millis(config.shutdown_timeout_ms), task).await;
+    if let Some(mut task) = ipc_task {
+        if tokio::time::timeout_at(tokio::time::Instant::from_std(shutdown_deadline), &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+        }
     }
 
     let metrics = runtime.loop_.metrics();
@@ -419,8 +421,19 @@ pub async fn run(params: SchedulerConfig) -> std::io::Result<()> {
         "daemon stopping"
     );
 
-    let guard = status.lock().expect("status lock");
-    let _ = write_status_atomic(&state_path, &guard);
+    let snapshot = status.lock().expect("status lock").clone();
+    if !state_writer.submit(snapshot) {
+        tracing::warn!(
+            component = "aicored",
+            event = "state_write_failed",
+            "status writer disconnected"
+        );
+    }
+    if let Err(error) =
+        state_writer.finish(shutdown_deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        tracing::warn!(component="aicored", event="state_write_shutdown_failed", error=%error);
+    }
     Ok(())
 }
 

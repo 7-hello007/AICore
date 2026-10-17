@@ -45,11 +45,12 @@ impl std::fmt::Debug for LoadedPlugin {
     }
 }
 
-/// Dynamic plugin loader.
+/// In-process loader for explicitly pinned trusted native code. Loading runs
+/// native initialization before ABI inspection; this is not a security sandbox.
 pub struct DynamicPluginLoader {
     /// Optional white list of signatures.
     ///
-    /// `None`: Unverified signature (development mode).
+    /// `None`: Native loading is refused.
     /// - `Some(sig)`: Must match.
     expected_signature: Option<PluginSignature>,
 }
@@ -78,13 +79,15 @@ impl DynamicPluginLoader {
         }
 
         // 1. Signature verification
-        let signature = if let Some(expected) = &self.expected_signature {
-            SignatureVerifier::verify_file(&path, expected).map_err(LoadError::Signature)?;
-            Some(expected.clone())
-        } else {
-            // Unconfigured signature calculation only (for audit)
-            SignatureVerifier::compute_sha256(&path).ok()
-        };
+        let expected = self
+            .expected_signature
+            .as_ref()
+            .ok_or_else(|| {
+                tracing::warn!(component="plugin_loader", event="trusted_pin_required", "in-process native plugin requires an explicit trusted signature pin; it is not sandboxed");
+                LoadError::Signature(SignatureVerifyError::MalformedExpected)
+            })?;
+        SignatureVerifier::verify_file(&path, expected).map_err(LoadError::Signature)?;
+        let signature = Some(expected.clone());
 
         // Opening the library
         let lib = unsafe { Library::new(&path).map_err(|e| LoadError::Open(e.to_string()))? };

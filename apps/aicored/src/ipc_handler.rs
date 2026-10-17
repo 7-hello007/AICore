@@ -21,6 +21,13 @@ use aicore_tier_l2::L2NativeTaskProvider;
 
 use crate::tick_history::TickHistory;
 
+#[path = "ipc_process.rs"]
+mod process;
+
+pub fn run_process_worker() -> std::io::Result<()> {
+    process::worker_main()
+}
+
 /// Damon's IPC request processor.
 pub struct DaemonIpcHandler {
     registry: Arc<ApplicationRegistry>,
@@ -42,11 +49,17 @@ pub struct DaemonIpcHandler {
     component: String,
     last_policy_json: Arc<Mutex<Option<String>>>,
     last_context_json: Arc<Mutex<Option<String>>>,
+    process_worker: Option<aicore_ipc::process_handler::ProcessHandlerSpec>,
+    process_project: Option<std::path::PathBuf>,
+    process_revision: Mutex<u64>,
 }
 
 /// Platform adapters resolve artifact identity from the authenticated peer.
 /// The request body and application name are never trusted as artifact proof.
 pub trait IApplicationArtifactResolver: Send + Sync {
+    fn process_resolvable(&self) -> bool {
+        false
+    }
     fn artifact_sha256(&self, peer: ClientIdentity) -> Option<String>;
     fn principal(&self, _peer: ClientIdentity) -> Option<String> {
         None
@@ -55,6 +68,9 @@ pub trait IApplicationArtifactResolver: Send + Sync {
 
 pub struct PeerExecutableArtifactResolver;
 impl IApplicationArtifactResolver for PeerExecutableArtifactResolver {
+    fn process_resolvable(&self) -> bool {
+        true
+    }
     fn artifact_sha256(&self, peer: ClientIdentity) -> Option<String> {
         peer.artifact_sha256()
     }
@@ -150,20 +166,7 @@ impl DaemonIpcHandler {
     /// before removing the registration so departed apps cannot leave work
     /// waiting to be applied by a later tick.
     pub fn reap_stale_applications(&self) -> Result<usize, IpcError> {
-        let mut owners = self
-            .app_owners
-            .lock()
-            .map_err(|_| IpcError::internal("application owner lock poisoned"))?;
-        let stale: Vec<_> = owners
-            .iter()
-            .filter(|(_, identity)| identity.is_stale())
-            .map(|(app, _)| app.clone())
-            .collect();
-        for app in &stale {
-            self.revoke_application(app)?;
-            owners.remove(app);
-        }
-        Ok(stale.len())
+        self.reap_stale_applications_bounded()
     }
 
     fn revoke_application(&self, application_id: &ApplicationId) -> Result<(), IpcError> {
@@ -216,6 +219,9 @@ impl DaemonIpcHandler {
     ) -> Self {
         Self {
             registry,
+            process_worker: None,
+            process_project: None,
+            process_revision: Mutex::new(0),
             app_owners: Arc::new(Mutex::new(HashMap::new())),
             identity_policy: None,
             intent_agent: None,
@@ -243,6 +249,7 @@ impl DaemonIpcHandler {
         self
     }
 
+    #[allow(dead_code)] // Retained trusted local API; network inference is process-owned.
     pub fn with_intent_agent(mut self, agent: Arc<BoundedIntentAgent>) -> Self {
         self.intent_agent = Some(agent);
         self
@@ -667,21 +674,39 @@ impl DaemonIpcHandler {
             }),
 
             Request::GetContext => {
-                let raw = self
-                    .last_context_json
+                let tick = self
+                    .status
                     .lock()
-                    .map_err(|_| IpcError::internal("context lock poisoned"))?
+                    .map_err(|_| IpcError::internal("status lock poisoned"))?
+                    .last_tick
                     .clone();
+                let raw = if let Some(tick) = tick {
+                    tick.current_context_json
+                } else {
+                    self.last_context_json
+                        .lock()
+                        .map_err(|_| IpcError::internal("context lock poisoned"))?
+                        .clone()
+                };
                 let context = raw.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(ResponseData::Context { context })
             },
 
             Request::GetPolicy => {
-                let raw = self
-                    .last_policy_json
+                let tick = self
+                    .status
                     .lock()
-                    .map_err(|_| IpcError::internal("policy lock poisoned"))?
+                    .map_err(|_| IpcError::internal("status lock poisoned"))?
+                    .last_tick
                     .clone();
+                let raw = if let Some(tick) = tick {
+                    tick.current_policy_json
+                } else {
+                    self.last_policy_json
+                        .lock()
+                        .map_err(|_| IpcError::internal("policy lock poisoned"))?
+                        .clone()
+                };
                 let policy = raw.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(ResponseData::Policy { policy })
             },
@@ -711,6 +736,27 @@ impl DaemonIpcHandler {
 }
 
 impl IpcHandler for DaemonIpcHandler {
+    fn process_spec(&self) -> Option<aicore_ipc::process_handler::ProcessHandlerSpec> {
+        self.process_worker.clone()
+    }
+    fn prepare_process_state(
+        &self,
+        envelope: &aicore_contracts::ipc::protocol::Envelope,
+        identity: ClientIdentity,
+        deadline: std::time::Instant,
+    ) -> Result<serde_json::Value, IpcError> {
+        self.prepare_worker_state(envelope, identity, deadline)
+    }
+    fn commit_process_response(
+        &self,
+        envelope: &aicore_contracts::ipc::protocol::Envelope,
+        identity: ClientIdentity,
+        state: &serde_json::Value,
+        response: serde_json::Value,
+        deadline: std::time::Instant,
+    ) -> Result<aicore_contracts::ipc::protocol::ResponseEnvelope, IpcError> {
+        self.commit_worker_response(envelope, identity, state, response, deadline)
+    }
     fn handle(&self, request: Request) -> Result<ResponseData, IpcError> {
         self.dispatch(request, ClientIdentity::Internal)
     }
@@ -817,6 +863,59 @@ mod tests {
     use aicore_api::ApprovedApplication;
     use aicore_contracts::traits::task_source::ITaskSource;
     use aicore_task_runtime::InMemoryTaskQueue;
+
+    #[test]
+    fn p1_queries_follow_latest_tick_and_clear_missing_values() {
+        let status = Arc::new(Mutex::new(DaemonStatus::new(1)));
+        let handler = DaemonIpcHandler::new(
+            Arc::new(ApplicationRegistry::new()),
+            status.clone(),
+            Arc::new(TickHistory::with_default_capacity()),
+            Arc::new(PluginRegistry::new()),
+            Arc::new(InMemoryTaskQueue::new()),
+            None,
+            None,
+            Vec::new(),
+            "test".into(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+        );
+        for tick in [1, 2] {
+            let policy = aicore_contracts::policy::resource_policy::ResourcePolicy {
+                policy_id: format!("tick-{tick}"),
+                ..Default::default()
+            };
+            let context = aicore_contracts::context::snapshot::ContextSnapshot {
+                timestamp_unix_ms: Some(tick),
+                ..Default::default()
+            };
+            status.lock().unwrap().last_tick =
+                Some(aicore_contracts::runtime::daemon_status::TickSummary {
+                    tick_id: tick,
+                    current_policy_json: Some(serde_json::to_string(&policy).unwrap()),
+                    current_context_json: Some(serde_json::to_string(&context).unwrap()),
+                    ..Default::default()
+                });
+            assert!(
+                matches!(handler.handle(Request::GetPolicy).unwrap(), ResponseData::Policy { policy: Some(value) } if value == policy)
+            );
+            assert!(
+                matches!(handler.handle(Request::GetContext).unwrap(), ResponseData::Context { context: Some(value) } if value == context)
+            );
+            let dashboard = handler.build_dashboard_snapshot();
+            assert_eq!(dashboard.current_policy, Some(policy));
+            assert_eq!(dashboard.current_context, Some(context));
+        }
+        status.lock().unwrap().last_tick = Some(Default::default());
+        assert!(matches!(
+            handler.handle(Request::GetPolicy).unwrap(),
+            ResponseData::Policy { policy: None }
+        ));
+        assert!(matches!(
+            handler.handle(Request::GetContext).unwrap(),
+            ResponseData::Context { context: None }
+        ));
+    }
 
     #[test]
     fn personal_preparation_actuates_model_process_and_rechecks_consent() {
@@ -1206,7 +1305,7 @@ mod tests {
         let queue: Arc<dyn ITaskQueue> = Arc::new(InMemoryTaskQueue::new());
         let source = Arc::new(L1TaskSource::new());
         let provider = Arc::new(L2NativeTaskProvider::new().with_task_queue(queue.clone()));
-        let handler: Arc<dyn IpcHandler> = Arc::new(DaemonIpcHandler::new(
+        let mut handler = DaemonIpcHandler::new(
             Arc::new(ApplicationRegistry::new()),
             Arc::new(Mutex::new(DaemonStatus::new(1))),
             Arc::new(TickHistory::with_default_capacity()),
@@ -1218,7 +1317,20 @@ mod tests {
             "mock".to_string(),
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(None)),
-        ));
+        );
+        // This component test observes the parent's exact shared queue/L1.
+        // Its finite worker emits commit plans only; real worker authorization
+        // and inference are separately covered by tests/ipc_process.rs.
+        handler.process_worker = Some(aicore_ipc::process_handler::ProcessHandlerSpec {
+            process:aicore_contracts::plugin::host::PluginProcessSpec { plugin_id:"lifecycle-fixture".into(),artifact_path:"/usr/bin/python3".into(),timeout_ms:1000,memory_limit_mb:64 },
+            args:vec!["-c".into(),r#"import sys,json
+f=json.loads(sys.stdin.readline()); e=f['envelope']; p=e['payload']
+r={'version':e['version'],'request_id':e['request_id'],'success':True}
+if p['kind']=='handshake': r['data']={'kind':'handshake_ack','capabilities':[],'selected_version':e['version']}
+else: r['prepared']={'Commit':{'request':p,'preparation':None,'intent':None}}
+print(json.dumps(r),flush=True)"#.into()],
+        });
+        let handler: Arc<dyn IpcHandler> = Arc::new(handler);
         let path = std::env::temp_dir().join(format!(
             "aicore-l2-ipc-{}-{}.sock",
             std::process::id(),

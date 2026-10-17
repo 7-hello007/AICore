@@ -45,6 +45,16 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
+    pub fn try_list(&self) -> aicore_contracts::errors::ContractResult<Vec<PluginEntry>> {
+        let entries = self.entries.try_read().map_err(|_| {
+            aicore_contracts::errors::ContractError::ResourceUnavailable(
+                "plugin registry busy".into(),
+            )
+        })?;
+        let mut out: Vec<PluginEntry> = entries.values().cloned().collect();
+        out.sort_by(|a, b| a.manifest.name.cmp(&b.manifest.name));
+        Ok(out)
+    }
     pub fn new() -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),

@@ -1,6 +1,19 @@
 use crate::errors::{ContractError, ContractResult};
 use crate::memory::{profile::UserProfile, record::HistoricalRecord};
 
+/// Read-only input for a disposable IPC worker. Export must not perform IO
+/// or wait for locks. Unknown backends fail closed rather than run in a thread.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum ProcessMemorySource {
+    Sqlite {
+        path: std::path::PathBuf,
+    },
+    Snapshot {
+        profile: UserProfile,
+        records: Vec<HistoricalRecord>,
+    },
+}
+
 /// Memory store abstraction.
 ///
 /// Implementations may use:
@@ -9,6 +22,11 @@ use crate::memory::{profile::UserProfile, record::HistoricalRecord};
 /// - SQLite (V2 default)
 /// - Remote storage (only with explicit user consent)
 pub trait IMemoryStore: Send + Sync {
+    fn try_process_source(&self, _limit: usize) -> ContractResult<ProcessMemorySource> {
+        Err(ContractError::NotSupported(
+            "memory backend has no process-safe read source".into(),
+        ))
+    }
     fn append_record(&self, record: &HistoricalRecord) -> ContractResult<()>;
     fn load_records(&self, limit: usize) -> ContractResult<Vec<HistoricalRecord>>;
     fn clear_history(&self) -> ContractResult<()>;

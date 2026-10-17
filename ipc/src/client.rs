@@ -9,9 +9,10 @@ use crate::transport::{client_connect, IpcStream, IpcTransport};
 
 /// A simple IPC client. A request for a response once.
 pub struct IpcClient {
-    stream: IpcStream,
+    stream: Option<IpcStream>,
     ack_enabled: bool,
     version: aicore_contracts::schema::SchemaVersion,
+    failed: bool,
 }
 
 impl IpcClient {
@@ -34,7 +35,12 @@ impl IpcClient {
                 "unsupported client wire version",
             ));
         }
-        let mut stream = client_connect(path.into()).await?;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut stream = tokio::time::timeout_at(deadline, client_connect(path.into()))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC connect timed out")
+            })??;
         let handshake_id = format!("aicore-handshake-{}", std::process::id());
         let mut handshake = Envelope::new(
             &handshake_id,
@@ -45,8 +51,15 @@ impl IpcClient {
         );
         handshake.version = versions[0];
         let json = serde_json::to_string(&handshake).map_err(std::io::Error::other)?;
-        stream.write_message(&json).await?;
-        let response = read_response(&mut stream, Duration::from_secs(5)).await?;
+        tokio::time::timeout_at(deadline, stream.write_message(&json))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "IPC handshake write timed out",
+                )
+            })??;
+        let response = read_response_until(&mut stream, deadline).await?;
         if response.request_id != handshake_id || !versions.contains(&response.version) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -74,9 +87,10 @@ impl IpcClient {
             },
         };
         Ok(Self {
-            stream,
+            stream: Some(stream),
             ack_enabled,
             version,
+            failed: false,
         })
     }
 
@@ -87,6 +101,17 @@ impl IpcClient {
         request: Request,
         timeout: Duration,
     ) -> std::io::Result<ResponseEnvelope> {
+        if self.failed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "IPC session failed; reconnect before reuse",
+            ));
+        }
+        let deadline = tokio::time::Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid IPC timeout")
+            })?;
         if request_id.trim().is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -104,11 +129,28 @@ impl IpcClient {
         let json = serde_json::to_string(&envelope)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-        self.stream.write_message(&json).await?;
-
-        let deadline = tokio::time::Instant::now() + timeout;
+        if json.len() >= crate::transport::MAX_MESSAGE_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "IPC request too large",
+            ));
+        }
+        // Cancellation or partial write/read invalidates framing. A timed-out
+        // response must never be consumed as the next request's response.
+        self.failed = true;
+        // The future owns the transport while a request is active. Every
+        // error and future cancellation closes it, notifying a managed server
+        // to terminate its Handler even if this client object stays alive.
+        let mut stream = self.stream.take().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "IPC transport closed")
+        })?;
+        tokio::time::timeout_at(deadline, stream.write_message(&json))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "IPC request write timed out")
+            })??;
         if self.ack_enabled {
-            let acknowledgement = read_response_until(&mut self.stream, deadline).await?;
+            let acknowledgement = read_response_until(&mut stream, deadline).await?;
             if acknowledgement.request_id != request_id
                 || acknowledgement.version != self.version
                 || !acknowledgement.success
@@ -120,7 +162,7 @@ impl IpcClient {
                 ));
             }
         }
-        let response = read_response_until(&mut self.stream, deadline).await?;
+        let response = read_response_until(&mut stream, deadline).await?;
         if response.request_id != request_id {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -133,18 +175,13 @@ impl IpcClient {
                 "IPC response version mismatch",
             ));
         }
+        self.failed = false;
+        self.stream = Some(stream);
         Ok(response)
     }
     pub fn negotiated_version(&self) -> aicore_contracts::schema::SchemaVersion {
         self.version
     }
-}
-
-async fn read_response(
-    stream: &mut IpcStream,
-    timeout: Duration,
-) -> std::io::Result<ResponseEnvelope> {
-    read_response_until(stream, tokio::time::Instant::now() + timeout).await
 }
 
 async fn read_response_until(
@@ -173,5 +210,63 @@ pub fn unwrap_response(resp: ResponseEnvelope) -> Result<ResponseData, IpcError>
         Err(resp
             .error
             .unwrap_or_else(|| IpcError::internal("missing error in failure response")))
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod deadline_tests {
+    use super::*;
+    use crate::transport::server_listen;
+    #[tokio::test]
+    async fn p1_blocked_request_write_is_inside_call_deadline() {
+        let path = format!(
+            r"\\.\pipe\aicore-p1-write-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let listener = server_listen(&path).unwrap();
+        let (release, resume) = tokio::sync::oneshot::channel::<()>();
+        let peer = tokio::spawn(async move {
+            let mut stream = listener.accept().await.unwrap();
+            let handshake: Envelope =
+                serde_json::from_str(&stream.read_message().await.unwrap().unwrap()).unwrap();
+            let response = ResponseEnvelope::ok(
+                handshake.request_id,
+                ResponseData::HandshakeAck {
+                    capabilities: vec![],
+                    selected_version: IPC_PROTOCOL_VERSION,
+                },
+            );
+            stream
+                .write_message(&serde_json::to_string(&response).unwrap())
+                .await
+                .unwrap();
+            let _ = resume.await;
+        });
+        let mut client = IpcClient::connect(path).await.unwrap();
+        let request = Request::Register {
+            application_id: aicore_contracts::application::id::ApplicationId::new("p1"),
+            name: "x".repeat(512 * 1024),
+            version: "1".into(),
+            capabilities: vec![],
+        };
+        let result = tokio::time::timeout(
+            Duration::from_millis(250),
+            client.call("blocked", request, Duration::from_millis(30)),
+        )
+        .await;
+        let _ = release.send(());
+        peer.await.unwrap();
+        assert!(
+            matches!(result, Ok(Err(ref error)) if error.kind() == std::io::ErrorKind::TimedOut),
+            "write must obey the caller's deadline"
+        );
+        assert!(client
+            .call("reuse", Request::GetStatus, Duration::from_millis(30))
+            .await
+            .is_err());
     }
 }

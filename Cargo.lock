@@ -198,6 +198,7 @@ name = "aicore-ipc"
 version = "0.4.0"
 dependencies = [
  "aicore-contracts",
+ "aicore-plugin",
  "async-trait",
  "hex",
  "serde",
@@ -227,6 +228,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tracing",
 ]
@@ -238,6 +240,7 @@ dependencies = [
  "aicore-contracts",
  "ed25519-dalek",
  "hex",
+ "libc",
  "libloading",
  "rand",
  "serde",
@@ -245,6 +248,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "tracing",
+ "windows-sys",
 ]
 
 [[package]]

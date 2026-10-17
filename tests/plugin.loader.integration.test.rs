@@ -33,7 +33,9 @@ fn load_example_plugin_and_execute() {
         return;
     }
 
-    let loader = DynamicPluginLoader::new();
+    // This locally built fixture is explicitly trusted by the test operator.
+    let pin = aicore_plugin::SignatureVerifier::compute_sha256(&path).unwrap();
+    let loader = DynamicPluginLoader::new().with_expected_signature(pin);
     let plugin = loader.load(&path).expect("load");
 
     assert_eq!(plugin.name, "plugin-hello");

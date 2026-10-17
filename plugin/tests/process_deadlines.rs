@@ -18,12 +18,19 @@ fn main() {
     std::thread::spawn(|| { std::thread::sleep(Duration::from_secs(10)); std::process::exit(91); });
     let name = std::env::current_exe().unwrap().file_stem().unwrap().to_string_lossy().to_string();
     if name.contains("nonreader") { std::thread::sleep(Duration::from_secs(9)); return; }
-    if name == "retainer-parent" {
+    if name.contains("memory-budget") {
+        let mut bytes = Vec::<u8>::new();
+        if bytes.try_reserve_exact(64 * 1024 * 1024).is_err() { std::process::exit(77); }
+        bytes.resize(64 * 1024 * 1024, 1);
+        std::hint::black_box(&bytes);
+    }
+    if name.contains("crash-exit") { std::process::exit(42); }
+    if name == "retainer-parent" || name == "exit-parent" {
         let path = std::env::current_exe().unwrap();
         let child = std::process::Command::new(path.with_file_name(format!("nonreader-retainer{}", std::env::consts::EXE_SUFFIX)))
             .spawn().unwrap();
         std::fs::write(path.with_extension("pid"), child.id().to_string()).unwrap();
-        let _ = io::stdin().lock().lines().next().unwrap().unwrap();
+        if name == "retainer-parent" { let _ = io::stdin().lock().lines().next().unwrap().unwrap(); }
         return;
     }
     for line in io::stdin().lock().lines() {
@@ -91,23 +98,116 @@ fn spawn(
 
 // This external watchdog kills only the exact child PID spawned by this test.
 // It keeps RED finite even when the host is stuck before its own timeout.
+struct NativeProcess {
+    #[cfg(windows)]
+    handle: std::os::windows::io::OwnedHandle,
+    #[cfg(target_os = "linux")]
+    fd: std::os::fd::OwnedFd,
+}
+impl NativeProcess {
+    fn open(pid: u32) -> Self {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::{FromRawHandle, OwnedHandle};
+            use windows_sys::Win32::System::Threading::{
+                OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+            };
+            // SAFETY: the fixture is still owned/unreaped (or its descendant
+            // has not yet been stopped). Retain identity instead of a bare PID.
+            let raw = unsafe {
+                OpenProcess(
+                    PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+                    0,
+                    pid,
+                )
+            };
+            assert!(!raw.is_null());
+            Self {
+                handle: unsafe { OwnedHandle::from_raw_handle(raw) },
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::{FromRawFd, OwnedFd};
+            // SAFETY: pidfd_open returns a new owned FD for this live fixture.
+            let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+            assert!(fd >= 0, "pidfd_open: {}", std::io::Error::last_os_error());
+            Self {
+                fd: unsafe { OwnedFd::from_raw_fd(fd as i32) },
+            }
+        }
+    }
+    fn terminate(&self) {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            // SAFETY: this is the retained fixture handle, never a reused PID.
+            unsafe {
+                windows_sys::Win32::System::Threading::TerminateProcess(
+                    self.handle.as_raw_handle(),
+                    1,
+                );
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: pidfd_send_signal only addresses the retained identity.
+            unsafe {
+                libc::syscall(
+                    libc::SYS_pidfd_send_signal,
+                    self.fd.as_raw_fd(),
+                    libc::SIGKILL,
+                    std::ptr::null::<libc::siginfo_t>(),
+                    0,
+                );
+            }
+        }
+    }
+    fn running(&self) -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            let mut code = 0;
+            // SAFETY: valid owned query handle and output pointer.
+            assert_ne!(
+                unsafe {
+                    windows_sys::Win32::System::Threading::GetExitCodeProcess(
+                        self.handle.as_raw_handle(),
+                        &mut code,
+                    )
+                },
+                0
+            );
+            code == 259
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let mut poll = libc::pollfd {
+                fd: self.fd.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: poll borrows one valid pidfd; zero timeout is read-only.
+            let result = unsafe { libc::poll(&mut poll, 1, 0) };
+            assert!(result >= 0);
+            result == 0
+        }
+    }
+}
+
 struct Watchdog(
     Option<mpsc::Sender<()>>,
     Option<std::thread::JoinHandle<()>>,
 );
 impl Watchdog {
     fn new(pid: u32) -> Self {
+        let process = NativeProcess::open(pid);
         let (tx, rx) = mpsc::channel();
         let worker = std::thread::spawn(move || {
             if rx.recv_timeout(Duration::from_secs(2)).is_err() {
-                #[cfg(windows)]
-                let _ = Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/F"])
-                    .output();
-                #[cfg(unix)]
-                let _ = Command::new("kill")
-                    .args(["-KILL", &pid.to_string()])
-                    .output();
+                process.terminate();
             }
         });
         Self(Some(tx), Some(worker))
@@ -120,17 +220,10 @@ impl Drop for Watchdog {
     }
 }
 
-struct DescendantCleanup(u32);
+struct DescendantCleanup(NativeProcess);
 impl Drop for DescendantCleanup {
     fn drop(&mut self) {
-        #[cfg(windows)]
-        let _ = Command::new("taskkill")
-            .args(["/PID", &self.0.to_string(), "/F"])
-            .output();
-        #[cfg(unix)]
-        let _ = Command::new("kill")
-            .args(["-KILL", &self.0.to_string()])
-            .output();
+        self.0.terminate();
     }
 }
 
@@ -348,7 +441,7 @@ fn inherited_pipe_handles_do_not_keep_host_workers_alive() {
         .unwrap()
         .parse()
         .unwrap();
-    let _cleanup = DescendantCleanup(pid);
+    let _cleanup = DescendantCleanup(NativeProcess::open(pid));
     let start = Instant::now();
     let result = host.call(&handle, &HostRequest::Ping);
     let elapsed = start.elapsed();
@@ -528,4 +621,87 @@ fn repeated_timeouts_release_workers_and_handles() {
             "leaked workers: baseline={baseline:?}, after={after:?}"
         );
     }
+}
+
+#[test]
+fn os_memory_budget_prevents_allocation_and_host_survives() {
+    let host = SubprocessPluginHost::new();
+    let limited = spawn(&host, "memory-budget", 1000);
+    let result = host.call(&limited, &HostRequest::Ping);
+    assert!(
+        result.is_err(),
+        "64 MiB allocation escaped 16 MiB OS budget: {result:?}"
+    );
+    assert_eq!(host.state(&limited), PluginHostState::Crashed);
+    host.stop(&limited).unwrap();
+    let healthy = spawn(&host, "healthy-after-memory", 1000);
+    assert!(matches!(
+        host.call(&healthy, &HostRequest::Ping).unwrap(),
+        HostResponse::Pong
+    ));
+    host.stop(&healthy).unwrap();
+}
+
+#[test]
+fn unrepresentable_memory_budget_is_rejected_before_execution() {
+    let host = SubprocessPluginHost::new();
+    assert!(
+        host.spawn(&PluginProcessSpec {
+            plugin_id: "overflow".into(),
+            artifact_path: fixture("healthy-overflow").to_string_lossy().into(),
+            timeout_ms: 1000,
+            memory_limit_mb: u64::MAX,
+        })
+        .is_err(),
+        "unenforceable limit must fail closed"
+    );
+}
+
+#[test]
+fn abnormal_exit_is_reaped_without_killing_host_or_other_plugins() {
+    let host = SubprocessPluginHost::new();
+    let crashed = spawn(&host, "crash-exit", 1000);
+    assert!(host.call(&crashed, &HostRequest::Ping).is_err());
+    assert_eq!(host.state(&crashed), PluginHostState::Crashed);
+    host.stop(&crashed).unwrap();
+    assert!(!child_is_running(crashed.pid));
+    let healthy = spawn(&host, "healthy-after-crash", 1000);
+    assert!(matches!(
+        host.call(&healthy, &HostRequest::Ping).unwrap(),
+        HostResponse::Pong
+    ));
+    host.stop(&healthy).unwrap();
+}
+
+#[test]
+fn natural_parent_exit_also_reclaims_descendants() {
+    fixture("nonreader-retainer");
+    let parent = fixture("exit-parent");
+    let host = SubprocessPluginHost::new();
+    let handle = spawn(&host, "exit-parent", 1000);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let pid_path = parent.with_extension("pid");
+    let pid = loop {
+        if let Ok(value) = std::fs::read_to_string(&pid_path) {
+            if let Ok(pid) = value.parse::<u32>() {
+                break pid;
+            }
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    let descendant = DescendantCleanup(NativeProcess::open(pid));
+    while host.state(&handle) == PluginHostState::Running {
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(host.state(&handle), PluginHostState::Stopped);
+    while descendant.0.running() {
+        assert!(
+            Instant::now() < deadline,
+            "terminal parent left a descendant running"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    host.stop(&handle).unwrap();
 }

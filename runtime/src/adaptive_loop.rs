@@ -452,7 +452,13 @@ impl AdaptiveLoop {
             inference,
         };
         match binder.bind_and_execute(&req) {
-            Ok(binding) => Some(binding),
+            Ok(binding) if binding.route_id == route.route_id && binding.source == route.source => {
+                Some(binding)
+            },
+            Ok(_) => {
+                tracing::warn!(component="adaptive_loop", event="binding_identity_mismatch", route_id=%route.route_id, "binder returned a different route or source");
+                None
+            },
             Err(e) => {
                 tracing::warn!(component="adaptive_loop", event="binding_failed", error=%e, "binder.bind_and_execute failed after validation");
                 None
@@ -702,9 +708,27 @@ impl AdaptiveLoop {
         {
             match provider.suggest(&state.snapshot, &context) {
                 Ok(Some(hint)) => {
-                    if let Some(override_policy) = hint.policy_override {
-                        tracing::debug!(component="adaptive_loop", event="tier_policy_override", source=provider.source_name(), reason=%hint.reason, confidence=hint.confidence, "tier override applied");
-                        policy = override_policy;
+                    if let Some(mut override_policy) = hint.policy_override {
+                        use aicore_contracts::policy::priority::PolicySource;
+                        // An inferred rule hint is a fallback, not authority to
+                        // replace the engine's AI or verified-feedback decision.
+                        // Explicit task constraints and thermal limits follow.
+                        let may_replace = policy.source == PolicySource::DefaultFallback
+                            || (override_policy.source == PolicySource::UserSpecified
+                                && policy.source != PolicySource::UserSpecified);
+                        if mode_before == RuntimeMode::Normal
+                            && hint.confidence.is_finite()
+                            && hint.confidence >= 0.5
+                            && may_replace
+                        {
+                            override_policy.reason.push_str(&format!(
+                                "; {}: {}",
+                                provider.source_name(),
+                                hint.reason
+                            ));
+                            tracing::debug!(component="adaptive_loop", event="tier_policy_override", source=provider.source_name(), reason=%hint.reason, confidence=hint.confidence, "tier override applied");
+                            policy = override_policy;
+                        }
                     }
                 },
                 Ok(None) => {},
@@ -890,7 +914,7 @@ impl AdaptiveLoop {
             runtime_binding,
             binding_deferred,
             policy,
-            snap_fields,
+            mut snap_fields,
         } = prepared;
         if max_age.is_some_and(|age| start.elapsed() > age)
             || (max_age.is_some() && self.safe_mode.current_mode() != mode_before)
@@ -932,6 +956,12 @@ impl AdaptiveLoop {
         } else {
             runtime_binding
         };
+        if let Some(mut route) = runtime_route.clone() {
+            route.applied = runtime_binding
+                .as_ref()
+                .is_some_and(|binding| binding.executed);
+            snap_fields.runtime_route_json = serde_json::to_string(&route).ok();
+        }
         let active_tasks = tasks.tasks.clone();
 
         // Platform mode derives targets from this tick's telemetry; explicit targets take precedence.
@@ -1151,6 +1181,21 @@ impl AdaptiveLoop {
             runtime_route_json: snap_fields.runtime_route_json.clone(),
             ai_runtime_health_json: snap_fields.ai_runtime_health_json.clone(),
             runtime_binding_reason: runtime_binding.as_ref().map(|b| b.reason.clone()),
+        }
+    }
+
+    pub(crate) fn worker_failed_tick(&self, reason: &str) -> TickOutcome {
+        let tick_id = self.tick_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        self.metrics.record_execution(false);
+        self.metrics.record_tick(false, 0);
+        TickOutcome {
+            tick_id,
+            trace_id: TraceContext::new(tick_id).trace_id,
+            timestamp_unix_ms: Self::now_unix_ms(),
+            mode_after: self.safe_mode.record_failure(),
+            execution_status: Some(ExecutionOverallStatus::AllFailed),
+            message: reason.into(),
+            ..Default::default()
         }
     }
 

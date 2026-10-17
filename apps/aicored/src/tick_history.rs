@@ -12,6 +12,22 @@ pub struct TickHistory {
 }
 
 impl TickHistory {
+    pub fn try_snapshot(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<TickSummary>, aicore_contracts::ipc::protocol::IpcError> {
+        let buf = self.inner.try_read().map_err(|_| {
+            aicore_contracts::ipc::protocol::IpcError::new(
+                "ERR_RESOURCE_UNAVAILABLE",
+                "tick history busy",
+            )
+        })?;
+        Ok(buf
+            .iter()
+            .skip(buf.len().saturating_sub(limit))
+            .cloned()
+            .collect())
+    }
     pub fn new(max: usize) -> Self {
         Self {
             max: max.max(1),

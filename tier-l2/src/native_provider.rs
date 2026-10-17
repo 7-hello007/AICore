@@ -38,6 +38,76 @@ pub struct L2NativeTaskProvider {
 }
 
 impl L2NativeTaskProvider {
+    pub fn try_submit(&self, contract: &TaskContract) -> ContractResult<NativeTaskHandle> {
+        let mut tasks = self
+            .tasks
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("L2 tasks busy".into()))?;
+        let handle_id = format!(
+            "native-{}-{}",
+            now_unix_secs(),
+            self.next_seq.fetch_add(1, Ordering::SeqCst)
+        );
+        if let Some(queue) = &self.queue {
+            queue.try_enqueue(QueuedTask::new(
+                handle_id.clone(),
+                contract.clone(),
+                now_unix_ms(),
+            ))?;
+        }
+        tasks.insert(
+            handle_id.clone(),
+            NativeTaskRecord {
+                contract: contract.clone(),
+                state: TaskState::Queued,
+                submitted_at_unix_secs: now_unix_secs(),
+            },
+        );
+        Ok(NativeTaskHandle { handle_id })
+    }
+    pub fn try_task_info(
+        &self,
+        handle: &NativeTaskHandle,
+    ) -> ContractResult<(TaskContract, u64, TaskState)> {
+        let tasks = self
+            .tasks
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("L2 tasks busy".into()))?;
+        let record = tasks
+            .get(&handle.handle_id)
+            .ok_or_else(|| ContractError::ResourceUnavailable("native task not found".into()))?;
+        let state = if let Some(queue) = &self.queue {
+            queue
+                .try_get(&handle.handle_id)?
+                .ok_or_else(|| {
+                    ContractError::ResourceUnavailable("queued native task missing".into())
+                })?
+                .state
+        } else {
+            record.state
+        };
+        Ok((
+            record.contract.clone(),
+            record.submitted_at_unix_secs,
+            state,
+        ))
+    }
+    pub fn try_cancel(&self, handle: &NativeTaskHandle) -> ContractResult<()> {
+        let mut tasks = self
+            .tasks
+            .try_lock()
+            .map_err(|_| ContractError::ResourceUnavailable("L2 tasks busy".into()))?;
+        let record = tasks
+            .get_mut(&handle.handle_id)
+            .ok_or_else(|| ContractError::ResourceUnavailable("native task not found".into()))?;
+        if let Some(queue) = &self.queue {
+            queue.try_cancel(&handle.handle_id)
+        } else {
+            aicore_contracts::traits::task_queue::transition(record.state, TaskState::Cancelled)?;
+            record.state = TaskState::Cancelled;
+            Ok(())
+        }
+    }
     pub fn new() -> Self {
         Self {
             tasks: Mutex::new(HashMap::new()),

@@ -186,9 +186,13 @@ impl ITelemetryProvider for LinuxTelemetryProvider {
         };
 
         // 8. Temperature / GPU / NPU
-        let temperature = temperature::read_temperature();
+        let mut temperature = temperature::read_temperature();
         let cpu_temp = temperature.cpu_celsius;
-        let gpu_snap = gpu::read_gpu();
+        let (gpu_snap, gpu_device_id) =
+            gpu::read_gpu_with_identity(std::path::Path::new(gpu::DRM_BASE));
+        tracing::debug!(component="linux_telemetry", collected_at_unix_ms=collected_at, device_id=?gpu_device_id, "GPU snapshot identity");
+        // A generic thermal zone cannot be attributed to the selected GPU.
+        temperature.gpu_celsius = gpu_snap.temperature_celsius;
         let npu_snap = npu::read_npu();
         let (battery, power) = power::read_power();
 

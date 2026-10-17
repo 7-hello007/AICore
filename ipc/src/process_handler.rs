@@ -240,6 +240,28 @@ mod tests {
     use super::*;
     use std::{path::PathBuf, process::Command, sync::OnceLock, time::Duration};
 
+    struct ManualClock(std::sync::mpsc::Sender<()>);
+    impl Drop for ManualClock {
+        fn drop(&mut self) {
+            tokio::time::resume();
+            let _ = self.0.send(());
+        }
+    }
+    async fn manual_clock() -> ManualClock {
+        let (release, wait) = std::sync::mpsc::channel();
+        let (ready, started) = tokio::sync::oneshot::channel();
+        // An active blocking task inhibits Tokio auto-advance. Native process
+        // startup/IO can complete without consuming a test-controlled deadline.
+        // Drop releases it even on panic; the test runtime joins its pool.
+        tokio::task::spawn_blocking(move || {
+            let _ = ready.send(());
+            let _ = wait.recv();
+        });
+        started.await.unwrap();
+        tokio::time::pause();
+        ManualClock(release)
+    }
+
     #[test]
     fn managed_handshake_preserves_negotiation_and_rejection_versions() {
         use aicore_contracts::{
@@ -305,12 +327,39 @@ fn main() {
 }
 "#;
 
+    fn reserve_fixture_directory(base: &std::path::Path) -> PathBuf {
+        for sequence in 0u64.. {
+            let candidate = base.with_file_name(format!(
+                "{}-{sequence}",
+                base.file_name().unwrap().to_string_lossy()
+            ));
+            match std::fs::create_dir(&candidate) {
+                Ok(()) => return candidate,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("cannot reserve test fixture directory: {error}"),
+            }
+        }
+        unreachable!("test fixture directory sequence exhausted")
+    }
+    #[test]
+    fn fixture_reservation_never_reuses_stale_pid_or_gate_observations() {
+        let base =
+            std::env::temp_dir().join(format!("aicore-handler-reservation-{}", std::process::id()));
+        let first = reserve_fixture_directory(&base);
+        std::fs::write(first.join("stale.pid"), "prior-process").unwrap();
+        let second = reserve_fixture_directory(&base);
+        assert_ne!(
+            first, second,
+            "PID reuse must not inherit a previous test run's observation directory"
+        );
+        assert!(!second.join("stale.pid").exists());
+    }
     fn fixture(mode: &str) -> PluginProcessSpec {
         static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
         let directory = DIRECTORY.get_or_init(|| {
-            let directory =
-                std::env::temp_dir().join(format!("aicore-handler-tests-{}", std::process::id()));
-            std::fs::create_dir_all(&directory).unwrap();
+            let directory = reserve_fixture_directory(
+                &std::env::temp_dir().join(format!("aicore-handler-tests-{}", std::process::id())),
+            );
             let source = directory.join("fixture.rs");
             std::fs::write(
                 &source,
@@ -384,7 +433,7 @@ fn main() {
     }
     async fn started(spec: &PluginProcessSpec) -> u32 {
         let path = PathBuf::from(&spec.artifact_path).with_extension("pid");
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
         loop {
             if let Ok(text) = std::fs::read_to_string(&path) {
                 if let Ok(pid) = text.parse() {
@@ -392,10 +441,10 @@ fn main() {
                 }
             }
             assert!(
-                tokio::time::Instant::now() < deadline,
+                std::time::Instant::now() < deadline,
                 "handler did not start"
             );
-            tokio::time::sleep(Duration::from_millis(2)).await;
+            tokio::task::yield_now().await;
         }
     }
     async fn call(
@@ -416,10 +465,23 @@ fn main() {
     #[tokio::test]
     async fn blocked_process_is_dead_and_capacity_released_before_timeout_response() {
         let spec = fixture("blocked-timeout");
+        let _clock = manual_clock().await;
         let slots = Arc::new(tokio::sync::Semaphore::new(1));
-        let response = call(spec.clone(), slots.clone(), 500).await;
+        let request = tokio::spawn(call(spec.clone(), slots.clone(), 500));
         let pid = started(&spec).await;
-        assert_eq!(response.error.unwrap().code, "ERR_TIMEOUT");
+        tokio::time::advance(Duration::from_millis(499)).await;
+        assert!(
+            !request.is_finished(),
+            "deadline fired before the original 500ms budget"
+        );
+        tokio::time::advance(Duration::from_millis(1)).await;
+        // Tokio timers round deadlines to millisecond ticks. Dispatch must
+        // expire at the first tick after 500ms, not at the host's real 2s IO limit.
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let response = request.await.unwrap();
+        let error = response.error.unwrap();
+        assert_eq!(error.code, "ERR_TIMEOUT");
+        assert_eq!(error.message, "handler process terminated and reaped");
         assert!(!running(pid), "caller timeout left Handler process alive");
         assert_eq!(slots.available_permits(), 1);
     }
@@ -441,6 +503,7 @@ fn main() {
             tokio::task::yield_now().await;
         }
         let healthy = fixture("healthy-repeat");
+        let _clock = manual_clock().await;
         for _ in 0..8 {
             assert!(call(healthy.clone(), slots.clone(), 1000).await.success);
             assert_eq!(slots.available_permits(), 1);
@@ -448,6 +511,7 @@ fn main() {
     }
     #[tokio::test]
     async fn crashing_handler_does_not_kill_host() {
+        let _clock = manual_clock().await;
         let slots = Arc::new(tokio::sync::Semaphore::new(1));
         let spec = fixture("crash-handler");
         assert_eq!(
@@ -542,6 +606,7 @@ fn main() {
         let server = tokio::spawn(server.run());
         let mut client = crate::IpcClient::connect(path).await.unwrap();
         std::fs::remove_file(PathBuf::from(&spec.artifact_path).with_extension("pid")).unwrap();
+        let clock = manual_clock().await;
         let request = tokio::spawn(async move {
             let result = client
                 .call(
@@ -553,13 +618,23 @@ fn main() {
             (client, result)
         });
         let pid = started(&spec).await;
+        tokio::time::advance(Duration::from_millis(299)).await;
+        assert!(
+            !request.is_finished(),
+            "client deadline fired before the original 300ms budget"
+        );
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::time::advance(Duration::from_millis(1)).await;
         let (mut client, result) = request.await.unwrap();
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
-        let deadline = tokio::time::Instant::now() + Duration::from_millis(700);
-        while running(pid) && tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(2)).await;
+        let deadline = std::time::Instant::now() + Duration::from_millis(700);
+        while running(pid) && std::time::Instant::now() < deadline {
+            tokio::task::yield_now().await;
         }
         let terminated = !running(pid);
+        // Restore real time before server shutdown/backoff; only the request
+        // deadline above is controlled. Cleanup still has its real 700ms bound.
+        drop(clock);
         shutdown.send(()).await.unwrap();
         server.await.unwrap();
         assert!(client
@@ -585,6 +660,7 @@ fn main() {
         .with_shutdown(rx);
         let server = tokio::spawn(server.run());
         let mut client = crate::IpcClient::connect(path).await.unwrap();
+        let clock = manual_clock().await;
         assert!(
             client
                 .call("repeat", Request::GetStatus, Duration::from_secs(1))
@@ -600,6 +676,7 @@ fn main() {
             .unwrap();
         assert_eq!(response.error.unwrap().code, "ERR_INVALID_REQUEST");
         assert_eq!(std::fs::read_to_string(pid_file).unwrap(), before);
+        drop(clock);
         shutdown.send(()).await.unwrap();
         server.await.unwrap();
     }
@@ -617,6 +694,26 @@ fn main() {
             !pid_file.exists(),
             "unenforceable containment ran Handler code"
         );
+        assert_eq!(slots.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn expired_managed_deadline_refuses_before_process_entry_and_releases_capacity() {
+        // Real clock: a startup-expired request must never run child code.
+        let spec = fixture("healthy-expired-start");
+        let slots = Arc::new(tokio::sync::Semaphore::new(1));
+        let response = crate::server::dispatch_blocking(
+            Arc::new(ProcessIpcHandler::new(spec.clone()).unwrap()),
+            Envelope::new("expired-process", Request::GetStatus),
+            ClientIdentity::Internal,
+            slots.clone(),
+            tokio::time::Instant::now() - Duration::from_millis(1),
+        )
+        .await;
+        assert_eq!(response.error.unwrap().code, "ERR_TIMEOUT");
+        assert!(!PathBuf::from(spec.artifact_path)
+            .with_extension("pid")
+            .exists());
         assert_eq!(slots.available_permits(), 1);
     }
 

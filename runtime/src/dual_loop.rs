@@ -138,12 +138,13 @@ pub trait CancellablePolicyExecutor: Send + Sync + 'static {
 
 // Even a contract-violating executor cannot create unbounded detached workers
 // by repeatedly constructing/dropping consumers. Its permit stays in the thread.
-static EXECUTION_WORKERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static EXECUTION_WORKERS: std::sync::OnceLock<Arc<std::sync::atomic::AtomicUsize>> =
+    std::sync::OnceLock::new();
 const MAX_EXECUTION_WORKERS: usize = 32;
-struct ExecutionPermit;
+struct ExecutionPermit(Arc<std::sync::atomic::AtomicUsize>);
 impl Drop for ExecutionPermit {
     fn drop(&mut self) {
-        EXECUTION_WORKERS.fetch_sub(1, Ordering::AcqRel);
+        self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
 struct ActiveExecution {
@@ -155,6 +156,7 @@ struct ActiveExecution {
 /// runtime binding and never waits for the slow worker. The fallback is a
 /// caller-supplied rule policy, not a fabricated successful execution.
 pub struct FastPolicyConsumer {
+    execution_workers: Arc<std::sync::atomic::AtomicUsize>,
     worker: Arc<SlowPolicyWorker>,
     current: Mutex<Option<PreparedEnvelope>>,
     fallback: Arc<ResourcePolicy>,
@@ -172,6 +174,9 @@ impl FastPolicyConsumer {
         executor: Arc<dyn CancellablePolicyExecutor>,
     ) -> Self {
         Self {
+            execution_workers: EXECUTION_WORKERS
+                .get_or_init(|| Arc::new(std::sync::atomic::AtomicUsize::new(0)))
+                .clone(),
             worker,
             current: Mutex::new(None),
             fallback,
@@ -244,7 +249,8 @@ impl FastPolicyConsumer {
                 self.timeout,
             ),
         };
-        if EXECUTION_WORKERS
+        if self
+            .execution_workers
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < MAX_EXECUTION_WORKERS).then_some(n + 1)
             })
@@ -252,7 +258,7 @@ impl FastPolicyConsumer {
         {
             return FastPolicyOutcome::Failed("execution worker capacity reached".into());
         }
-        let permit = ExecutionPermit;
+        let permit = ExecutionPermit(self.execution_workers.clone());
         let cancellation = ExecutionCancellation {
             cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             deadline: std::time::Instant::now() + max_age,
@@ -771,8 +777,48 @@ mod tests {
         )
     }
 
+    // Ordinary fixtures own their quota; the capacity test below still uses
+    // production constructors and the real process-global 32-worker quota.
+    fn isolated_consumer(
+        worker: Arc<SlowPolicyWorker>,
+        policy: Arc<ResourcePolicy>,
+        validator: Arc<dyn IPolicyValidator>,
+        executor: Arc<dyn CancellablePolicyExecutor>,
+    ) -> FastPolicyConsumer {
+        let mut consumer = FastPolicyConsumer::new(worker, policy, validator, executor);
+        consumer.execution_workers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        consumer
+    }
+
+    #[test]
+    fn production_consumers_share_capacity_but_test_fixtures_do_not() {
+        let worker = Arc::new(SlowPolicyWorker::new().unwrap());
+        let first = FastPolicyConsumer::new(
+            worker.clone(),
+            Arc::new(ResourcePolicy::default()),
+            Arc::new(Accept),
+            Arc::new(ModelExecutor),
+        );
+        let second = FastPolicyConsumer::new(
+            worker.clone(),
+            Arc::new(ResourcePolicy::default()),
+            Arc::new(Accept),
+            Arc::new(ModelExecutor),
+        );
+        assert!(Arc::ptr_eq(
+            &first.execution_workers,
+            &second.execution_workers
+        ));
+        let isolated = consumer(worker);
+        assert!(!Arc::ptr_eq(
+            &first.execution_workers,
+            &isolated.execution_workers
+        ));
+        assert_eq!(MAX_EXECUTION_WORKERS, 32);
+    }
+
     fn consumer(worker: Arc<SlowPolicyWorker>) -> FastPolicyConsumer {
-        FastPolicyConsumer::new(
+        isolated_consumer(
             worker,
             Arc::new(ResourcePolicy {
                 policy_id: "fallback".into(),
@@ -785,7 +831,7 @@ mod tests {
 
     #[test]
     fn p1_legacy_fast_tick_does_not_wait_for_executor() {
-        let fast = FastPolicyConsumer::new(
+        let fast = isolated_consumer(
             Arc::new(SlowPolicyWorker::new().unwrap()),
             Arc::new(ResourcePolicy::default()),
             Arc::new(Accept),
@@ -829,7 +875,7 @@ mod tests {
     fn probe_consumer(panic: bool) -> (Arc<FastPolicyConsumer>, Arc<AtomicU64>, Arc<AtomicU64>) {
         let calls = Arc::new(AtomicU64::new(0));
         let exits = Arc::new(AtomicU64::new(0));
-        let fast = FastPolicyConsumer::new(
+        let fast = isolated_consumer(
             Arc::new(SlowPolicyWorker::new().unwrap()),
             Arc::new(ResourcePolicy::default()),
             Arc::new(Accept),
@@ -937,6 +983,9 @@ mod tests {
     #[test]
     fn p1_fast_worker_capacity_is_global_and_reclaimed_after_actual_exit() {
         let worker = Arc::new(SlowPolicyWorker::new().unwrap());
+        let capacity = EXECUTION_WORKERS
+            .get_or_init(|| Arc::new(std::sync::atomic::AtomicUsize::new(0)))
+            .clone();
         let calls = Arc::new(AtomicU64::new(0));
         let exits = Arc::new(AtomicU64::new(0));
         let make = || {
@@ -986,7 +1035,7 @@ mod tests {
         assert!(matches!(finish_probe(&extra), FastPolicyOutcome::Cancelled));
         drop(consumers);
         drop(extra);
-        assert_eq!(EXECUTION_WORKERS.load(Ordering::Acquire), 0);
+        assert_eq!(capacity.load(Ordering::Acquire), 0);
     }
     #[test]
     fn p1_fast_executor_panic_is_failure_not_noop() {
@@ -1013,7 +1062,7 @@ mod tests {
     #[test]
     fn p1_uncooperative_executor_is_not_reported_terminated_or_requeued() {
         let calls = Arc::new(AtomicU64::new(0));
-        let fast = FastPolicyConsumer::new(
+        let fast = isolated_consumer(
             Arc::new(SlowPolicyWorker::new().unwrap()),
             Arc::new(ResourcePolicy::default()),
             Arc::new(Accept),
@@ -1050,7 +1099,7 @@ mod tests {
         assert!(matches!(finish_probe(&fast), FastPolicyOutcome::Cancelled));
         assert_eq!(exits.load(Ordering::SeqCst), 1);
         drop(fast);
-        let fast = FastPolicyConsumer::new(
+        let fast = isolated_consumer(
             Arc::new(SlowPolicyWorker::new().unwrap()),
             Arc::new(ResourcePolicy::default()),
             Arc::new(Accept),

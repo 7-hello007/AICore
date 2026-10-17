@@ -552,10 +552,81 @@ fn resource_counts() -> (u32, usize) {
 }
 
 #[cfg(target_os = "linux")]
+fn observable_thread_count(entries: &[std::fs::DirEntry]) -> usize {
+    // getdents may retain a TID that disappeared during enumeration. Verify
+    // every entry against the kernel; still-readable threads (including Z/X)
+    // are counted, and unexpected read failures must fail the probe.
+    entries
+        .iter()
+        .filter(
+            |entry| match std::fs::read_to_string(entry.path().join("stat")) {
+                Ok(_) => true,
+                Err(error)
+                    if matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH)) =>
+                {
+                    false
+                },
+                Err(error) => panic!(
+                    "cannot verify observed thread {:?}: {error}",
+                    entry.file_name()
+                ),
+            },
+        )
+        .count()
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn resource_observation_rejects_stale_entries_but_counts_live_threads() {
+    let (ready, started) = mpsc::channel();
+    let (release, wait) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        // SAFETY: gettid queries the calling test thread only.
+        ready
+            .send(unsafe { libc::syscall(libc::SYS_gettid) }.to_string())
+            .unwrap();
+        wait.recv().unwrap();
+    });
+    let tid = started.recv_timeout(Duration::from_secs(2)).unwrap();
+    let entries: Vec<_> = std::fs::read_dir("/proc/self/task")
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_name().to_string_lossy() == tid)
+        .collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        observable_thread_count(&entries),
+        1,
+        "a live worker must never be filtered out"
+    );
+    release.send(()).unwrap();
+    worker.join().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while entries[0].path().exists() {
+        assert!(
+            Instant::now() < deadline,
+            "joined native thread was not reclaimed"
+        );
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        observable_thread_count(&entries),
+        0,
+        "directory enumeration is not a live resource snapshot"
+    );
+}
+
+#[cfg(target_os = "linux")]
 fn resource_counts() -> (u32, usize) {
+    let entries: Vec<_> = std::fs::read_dir("/proc/self/task")
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let threads = observable_thread_count(&entries);
+    drop(entries); // Do not charge this observation's directory FD to the host.
     (
         std::fs::read_dir("/proc/self/fd").unwrap().count() as u32,
-        std::fs::read_dir("/proc/self/task").unwrap().count(),
+        threads,
     )
 }
 

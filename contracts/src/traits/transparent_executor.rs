@@ -7,11 +7,12 @@ use crate::policy::resource_policy::ResourcePolicy;
 /// Different from V2 `IPolicyExecutor`:
 /// - Six-part style: Observe Decide Validate Apply Verify Rollback.
 /// - Each implementation output `ControlTrace`.
-/// - Back to `prior_policy` if it fails.
+/// - On failure, restore captured original state when the executor supports it.
 pub trait ITransparentExecutor: Send + Sync {
-    /// Execute a validated policy and back to `prior_policy` if it fails.
+    /// Execute a validated policy and independently verify original-state recovery.
     ///
-    /// When `prior_policy` is `None`, the failure does not result in a return target, but only a return failure is recorded.
+    /// `prior_policy` is advisory history for compatible implementations. It is
+    /// not a resource snapshot and must not be reported as verified restoration.
     fn execute_transparent(
         &self,
         policy: &ResourcePolicy,

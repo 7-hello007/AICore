@@ -10,6 +10,16 @@ use aicore_contracts::{
 pub struct WindowsCapabilityProvider;
 
 impl WindowsCapabilityProvider {
+    fn gpu_control_for_detection(detected: bool) -> CapabilityEntry {
+        CapabilityEntry::unsupported(
+            "gpu.control",
+            if detected {
+                "NVIDIA tool detected; exact original-state restoration and guarded control unavailable"
+            } else {
+                "no reversible guarded GPU control backend available"
+            },
+        )
+    }
     pub fn new() -> Self {
         Self
     }
@@ -54,17 +64,7 @@ impl ICapabilityProvider for WindowsCapabilityProvider {
                     "vendor/runtime dependent; NVIDIA supported when nvidia-smi is installed",
                 )
             },
-            if Self::nvidia_available() {
-                CapabilityEntry::partial(
-                    "gpu.control",
-                    "NVIDIA power limit control available through nvidia-smi",
-                )
-            } else {
-                CapabilityEntry::unsupported(
-                    "gpu.control",
-                    "vendor-specific GPU control requires vendor adapter/runtime",
-                )
-            },
+            Self::gpu_control_for_detection(Self::nvidia_available()),
             CapabilityEntry::unsupported(
                 "npu.telemetry",
                 "requires Windows ML/vendor runtime adapter",
@@ -91,5 +91,20 @@ impl ICapabilityProvider for WindowsCapabilityProvider {
 
     fn component_name(&self) -> &'static str {
         "windows_capability"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn p0_discovered_gpu_control_path_does_not_prove_reversibility() {
+        for detected in [false, true] {
+            let entry = WindowsCapabilityProvider::gpu_control_for_detection(detected);
+            assert_eq!(
+                entry.status,
+                aicore_contracts::capability::status::CapabilityStatus::Unsupported
+            );
+        }
     }
 }

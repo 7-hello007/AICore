@@ -45,52 +45,31 @@ impl Default for LinuxGpuController {
 
 impl IGpuController for LinuxGpuController {
     fn set_workload_hint(&self, hint: &str) -> ContractResult<()> {
-        let target = match hint {
-            "compute" | "performance" => "high",
-            "graphics" | "auto" | "balanced" => "auto",
-            "power_save" | "low" => "low",
-            _ => {
-                return Err(ContractError::InvalidRequest(format!(
-                    "unsupported gpu hint: {}",
-                    hint
-                )))
-            },
-        };
-        let paths = Self::amd_perf_paths();
-        if paths.is_empty() {
-            return Err(ContractError::CapabilityUnavailable(
-                "AMD amdgpu performance control unavailable".to_string(),
-            ));
+        if !matches!(
+            hint,
+            "compute" | "performance" | "graphics" | "auto" | "balanced" | "power_save" | "low"
+        ) {
+            return Err(ContractError::InvalidRequest(format!(
+                "unsupported gpu hint: {hint}"
+            )));
         }
-        for path in paths {
-            std::fs::write(&path, target).map_err(|e| match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    ContractError::PermissionDenied(format!("write {}: {}", path, e))
-                },
-                _ => ContractError::AdapterUnavailable(format!("write {}: {}", path, e)),
-            })?;
-        }
-        Ok(())
+        Err(ContractError::CapabilityUnavailable(
+            "generic GPU setter has no authorization, independent readback or exact original-state restoration; use a reversible guarded actuator".into(),
+        ))
     }
 
     fn get_status(&self) -> ContractResult<GpuControlStatus> {
-        let paths = Self::amd_perf_paths();
         Ok(GpuControlStatus {
-            controllable: !paths.is_empty(),
-            detail: Some(if paths.is_empty() {
-                "no generic GPU control path detected".to_string()
-            } else {
-                format!("AMD amdgpu performance control paths: {}", paths.len())
-            }),
+            controllable: false,
+            detail: Some(format!(
+                "{} GPU performance paths detected; reversible guarded control unavailable",
+                Self::amd_perf_paths().len()
+            )),
         })
     }
 
     fn capabilities(&self) -> Vec<&'static str> {
-        let mut caps = vec!["gpu.status"];
-        if !Self::amd_perf_paths().is_empty() {
-            caps.push("gpu.workload_hint.write");
-        }
-        caps
+        vec!["gpu.status"]
     }
 
     fn platform_name(&self) -> &'static str {

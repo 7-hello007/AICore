@@ -1,5 +1,6 @@
 use aicore_contracts::{
     errors::{ContractError, ContractResult},
+    hardware::matrix::HardwareVendor,
     hardware::telemetry::{GpuTelemetrySample, HardwareDeviceInfo, NpuTelemetrySample},
     traits::hardware_telemetry::IHardwareTelemetryProvider,
 };
@@ -7,6 +8,16 @@ use std::process::Command;
 
 pub struct WindowsHardwareTelemetryProvider;
 impl WindowsHardwareTelemetryProvider {
+    /// Session runtimes use an ordinal; hardware control uses the stable LUID.
+    /// Resolve this association from the same DXGI enumeration at binding time.
+    pub fn gpu_device_for_ordinal(&self, ordinal: u32) -> Option<HardwareDeviceInfo> {
+        let id = dxgi_id_for_ordinal(ordinal)?;
+        dxgi_records()
+            .into_iter()
+            .find(|(device, _)| device.id == id)
+            .map(|(device, _)| device)
+    }
+
     pub fn new() -> Self {
         Self
     }
@@ -63,9 +74,27 @@ impl IHardwareTelemetryProvider for WindowsHardwareTelemetryProvider {
     }
 }
 impl WindowsHardwareTelemetryProvider {
+    /// Typed identity comes from the exact enumerated OS/provider device.
+    pub fn vendor_for_device(&self, device_id: &str) -> HardwareVendor {
+        if let Some((_, vendor)) = dxgi_records()
+            .into_iter()
+            .find(|(device, _)| device.id == device_id)
+        {
+            return vendor;
+        }
+        if self
+            .nvidia_devices()
+            .iter()
+            .any(|device| device.id == device_id)
+        {
+            return HardwareVendor::Nvidia;
+        }
+        HardwareVendor::Other("unverified identity".into())
+    }
+
     fn nvidia_devices(&self) -> Vec<HardwareDeviceInfo> {
         let Some(out) = Self::query(&[
-            "--query-gpu=index,name,driver_version",
+            "--query-gpu=uuid,name,driver_version",
             "--format=csv,noheader,nounits",
         ]) else {
             return Vec::new();
@@ -73,7 +102,7 @@ impl WindowsHardwareTelemetryProvider {
         out.lines()
             .filter_map(|line| {
                 let parts: Vec<_> = line.split(',').map(|s| s.trim()).collect();
-                if parts.len() < 3 {
+                if parts.len() != 3 || !valid_nvidia_uuid(parts[0]) {
                     return None;
                 }
                 Some(HardwareDeviceInfo {
@@ -86,13 +115,25 @@ impl WindowsHardwareTelemetryProvider {
             .collect()
     }
     fn sample_nvidia(&self, device_id: &str) -> ContractResult<GpuTelemetrySample> {
-        let index = device_id.strip_prefix("nvidia:").ok_or_else(|| {
-            ContractError::InvalidRequest(format!("unsupported gpu id: {}", device_id))
-        })?;
-        let out = Self::query(&["-i", index, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name,driver_version", "--format=csv,noheader,nounits"])
+        let index = device_id
+            .strip_prefix("nvidia:")
+            .filter(|uuid| valid_nvidia_uuid(uuid))
+            .ok_or_else(|| {
+                ContractError::InvalidRequest(format!("unsupported gpu id: {}", device_id))
+            })?;
+        if !self
+            .nvidia_devices()
+            .iter()
+            .any(|device| device.id == device_id)
+        {
+            return Err(ContractError::InvalidRequest(
+                "NVIDIA UUID absent from provider enumeration".into(),
+            ));
+        }
+        let out = Self::query(&["-i", index, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name,driver_version,uuid", "--format=csv,noheader,nounits"])
             .ok_or_else(|| ContractError::NotSupported("nvidia-smi unavailable or query failed".to_string()))?;
         let p: Vec<_> = out.split(',').map(|s| s.trim()).collect();
-        if p.len() < 6 {
+        if p.len() != 7 || p[6] != index {
             return Err(ContractError::AdapterUnavailable(
                 "unexpected nvidia-smi output".to_string(),
             ));
@@ -124,7 +165,7 @@ fn now_unix_ms() -> u64 {
 }
 
 #[cfg(target_os = "windows")]
-fn dxgi_devices() -> Vec<HardwareDeviceInfo> {
+fn dxgi_records() -> Vec<(HardwareDeviceInfo, HardwareVendor)> {
     use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_DESC1};
     // SAFETY: the returned COM factory owns its references; descriptor buffers
     // remain writable throughout query-only calls. No device state is modified.
@@ -151,18 +192,66 @@ fn dxgi_devices() -> Vec<HardwareDeviceInfo> {
             0x8086 => "Intel".into(),
             other => format!("PCI:{other:04x}"),
         };
-        devices.push(HardwareDeviceInfo {
-            id: format!("gpu:dxgi:{index}"),
-            vendor,
-            name: String::from_utf16_lossy(&desc.Description[..length]),
-            driver: None,
-        });
+        devices.push((
+            HardwareDeviceInfo {
+                id: format!(
+                    "gpu:dxgi:{:08x}:{:08x}",
+                    desc.AdapterLuid.HighPart as u32, desc.AdapterLuid.LowPart
+                ),
+                vendor,
+                name: String::from_utf16_lossy(&desc.Description[..length]),
+                driver: None,
+            },
+            HardwareVendor::from_pci_vendor_id(desc.VendorId),
+        ));
     }
     devices
 }
 #[cfg(not(target_os = "windows"))]
-fn dxgi_devices() -> Vec<HardwareDeviceInfo> {
+fn dxgi_records() -> Vec<(HardwareDeviceInfo, HardwareVendor)> {
     Vec::new()
+}
+
+fn dxgi_devices() -> Vec<HardwareDeviceInfo> {
+    dxgi_records()
+        .into_iter()
+        .map(|(device, _)| device)
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn dxgi_id_for_ordinal(ordinal: u32) -> Option<String> {
+    use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_DESC1};
+    // SAFETY: query-only COM calls own their factory/adapter and sized buffer.
+    let factory = unsafe { CreateDXGIFactory1::<IDXGIFactory1>() }.ok()?;
+    let adapter = unsafe { factory.EnumAdapters1(ordinal) }.ok()?;
+    let mut desc = DXGI_ADAPTER_DESC1::default();
+    unsafe { adapter.GetDesc1(&mut desc) }.ok()?;
+    if desc.Flags & 2 != 0 {
+        return None;
+    }
+    Some(format!(
+        "gpu:dxgi:{:08x}:{:08x}",
+        desc.AdapterLuid.HighPart as u32, desc.AdapterLuid.LowPart
+    ))
+}
+#[cfg(not(target_os = "windows"))]
+fn dxgi_id_for_ordinal(_: u32) -> Option<String> {
+    None
+}
+
+fn valid_nvidia_uuid(uuid: &str) -> bool {
+    let Some(value) = uuid.strip_prefix("GPU-") else {
+        return false;
+    };
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
 }
 
 #[cfg(target_os = "windows")]

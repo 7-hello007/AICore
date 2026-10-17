@@ -10,16 +10,14 @@ use aicore_contracts::{
     execution::{status::ExecutionOverallStatus, targets::ExecutionTargets},
     policy::resource_policy::ResourcePolicy,
     traits::{
-        policy_executor::IPolicyExecutor,
+        policy_executor::{IPolicyExecutor, IPolicyTransaction},
         post_condition_checker::{IPostConditionChecker, PostConditionResult},
         transparent_executor::ITransparentExecutor,
     },
 };
 
-/// Transparent implementer.
-///
-/// Pack V2 `IPolicyExecutor`, after Apply, can be called to `IPostConditionChecker` as Verify.
-/// If Verifiy or Apply fails, back to `prior_policy`.
+/// Execute, independently verify and restore adapter-owned original snapshots.
+/// Prior policies remain advisory history and cannot prove resource restoration.
 pub struct TransparentExecutor {
     inner: Arc<dyn IPolicyExecutor>,
     checker: Option<Arc<dyn IPostConditionChecker>>,
@@ -50,7 +48,7 @@ impl ITransparentExecutor for TransparentExecutor {
         &self,
         policy: &ResourcePolicy,
         targets: &ExecutionTargets,
-        prior_policy: Option<&ResourcePolicy>,
+        _prior_policy: Option<&ResourcePolicy>,
     ) -> ControlTrace {
         let trace_start = Instant::now();
         let trace_id = format!("control-{}", policy.policy_id);
@@ -77,7 +75,40 @@ impl ITransparentExecutor for TransparentExecutor {
 
         // 4. Apply
         let apply_start = Instant::now();
-        let apply_result = self.inner.execute(policy, targets);
+        let mut transaction = match self.inner.begin_transaction(policy, targets) {
+            Ok(transaction) => transaction,
+            Err(error) => {
+                let result = super::policy_executor::capture_failed(policy, error);
+                if let Ok(mut slot) = self.last_result.lock() {
+                    *slot = Some(result.clone());
+                }
+                stages.push(StageOutcome::failed(
+                    ControlStage::Apply,
+                    0,
+                    "original-state capture failed; no writes attempted",
+                ));
+                stages.push(StageOutcome::skipped(
+                    ControlStage::Verify,
+                    "no writes attempted",
+                ));
+                stages.push(StageOutcome::skipped(
+                    ControlStage::Rollback,
+                    "no writes attempted",
+                ));
+                return ControlTrace {
+                    trace_id,
+                    policy_id: policy.policy_id.clone(),
+                    stages,
+                    final_status: result.overall_status,
+                    rollback: RollbackRecord::not_triggered(),
+                    total_duration_ms: trace_start.elapsed().as_millis() as u64,
+                };
+            },
+        };
+        let apply_result = match transaction.as_mut() {
+            Some(transaction) => transaction.apply(),
+            None => self.inner.execute(policy, targets),
+        };
         let apply_duration = apply_start.elapsed().as_millis() as u64;
         let apply_status = apply_result.overall_status;
         if let Ok(mut slot) = self.last_result.lock() {
@@ -136,14 +167,19 @@ impl ITransparentExecutor for TransparentExecutor {
         }
 
         // Apply triggers a retreat when it fails.
-        if apply_status == ExecutionOverallStatus::AllFailed {
+        if apply_status == ExecutionOverallStatus::AllFailed
+            || apply_result
+                .outcomes
+                .iter()
+                .any(|o| o.status.is_real_failure())
+        {
             should_rollback = true;
-            rollback_reason = "apply returned AllFailed".to_string();
+            rollback_reason = "apply contained failed resource operations".to_string();
         }
 
         // 6. Rollback
         let rollback = if should_rollback {
-            self.do_rollback(policy, targets, prior_policy, &rollback_reason, &mut stages)
+            self.do_rollback(policy, &mut transaction, &rollback_reason, &mut stages)
         } else {
             let rec = RollbackRecord::not_triggered();
             stages.push(StageOutcome::skipped(
@@ -156,11 +192,8 @@ impl ITransparentExecutor for TransparentExecutor {
         let total_duration_ms = trace_start.elapsed().as_millis() as u64;
 
         let final_status = if rollback.triggered {
-            if rollback.succeeded == Some(true) {
-                ExecutionOverallStatus::NoOp
-            } else {
-                ExecutionOverallStatus::AllFailed
-            }
+            // Recovery describes the original state, not success of the request.
+            ExecutionOverallStatus::AllFailed
         } else {
             apply_status
         };
@@ -215,21 +248,20 @@ impl TransparentExecutor {
     fn do_rollback(
         &self,
         policy: &ResourcePolicy,
-        targets: &ExecutionTargets,
-        prior_policy: Option<&ResourcePolicy>,
+        transaction: &mut Option<Box<dyn IPolicyTransaction + '_>>,
         reason: &str,
         stages: &mut Vec<StageOutcome>,
     ) -> RollbackRecord {
         let start = Instant::now();
 
-        let prior = match prior_policy {
-            Some(p) => p,
+        let transaction = match transaction {
+            Some(transaction) => transaction,
             None => {
                 let duration_ms = start.elapsed().as_millis() as u64;
                 stages.push(StageOutcome::failed(
                     ControlStage::Rollback,
                     duration_ms,
-                    "no prior policy available for rollback",
+                    "executor supplied no original-state snapshot; prior policy replay cannot prove restoration",
                 ));
                 return RollbackRecord::triggered(
                     Some(policy.policy_id.clone()),
@@ -240,19 +272,15 @@ impl TransparentExecutor {
             },
         };
 
-        // Use inner executor to restore the prior policy
-        let result = self.inner.execute(prior, targets);
+        let outcomes = transaction.restore();
         let duration_ms = start.elapsed().as_millis() as u64;
 
-        let succeeded = matches!(
-            result.overall_status,
-            ExecutionOverallStatus::AllSucceeded | ExecutionOverallStatus::PartiallySucceeded
-        );
+        let succeeded = !outcomes.is_empty()
+            && outcomes
+                .iter()
+                .all(|o| o.status == aicore_contracts::execution::status::ExecutionStatus::Success);
 
-        let detail = format!(
-            "rollback to policy_id={} status={:?}",
-            prior.policy_id, result.overall_status
-        );
+        let detail = format!("original-state restoration: {:?}", outcomes);
 
         if succeeded {
             stages.push(StageOutcome::success(
@@ -268,11 +296,6 @@ impl TransparentExecutor {
             ));
         }
 
-        RollbackRecord::triggered(
-            Some(policy.policy_id.clone()),
-            Some(prior.policy_id.clone()),
-            reason,
-            succeeded,
-        )
+        RollbackRecord::triggered(Some(policy.policy_id.clone()), None, reason, succeeded)
     }
 }

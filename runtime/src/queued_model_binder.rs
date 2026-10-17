@@ -316,9 +316,11 @@ mod tests {
             os: HostOs::Windows,
             vendor: HardwareVendor::Other("mock".into()),
             device_id: "gpu:mock".into(),
-            capabilities: HardwareCapabilitySet::new("gpu:mock").with(
-                HardwareCapabilityEntry::supported(HardwareCapability::ProviderSelection),
-            ),
+            capabilities: HardwareCapabilitySet::new("gpu:mock")
+                .with_device_kind(aicore_contracts::hardware::capability::HardwareDeviceKind::Gpu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::ProviderSelection,
+                )),
             thermal_limit_celsius: None,
         };
         QueuedModelBinder::new(

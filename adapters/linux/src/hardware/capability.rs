@@ -1,11 +1,8 @@
 use std::path::Path;
 
 use aicore_contracts::hardware::capability::{
-    HardwareCapability, HardwareCapabilityEntry, HardwareCapabilitySet,
+    HardwareCapability, HardwareCapabilityEntry, HardwareCapabilitySet, HardwareDeviceKind,
 };
-
-const DRM_BASE: &str = "/sys/class/drm";
-const ACCEL_BASE: &str = "/sys/class/accel";
 
 /// Linux hardware capability detection.
 pub struct LinuxHardwareCapabilityProvider;
@@ -17,14 +14,18 @@ impl LinuxHardwareCapabilityProvider {
 
     /// Detection of GPU capability.
     pub fn gpu_capability(&self, device_id: &str) -> HardwareCapabilitySet {
-        let card = match device_id.strip_prefix("drm:") {
-            Some(c) => c,
-            None => return HardwareCapabilitySet::new(device_id),
+        let Some(device_path) = super::telemetry::gpu_device_path(device_id) else {
+            return HardwareCapabilitySet::new(device_id).with(
+                HardwareCapabilityEntry::unsupported(
+                    HardwareCapability::DeviceIdentity,
+                    "exact device absent from OS discovery",
+                ),
+            );
         };
-        let device_path = format!("{}/{}/device", DRM_BASE, card);
+        let device_path = device_path.to_string_lossy();
         let mut set = HardwareCapabilitySet::new(device_id);
 
-        if !Path::new(&device_path).exists() {
+        if !Path::new(device_path.as_ref()).exists() {
             set = set.with(HardwareCapabilityEntry::unsupported(
                 HardwareCapability::DeviceIdentity,
                 "device path not found",
@@ -32,59 +33,57 @@ impl LinuxHardwareCapabilityProvider {
             return set;
         }
 
-        set = set.with(HardwareCapabilityEntry::supported(
-            HardwareCapability::DeviceIdentity,
-        ));
+        set =
+            set.with_device_kind(HardwareDeviceKind::Gpu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::DeviceIdentity,
+                ));
 
-        if Path::new(&format!("{}/gpu_busy_percent", device_path)).exists() {
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::UtilizationTelemetry,
-            ));
-        }
-        if Path::new(&format!("{}/mem_info_vram_total", device_path)).exists() {
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::MemoryTelemetry,
-            ));
-        }
-
-        // Temperature: hwmon directory is considered supportive when it exists
-        let hwmon_path = format!("{}/hwmon", device_path);
-        if Path::new(&hwmon_path).exists() {
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::TemperatureTelemetry,
-            ));
-        }
-
-        // workload hint：amdgpu performance level
-        if Path::new(&format!(
-            "{}/power_dpm_force_performance_level",
-            device_path
-        ))
-        .exists()
+        use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
+        if let Ok(sample) =
+            super::telemetry::LinuxHardwareTelemetryProvider::new().sample_gpu(device_id)
         {
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::WorkloadHint,
-            ));
-        } else {
-            set = set.with(HardwareCapabilityEntry::unsupported(
-                HardwareCapability::WorkloadHint,
-                "no power_dpm_force_performance_level",
-            ));
+            for (capability, available) in [
+                (
+                    HardwareCapability::UtilizationTelemetry,
+                    sample.utilization_percent.is_some(),
+                ),
+                (
+                    HardwareCapability::MemoryTelemetry,
+                    sample.memory_total_mb.is_some(),
+                ),
+                (
+                    HardwareCapability::TemperatureTelemetry,
+                    sample.temperature_celsius.is_some(),
+                ),
+            ] {
+                if available {
+                    set = set.with(HardwareCapabilityEntry::supported(capability));
+                }
+            }
         }
+
+        set = set.with(HardwareCapabilityEntry::unsupported(
+            HardwareCapability::WorkloadHint,
+            "sysfs path detection does not establish reversible guarded control",
+        ));
 
         set
     }
 
     /// Detection of NPU capability.
     pub fn npu_capability(&self, device_id: &str) -> HardwareCapabilitySet {
-        let entry = match device_id.strip_prefix("npu:") {
-            Some(e) => e,
-            None => return HardwareCapabilitySet::new(device_id),
+        let Some(path) = super::telemetry::npu_device_path(device_id) else {
+            return HardwareCapabilitySet::new(device_id).with(
+                HardwareCapabilityEntry::unsupported(
+                    HardwareCapability::DeviceIdentity,
+                    "exact device absent from OS discovery",
+                ),
+            );
         };
-        let path = format!("{}/{}", ACCEL_BASE, entry);
         let mut set = HardwareCapabilitySet::new(device_id);
 
-        if !Path::new(&path).exists() {
+        if !path.exists() {
             set = set.with(HardwareCapabilityEntry::unsupported(
                 HardwareCapability::DeviceIdentity,
                 "accel device not found",
@@ -92,9 +91,11 @@ impl LinuxHardwareCapabilityProvider {
             return set;
         }
 
-        set = set.with(HardwareCapabilityEntry::supported(
-            HardwareCapability::DeviceIdentity,
-        ));
+        set =
+            set.with_device_kind(HardwareDeviceKind::Npu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::DeviceIdentity,
+                ));
         set = set.with(HardwareCapabilityEntry::unsupported(
             HardwareCapability::WorkloadHint,
             "Linux has no portable cross-vendor NPU control ABI; vendor runtime required",

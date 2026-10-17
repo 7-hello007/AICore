@@ -15,6 +15,16 @@ use aicore_contracts::{
 pub struct LinuxCapabilityProvider;
 
 impl LinuxCapabilityProvider {
+    fn gpu_control_for_detection(detected: bool) -> CapabilityEntry {
+        CapabilityEntry::unsupported(
+            "gpu.control",
+            if detected {
+                "AMD performance-level path detected; exact original-state restoration and guarded control unavailable"
+            } else {
+                "no reversible guarded GPU control backend available"
+            },
+        )
+    }
     pub fn new() -> Self {
         Self
     }
@@ -105,17 +115,7 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
                 })
             })
             .unwrap_or(false);
-        if amd_gpu_control {
-            caps.push(CapabilityEntry::conditional(
-                "gpu.control",
-                "AMD amdgpu performance-level path detected; write permission unverified",
-            ));
-        } else {
-            caps.push(CapabilityEntry::unsupported(
-                "gpu.control",
-                "no generic GPU control path detected",
-            ));
-        }
+        caps.push(Self::gpu_control_for_detection(amd_gpu_control));
 
         // Detect NPU telemetry support through /sys/class/accel.
         let has_accel = Path::new("/sys/class/accel").exists();
@@ -165,5 +165,20 @@ impl ICapabilityProvider for LinuxCapabilityProvider {
 
     fn component_name(&self) -> &'static str {
         "linux_capability"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn p0_discovered_gpu_control_path_does_not_prove_reversibility() {
+        for detected in [false, true] {
+            let entry = LinuxCapabilityProvider::gpu_control_for_detection(detected);
+            assert_eq!(
+                entry.status,
+                aicore_contracts::capability::status::CapabilityStatus::Unsupported
+            );
+        }
     }
 }

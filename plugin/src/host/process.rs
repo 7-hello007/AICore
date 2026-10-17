@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, TryLockError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aicore_contracts::errors::{AicoreError, AicoreResult};
@@ -21,18 +22,53 @@ use super::protocol::{HostRequest, HostResponse, MAX_LINE_BYTES};
 /// - Timeout `kill()` subprocess (Rust allows the killing of `Child`).
 /// - Core does not affect itself.
 pub struct SubprocessPluginHost {
-    processes: Mutex<HashMap<String, ManagedChild>>,
+    processes: Mutex<HashMap<String, Arc<ManagedChild>>>,
     next_seq: AtomicU64,
     default_timeout: Duration,
     crashes: Mutex<Vec<PluginCrashEvent>>,
 }
 
 struct ManagedChild {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: Option<BufReader<ChildStdout>>,
+    child: Mutex<Child>,
+    operation: Mutex<()>,
+    requests: mpsc::Sender<IoRequest>,
+    workers: Mutex<Vec<JoinHandle<()>>>,
+    cancellation: PipeCancellation,
+    terminated: Arc<AtomicBool>,
     spec: PluginProcessSpec,
-    exit_observed: bool,
+    exit_observed: AtomicBool,
+}
+
+struct IoRequest {
+    json: String,
+    reply: mpsc::Sender<AicoreResult<String>>,
+}
+
+impl ManagedChild {
+    // The child lock never protects pipe IO. Killing the process can therefore
+    // interrupt an active request without waiting for its operation lock.
+    fn terminate(&self) {
+        // Serialize cleanup so a racing stop/call waits for the same workers.
+        let mut workers = self.workers.lock().unwrap_or_else(|e| e.into_inner());
+        self.terminated.store(true, Ordering::Release);
+        let mut child = self.child.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = child.kill();
+        let _ = child.wait();
+        drop(child);
+        self.cancellation.cancel();
+        for worker in workers.drain(..) {
+            // Windows synchronous pipe IO also needs cancellation if another
+            // process inherited the pipe. Unix pipes are nonblocking below.
+            #[cfg(windows)]
+            while !worker.is_finished() {
+                self.cancellation.cancel();
+                cancel_pipe_io(&worker);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let _ = worker.join();
+        }
+        self.cancellation.close();
+    }
 }
 
 impl SubprocessPluginHost {
@@ -56,21 +92,16 @@ impl SubprocessPluginHost {
         handle: &PluginProcessHandle,
         request: &HostRequest,
     ) -> AicoreResult<HostResponse> {
-        let mut procs = self
-            .processes
-            .lock()
-            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?;
-        let entry = procs.get_mut(&handle.handle_id).ok_or_else(|| {
-            AicoreError::NotFound(format!("unknown handle: {}", handle.handle_id))
-        })?;
-
+        let start = Instant::now();
+        let entry = self.lookup(handle)?;
         let timeout = if entry.spec.timeout_ms == 0 {
             self.default_timeout
         } else {
             Duration::from_millis(entry.spec.timeout_ms.max(100))
         };
 
-        // Write Request (write returns EPIPE/BrokenPipe if the subprocess is out)
+        // One budget includes serialization, waiting behind another call,
+        // every write (including the delimiter/flush), and the response read.
         let json = serde_json::to_string(request)
             .map_err(|e| AicoreError::PluginFailed(format!("serialize request: {}", e)))?;
         if json.len() > MAX_LINE_BYTES {
@@ -79,90 +110,60 @@ impl SubprocessPluginHost {
             ));
         }
 
-        let write_result = (|| -> std::io::Result<()> {
-            entry.stdin.write_all(json.as_bytes())?;
-            entry.stdin.write_all(b"\n")?;
-            entry.stdin.flush()?;
-            Ok(())
-        })();
+        let deadline = start + timeout;
+        let operation = match lock_until(&entry.operation, deadline) {
+            Ok(operation) => operation,
+            Err(error) => {
+                if matches!(error, AicoreError::Timeout(_)) {
+                    self.fail_process(&entry, handle, &error);
+                }
+                return Err(error);
+            },
+        };
+        if entry.terminated.load(Ordering::Acquire) {
+            return Err(AicoreError::PluginFailed(
+                "plugin process exited".to_string(),
+            ));
+        }
+        let result = exchange(&entry, json, deadline);
+        // Keep the operation lock until cleanup completes: no caller can reuse
+        // a partially written request or consume the preceding response.
+        let line = match result {
+            Ok(line) => line,
+            Err(error) => {
+                self.fail_process(&entry, handle, &error);
+                return Err(error);
+            },
+        };
+        let response = serde_json::from_str::<HostResponse>(line.trim())
+            .map_err(|e| AicoreError::PluginFailed(format!("invalid response: {}", e)));
+        drop(operation);
+        response
+    }
 
-        if let Err(e) = write_result {
-            // Subprocess exited / Pipe broken
-            let exit_code = entry.child.try_wait().ok().flatten().and_then(|s| s.code());
+    fn lookup(&self, handle: &PluginProcessHandle) -> AicoreResult<Arc<ManagedChild>> {
+        self.processes
+            .lock()
+            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?
+            .get(&handle.handle_id)
+            .cloned()
+            .ok_or_else(|| AicoreError::NotFound(format!("unknown handle: {}", handle.handle_id)))
+    }
+
+    fn fail_process(
+        &self,
+        entry: &ManagedChild,
+        handle: &PluginProcessHandle,
+        error: &AicoreError,
+    ) {
+        entry.terminate();
+        if !entry.exit_observed.swap(true, Ordering::AcqRel) {
             self.record_crash(
                 &entry.spec.plugin_id,
                 &handle.handle_id,
-                exit_code,
-                &format!("write to plugin failed: {}", e),
+                None,
+                &error.to_string(),
             );
-            entry.exit_observed = true;
-            return Err(AicoreError::PluginFailed(format!(
-                "plugin process exited (write failed: {})",
-                e
-            )));
-        }
-
-        // Real timeout: put block read on a temporary thread; force kill process after timeout and wait for thread release.
-        let start = Instant::now();
-        let mut reader = entry
-            .stdout
-            .take()
-            .ok_or_else(|| AicoreError::PluginFailed("plugin stdout unavailable".to_string()))?;
-        let (tx, rx) = mpsc::channel::<(BufReader<ChildStdout>, AicoreResult<String>)>();
-        std::thread::spawn(move || {
-            let result = match read_bounded_line(&mut reader) {
-                Ok(None) => Err(AicoreError::PluginFailed(
-                    "plugin process exited".to_string(),
-                )),
-                Ok(Some(line)) => Ok(line),
-                Err(e) => Err(AicoreError::PluginFailed(format!("read failed: {}", e))),
-            };
-            let _ = tx.send((reader, result));
-        });
-
-        match rx.recv_timeout(timeout) {
-            Ok((reader, result)) => {
-                entry.stdout = Some(reader);
-                let line = match result {
-                    Ok(line) => line,
-                    Err(error) => {
-                        let _ = entry.child.kill();
-                        let _ = entry.child.wait();
-                        self.record_crash(
-                            &entry.spec.plugin_id,
-                            &handle.handle_id,
-                            None,
-                            &error.to_string(),
-                        );
-                        entry.exit_observed = true;
-                        return Err(error);
-                    },
-                };
-                serde_json::from_str::<HostResponse>(line.trim())
-                    .map_err(|e| AicoreError::PluginFailed(format!("invalid response: {}", e)))
-            },
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let _ = entry.child.kill();
-                let _ = entry.child.wait();
-                let _ = rx.recv_timeout(Duration::from_millis(250));
-                self.record_crash(
-                    &entry.spec.plugin_id,
-                    &handle.handle_id,
-                    None,
-                    &format!(
-                        "plugin call timeout after {} ms",
-                        start.elapsed().as_millis()
-                    ),
-                );
-                entry.exit_observed = true;
-                Err(AicoreError::Timeout(format!(
-                    "plugin call timeout after {} ms",
-                    start.elapsed().as_millis()
-                )))
-            },
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(AicoreError::PluginFailed(
-                "plugin reader thread disconnected".to_string(),
-            )),
         }
     }
 
@@ -191,11 +192,12 @@ impl Default for SubprocessPluginHost {
 
 impl Drop for SubprocessPluginHost {
     fn drop(&mut self) {
-        if let Ok(mut processes) = self.processes.lock() {
-            for (_, mut managed) in processes.drain() {
-                let _ = managed.child.kill();
-                let _ = managed.child.wait();
-            }
+        let processes = match self.processes.get_mut() {
+            Ok(processes) => std::mem::take(processes),
+            Err(poisoned) => std::mem::take(poisoned.into_inner()),
+        };
+        for (_, managed) in processes {
+            managed.terminate();
         }
     }
 }
@@ -203,11 +205,6 @@ impl Drop for SubprocessPluginHost {
 impl IPluginHost for SubprocessPluginHost {
     fn spawn(&self, spec: &PluginProcessSpec) -> AicoreResult<PluginProcessHandle> {
         spec.validate()?;
-
-        let mut procs = self
-            .processes
-            .lock()
-            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?;
 
         let mut child = Command::new(&spec.artifact_path)
             .stdin(Stdio::piped())
@@ -224,9 +221,7 @@ impl IPluginHost for SubprocessPluginHost {
             .stdout
             .take()
             .ok_or_else(|| AicoreError::PluginFailed("no stdout".to_string()))?;
-        if let Some(stderr) = child.stderr.take() {
-            spawn_stderr_drain(spec.plugin_id.clone(), stderr);
-        }
+        let stderr = child.stderr.take();
         let pid = child.id();
         let seq = self.next_seq.fetch_add(1, Ordering::SeqCst);
         let handle_id = format!("plugin-proc-{}-{}", pid, seq);
@@ -238,14 +233,65 @@ impl IPluginHost for SubprocessPluginHost {
             started_at_unix_ms: now_unix_ms(),
         };
 
-        let managed = ManagedChild {
-            child,
-            stdin,
-            stdout: Some(BufReader::new(stdout)),
-            spec: spec.clone(),
-            exit_observed: false,
+        let terminated = Arc::new(AtomicBool::new(false));
+        let (requests, rx) = mpsc::channel();
+        let workers = (|| -> io::Result<(Vec<JoinHandle<()>>, PipeCancellation)> {
+            configure_pipe(&stdin)?;
+            configure_pipe(&stdout)?;
+            if let Some(stderr) = &stderr {
+                configure_pipe(stderr)?;
+            }
+            let cancellation = PipeCancellation::new(&stdin, &stdout, stderr.as_ref())?;
+            let io_worker = spawn_io_worker(stdin, stdout, rx, terminated.clone())?;
+            let mut workers = vec![io_worker];
+            if let Some(stderr) = stderr {
+                match spawn_stderr_drain(spec.plugin_id.clone(), stderr, terminated.clone()) {
+                    Ok(worker) => workers.push(worker),
+                    Err(error) => {
+                        terminated.store(true, Ordering::Release);
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        for worker in workers {
+                            let _ = worker.join();
+                        }
+                        return Err(error);
+                    },
+                }
+            }
+            Ok((workers, cancellation))
+        })();
+        let (workers, cancellation) = match workers {
+            Ok(workers) => workers,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(AicoreError::PluginFailed(format!(
+                    "plugin IO setup failed: {}",
+                    error
+                )));
+            },
         };
-        procs.insert(handle_id, managed);
+        let managed = Arc::new(ManagedChild {
+            child: Mutex::new(child),
+            operation: Mutex::new(()),
+            requests,
+            workers: Mutex::new(workers),
+            cancellation,
+            terminated,
+            spec: spec.clone(),
+            exit_observed: AtomicBool::new(false),
+        });
+        match self.processes.lock() {
+            Ok(mut procs) => {
+                procs.insert(handle_id, managed);
+            },
+            Err(_) => {
+                managed.terminate();
+                return Err(AicoreError::LockPoisoned(
+                    "plugin host lock poisoned".to_string(),
+                ));
+            },
+        }
 
         tracing::info!(
             component = "subprocess_plugin_host",
@@ -259,64 +305,70 @@ impl IPluginHost for SubprocessPluginHost {
     }
 
     fn stop(&self, handle: &PluginProcessHandle) -> AicoreResult<()> {
-        let mut procs = self
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let entry = self
             .processes
             .lock()
-            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?;
-        let mut entry = procs.remove(&handle.handle_id).ok_or_else(|| {
-            AicoreError::NotFound(format!("unknown handle: {}", handle.handle_id))
-        })?;
+            .map_err(|_| AicoreError::LockPoisoned("plugin host lock poisoned".to_string()))?
+            .remove(&handle.handle_id)
+            .ok_or_else(|| {
+                AicoreError::NotFound(format!("unknown handle: {}", handle.handle_id))
+            })?;
 
-        // Try Shutdown message first
-        let shutdown = serde_json::to_string(&HostRequest::Shutdown).unwrap_or_default();
-        let _ = entry.stdin.write_all(shutdown.as_bytes());
-        let _ = entry.stdin.write_all(b"\n");
-        let _ = entry.stdin.flush();
-
-        // Give 500 ms an elegant exit, or kill
-        let deadline = Instant::now() + Duration::from_millis(500);
-        loop {
-            match entry.child.try_wait() {
-                Ok(Some(_)) => return Ok(()),
-                Ok(None) => {
-                    if Instant::now() >= deadline {
-                        let _ = entry.child.kill();
-                        let _ = entry.child.wait();
-                        return Ok(());
+        // Graceful shutdown has the same 500ms budget as the queue wait and
+        // shutdown write. A blocked active call cannot prevent forced cleanup.
+        if let Ok(_operation) = lock_until(&entry.operation, deadline) {
+            if !entry.terminated.load(Ordering::Acquire) {
+                let shutdown = serde_json::to_string(&HostRequest::Shutdown).unwrap_or_default();
+                let _ = exchange(&entry, shutdown, deadline);
+                while Instant::now() < deadline {
+                    let status = entry
+                        .child
+                        .lock()
+                        .map_err(|_| {
+                            AicoreError::LockPoisoned("plugin child lock poisoned".to_string())
+                        })?
+                        .try_wait();
+                    match status {
+                        Ok(Some(_)) => break,
+                        Ok(None) => std::thread::sleep(Duration::from_millis(1)),
+                        Err(error) => {
+                            entry.terminate();
+                            return Err(AicoreError::PluginFailed(format!(
+                                "wait failed: {}",
+                                error
+                            )));
+                        },
                     }
-                    std::thread::sleep(Duration::from_millis(50));
-                },
-                Err(e) => {
-                    let _ = entry.child.kill();
-                    let _ = entry.child.wait();
-                    return Err(AicoreError::PluginFailed(format!("wait failed: {}", e)));
-                },
+                }
             }
         }
+        entry.terminate();
+        Ok(())
     }
 
     fn state(&self, handle: &PluginProcessHandle) -> PluginHostState {
-        let mut procs = match self.processes.lock() {
-            Ok(p) => p,
+        let entry = match self.lookup(handle) {
+            Ok(entry) => entry,
+            Err(AicoreError::NotFound(_)) => return PluginHostState::Stopped,
             Err(_) => return PluginHostState::Failed,
         };
-        let entry = match procs.get_mut(&handle.handle_id) {
-            Some(e) => e,
-            None => return PluginHostState::Stopped,
+        let mut child = match entry.child.lock() {
+            Ok(child) => child,
+            Err(_) => return PluginHostState::Failed,
         };
-        match entry.child.try_wait() {
+        match child.try_wait() {
             Ok(Some(status)) => {
                 if status.success() {
                     PluginHostState::Stopped
                 } else {
-                    if !entry.exit_observed {
+                    if !entry.exit_observed.swap(true, Ordering::AcqRel) {
                         self.record_crash(
                             &entry.spec.plugin_id,
                             &handle.handle_id,
                             status.code(),
                             "plugin process exited unsuccessfully",
                         );
-                        entry.exit_observed = true;
                     }
                     PluginHostState::Crashed
                 }
@@ -348,6 +400,258 @@ fn now_unix_ms() -> u64 {
         .unwrap_or(0)
 }
 
+fn lock_until(lock: &Mutex<()>, deadline: Instant) -> AicoreResult<MutexGuard<'_, ()>> {
+    loop {
+        if Instant::now() >= deadline {
+            return Err(AicoreError::Timeout(
+                "plugin call timeout waiting for IO".to_string(),
+            ));
+        }
+        match lock.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(TryLockError::Poisoned(_)) => {
+                return Err(AicoreError::LockPoisoned(
+                    "plugin IO lock poisoned".to_string(),
+                ));
+            },
+            Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(1)),
+        }
+    }
+}
+
+fn exchange(entry: &ManagedChild, json: String, deadline: Instant) -> AicoreResult<String> {
+    if Instant::now() >= deadline {
+        return Err(AicoreError::Timeout("plugin call timeout".to_string()));
+    }
+    let (reply, response) = mpsc::channel();
+    // The operation guard permits at most one pending exchange per process.
+    entry
+        .requests
+        .send(IoRequest { json, reply })
+        .map_err(|_| {
+            AicoreError::PluginFailed("plugin process exited (IO worker disconnected)".to_string())
+        })?;
+    response
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|error| match error {
+            mpsc::RecvTimeoutError::Timeout => {
+                AicoreError::Timeout("plugin call timeout".to_string())
+            },
+            mpsc::RecvTimeoutError::Disconnected => {
+                AicoreError::PluginFailed("plugin IO worker disconnected".to_string())
+            },
+        })?
+}
+
+fn spawn_io_worker(
+    stdin: ChildStdin,
+    stdout: ChildStdout,
+    requests: mpsc::Receiver<IoRequest>,
+    terminated: Arc<AtomicBool>,
+) -> io::Result<JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name("aicore-plugin-io".to_string())
+        .spawn(move || {
+            let mut stdin = Interruptible {
+                stream: stdin,
+                terminated: terminated.clone(),
+            };
+            let mut stdout = BufReader::new(Interruptible {
+                stream: stdout,
+                terminated: terminated.clone(),
+            });
+            while !terminated.load(Ordering::Acquire) {
+                let request = match requests.recv_timeout(Duration::from_millis(5)) {
+                    Ok(request) => request,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+                let result = (|| {
+                    stdin
+                        .write_all(request.json.as_bytes())
+                        .and_then(|_| stdin.write_all(b"\n"))
+                        .and_then(|_| stdin.flush())
+                        .map_err(|error| {
+                            AicoreError::PluginFailed(format!(
+                                "plugin process exited (write failed: {})",
+                                error
+                            ))
+                        })?;
+                    match read_bounded_line(&mut stdout) {
+                        Ok(Some(line)) => Ok(line),
+                        Ok(None) => Err(AicoreError::PluginFailed(
+                            "plugin process exited".to_string(),
+                        )),
+                        Err(error) => {
+                            Err(AicoreError::PluginFailed(format!("read failed: {}", error)))
+                        },
+                    }
+                })();
+                let failed = result.is_err();
+                let _ = request.reply.send(result);
+                if failed {
+                    break;
+                }
+            }
+        })
+}
+
+// Unix nonblocking pipes and Windows synchronous IO cancellation ensure cleanup
+// can join its fixed two workers even if a descendant retained a pipe handle.
+struct Interruptible<T> {
+    stream: T,
+    terminated: Arc<AtomicBool>,
+}
+
+impl<T: Read> Read for Interruptible<T> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        loop {
+            if self.terminated.load(Ordering::Acquire) {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "plugin IO stopped",
+                ));
+            }
+            match self.stream.read(bytes) {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(1))
+                },
+                result => return result,
+            }
+        }
+    }
+}
+
+impl<T: Write> Write for Interruptible<T> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        loop {
+            if self.terminated.load(Ordering::Acquire) {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "plugin IO stopped",
+                ));
+            }
+            match self.stream.write(bytes) {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(1))
+                },
+                result => return result,
+            }
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+#[cfg(unix)]
+fn configure_pipe<T: std::os::fd::AsRawFd>(pipe: &T) -> io::Result<()> {
+    extern "C" {
+        fn fcntl(fd: std::os::raw::c_int, command: std::os::raw::c_int, ...)
+            -> std::os::raw::c_int;
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const NONBLOCK: i32 = 0x800;
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    const NONBLOCK: i32 = 0x4;
+    // SAFETY: the borrowed pipe keeps this descriptor open; F_GETFL/F_SETFL
+    // operate on this process-owned descriptor only and retain existing flags.
+    let flags = unsafe { fcntl(pipe.as_raw_fd(), 3) };
+    if flags == -1 || unsafe { fcntl(pipe.as_raw_fd(), 4, flags | NONBLOCK) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn configure_pipe<T>(_: &T) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn cancel_pipe_io(worker: &JoinHandle<()>) {
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CancelSynchronousIo(thread: *mut std::ffi::c_void) -> i32;
+    }
+    // SAFETY: JoinHandle retains a valid thread handle until join below.
+    // Cancellation affects only this host-owned worker's pending pipe IO.
+    unsafe {
+        CancelSynchronousIo(worker.as_raw_handle());
+    }
+}
+
+struct PipeCancellation {
+    #[cfg(windows)]
+    handles: Mutex<Vec<std::os::windows::io::OwnedHandle>>,
+}
+
+impl PipeCancellation {
+    fn new(
+        stdin: &ChildStdin,
+        stdout: &ChildStdout,
+        stderr: Option<&ChildStderr>,
+    ) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsHandle;
+            // Keep owned duplicates so cancellation never races a worker
+            // closing a raw handle and that number being reused elsewhere.
+            let mut handles = vec![
+                stdin.as_handle().try_clone_to_owned()?,
+                stdout.as_handle().try_clone_to_owned()?,
+            ];
+            if let Some(stderr) = stderr {
+                handles.push(stderr.as_handle().try_clone_to_owned()?);
+            }
+            Ok(Self {
+                handles: Mutex::new(handles),
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (stdin, stdout, stderr);
+            Ok(Self {})
+        }
+    }
+
+    fn cancel(&self) {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn CancelIoEx(
+                    file: *mut std::ffi::c_void,
+                    overlapped: *mut std::ffi::c_void,
+                ) -> i32;
+            }
+            let handles = self
+                .handles
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            for handle in handles.iter() {
+                // SAFETY: these owned handles refer only to this child's pipes.
+                // Null OVERLAPPED cancels all pending IO, including Rust's Windows
+                // anonymous-pipe implementation's overlapped reads and writes.
+                unsafe {
+                    CancelIoEx(handle.as_raw_handle(), std::ptr::null_mut());
+                }
+            }
+        }
+    }
+
+    fn close(&self) {
+        #[cfg(windows)]
+        self.handles
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
+    }
+}
+
 fn read_bounded_line<R: BufRead>(reader: &mut R) -> io::Result<Option<String>> {
     let mut bytes = Vec::new();
     let count = reader
@@ -367,12 +671,16 @@ fn read_bounded_line<R: BufRead>(reader: &mut R) -> io::Result<Option<String>> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-fn spawn_stderr_drain(plugin_id: String, stderr: ChildStderr) {
+fn spawn_stderr_drain(
+    plugin_id: String,
+    stderr: ChildStderr,
+    terminated: Arc<AtomicBool>,
+) -> io::Result<JoinHandle<()>> {
     std::thread::Builder::new()
         .name(format!("aicore-plugin-stderr-{}", plugin_id))
         .spawn(move || {
-            let mut reader = BufReader::new(stderr);
-            loop {
+            let mut reader = BufReader::new(Interruptible { stream: stderr, terminated: terminated.clone() });
+            while !terminated.load(Ordering::Acquire) {
                 match read_bounded_line(&mut reader) {
                     Ok(Some(line)) if !line.trim().is_empty() => {
                         tracing::warn!(component="subprocess_plugin_host", plugin_id=%plugin_id, event="plugin_stderr", message=%line, "plugin stderr");
@@ -389,5 +697,4 @@ fn spawn_stderr_drain(plugin_id: String, stderr: ChildStderr) {
                 }
             }
         })
-        .ok();
 }

@@ -22,6 +22,9 @@ impl OwnedPowerSnapshot {
     }
 }
 impl IPowerController for OwnedPowerSnapshot {
+    fn supports_exact_state(&self) -> bool {
+        self.controller.supports_exact_state()
+    }
     fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode> {
         eprintln!("NATIVE BEFORE device=power original={:?} proposed={mode:?} rollback=restore_state({:?})",self.controller.capture_state()?,self.original);
         self.controller.set_profile(mode)

@@ -16,6 +16,19 @@ impl WindowsGpuController {
             .map(|o| o.status.success())
             .unwrap_or(false)
     }
+    fn status_for_detection(detected: bool) -> GpuControlStatus {
+        GpuControlStatus {
+            controllable: false,
+            detail: Some(if detected {
+                "NVIDIA SMI detected; reversible guarded control unavailable".to_string()
+            } else {
+                "no NVIDIA SMI detected; reversible guarded control unavailable".to_string()
+            }),
+        }
+    }
+    fn capabilities_for_detection(_detected: bool) -> Vec<&'static str> {
+        vec!["gpu.status"]
+    }
 }
 impl Default for WindowsGpuController {
     fn default() -> Self {
@@ -24,30 +37,37 @@ impl Default for WindowsGpuController {
 }
 impl IGpuController for WindowsGpuController {
     fn get_status(&self) -> ContractResult<GpuControlStatus> {
-        Ok(GpuControlStatus {
-            controllable: Self::nvidia_available(),
-            detail: Some(if Self::nvidia_available() {
-                "NVIDIA SMI detected; power controls available through hardware executor"
-                    .to_string()
-            } else {
-                "no portable generic GPU control path; vendor adapter required".to_string()
-            }),
-        })
+        Ok(Self::status_for_detection(Self::nvidia_available()))
     }
     fn capabilities(&self) -> Vec<&'static str> {
-        if Self::nvidia_available() {
-            vec!["gpu.status", "gpu.nvidia.power_limit"]
-        } else {
-            vec!["gpu.status"]
-        }
+        Self::capabilities_for_detection(false)
     }
     fn platform_name(&self) -> &'static str {
         "windows"
     }
     fn set_workload_hint(&self, _hint: &str) -> ContractResult<()> {
         Err(ContractError::NotSupported(
-            "Windows generic GPU workload hints are vendor-specific; use IHardwareExecutor/plugin"
-                .to_string(),
+            "Windows generic GPU workload hints require a reversible guarded actuator".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn p0_detected_vendor_tool_does_not_grant_reversible_control() {
+        for detected in [false, true] {
+            let status = WindowsGpuController::status_for_detection(detected);
+            assert!(
+                !status.controllable,
+                "detection cannot prove reversible control"
+            );
+            assert_eq!(
+                WindowsGpuController::capabilities_for_detection(detected),
+                vec!["gpu.status"]
+            );
+        }
     }
 }

@@ -16,7 +16,7 @@ use aicore_contracts::{
         gpu_controller::{GpuControlStatus, IGpuController},
         hardware_executor::{
             HardwareExecutionHint, HardwareExecutionRequest, HardwareExecutionResult,
-            HardwareExecutionStatus, IHardwareExecutor,
+            HardwareExecutionStatus, HardwareStateSnapshot, IHardwareExecutor,
         },
         hardware_telemetry::IHardwareTelemetryProvider,
         npu_controller::{INpuController, NpuControlStatus},
@@ -303,6 +303,9 @@ impl IProcessController for SimulatedPlatform {
     }
 }
 impl IPowerController for SimulatedPlatform {
+    fn supports_exact_state(&self) -> bool {
+        true
+    }
     fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode> {
         let mut state = self.lock()?;
         let profile = state.power_profile.as_mut().ok_or_else(|| {
@@ -447,10 +450,54 @@ impl IHardwareTelemetryProvider for SimulatedPlatform {
     }
 }
 impl IHardwareExecutor for SimulatedPlatform {
+    fn is_model_only(&self) -> bool {
+        true
+    }
+    fn supports_reversible_state(&self) -> bool {
+        true
+    }
+    fn read_hardware_state(&self, id: &str) -> ContractResult<HardwareStateSnapshot> {
+        if self.capability(id).is_none() {
+            return Err(ContractError::CapabilityUnavailable(
+                "device absent from fixture".into(),
+            ));
+        }
+        Ok(HardwareStateSnapshot {
+            device_id: id.into(),
+            hint: self.lock()?.hardware_hints.get(id).cloned(),
+        })
+    }
+    fn restore_hardware_state(
+        &self,
+        original: &HardwareStateSnapshot,
+    ) -> ContractResult<HardwareExecutionResult> {
+        if self.capability(&original.device_id).is_none() {
+            return Err(ContractError::CapabilityUnavailable(
+                "device absent from fixture".into(),
+            ));
+        }
+        let mut state = self.lock()?;
+        match &original.hint {
+            Some(hint) => {
+                state
+                    .hardware_hints
+                    .insert(original.device_id.clone(), hint.clone());
+            },
+            None => {
+                state.hardware_hints.remove(&original.device_id);
+            },
+        }
+        Ok(HardwareExecutionResult {
+            device_id: original.device_id.clone(),
+            status: HardwareExecutionStatus::Applied,
+            latency_ms: 0,
+        })
+    }
     fn apply(&self, request: &HardwareExecutionRequest) -> ContractResult<HardwareExecutionResult> {
         let needed = match request.hint {
             HardwareExecutionHint::MaxPowerWatts(_) => HardwareCapability::VendorControl,
-            _ => HardwareCapability::WorkloadHint,
+            HardwareExecutionHint::WorkloadPreference(_) => HardwareCapability::WorkloadHint,
+            _ => HardwareCapability::ProviderSelection,
         };
         let status = if !self.supports(&request.device_id, needed) {
             HardwareExecutionStatus::NotSupported {
@@ -476,6 +523,7 @@ impl IHardwareExecutor for SimulatedPlatform {
     fn release(&self, id: &str) -> ContractResult<HardwareExecutionResult> {
         let status = if !self.supports(id, HardwareCapability::WorkloadHint)
             && !self.supports(id, HardwareCapability::VendorControl)
+            && !self.supports(id, HardwareCapability::ProviderSelection)
         {
             HardwareExecutionStatus::NotSupported {
                 reason: "captured device has no control capability".into(),
@@ -504,7 +552,8 @@ impl ISafeHardwareActuator for SimulatedPlatform {
     ) -> ContractResult<HardwareExecutionResult> {
         let needed = match request.hint {
             HardwareExecutionHint::MaxPowerWatts(_) => HardwareCapability::VendorControl,
-            _ => HardwareCapability::WorkloadHint,
+            HardwareExecutionHint::WorkloadPreference(_) => HardwareCapability::WorkloadHint,
+            _ => HardwareCapability::ProviderSelection,
         };
         if !permit.model_only
             || permit.device_id != request.device_id
@@ -637,5 +686,149 @@ mod tests {
         let pid = platform.captured_process_ids()[0];
         assert!(platform.get_priority(pid).is_ok());
         assert!(platform.get_affinity(pid).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod p0_hardware_tests {
+    use super::*;
+    use aicore_contracts::hardware::{
+        capability::HardwareCapabilityEntry,
+        matrix::{HardwareVendor, HostOs},
+    };
+    use aicore_core::safe_actuator::GuardedHardwareActuator;
+    fn platform() -> SimulatedPlatform {
+        let mut fixture: PlatformFixture =
+            serde_json::from_str(include_str!("../fixtures/windows_readonly.json")).unwrap();
+        fixture.source = "P0 synthetic hardware fixture derived from read-only capture".into();
+        fixture.gpu_samples.push(GpuTelemetrySample {
+            device: HardwareDeviceInfo {
+                id: "fixture:gpu0".into(),
+                vendor: "synthetic".into(),
+                name: "test device".into(),
+                driver: None,
+            },
+            utilization_percent: None,
+            memory_used_mb: None,
+            memory_total_mb: None,
+            temperature_celsius: None,
+            sampled_at_unix_ms: 1,
+        });
+        fixture.hardware_matrices.push(DeviceCapabilityMatrix {
+            os: HostOs::Windows,
+            vendor: HardwareVendor::Other("synthetic".into()),
+            device_id: "fixture:gpu0".into(),
+            capabilities: HardwareCapabilitySet::new("fixture:gpu0")
+                .with_device_kind(HardwareDeviceKind::Gpu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::DeviceIdentity,
+                ))
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::WorkloadHint,
+                )),
+            thermal_limit_celsius: None,
+        });
+        SimulatedPlatform::from_fixture(fixture).unwrap()
+    }
+    #[test]
+    fn p0_guarded_model_actuation_and_exact_empty_snapshot_restore() {
+        let platform = Arc::new(platform());
+        let original = platform.read_hardware_state("fixture:gpu0").unwrap();
+        assert_eq!(original.hint, None);
+        let guard = GuardedHardwareActuator::new(
+            platform.hardware_matrices()[0].clone(),
+            Some(platform.clone()),
+        );
+        let result = guard
+            .apply_authorized(
+                &HardwareExecutionRequest {
+                    device_id: "fixture:gpu0".into(),
+                    hint: HardwareExecutionHint::WorkloadPreference("compute".into()),
+                },
+                &ActuationPermit {
+                    device_id: "fixture:gpu0".into(),
+                    capability: HardwareCapability::WorkloadHint,
+                    expires_at_unix_ms: u64::MAX,
+                    model_only: true,
+                },
+                1,
+            )
+            .unwrap();
+        assert!(result.status.is_applied());
+        assert!(
+            !result.status.is_verified(),
+            "model actuation is not native verification"
+        );
+        assert_eq!(
+            platform.hardware_hint("fixture:gpu0").unwrap(),
+            Some(HardwareExecutionHint::WorkloadPreference("compute".into()))
+        );
+        assert!(platform
+            .restore_hardware_state(&original)
+            .unwrap()
+            .status
+            .is_applied());
+        assert_eq!(platform.hardware_hint("fixture:gpu0").unwrap(), None);
+    }
+    #[test]
+    fn p0_provider_selection_only_npu_model_releases_applied_hint() {
+        let mut fixture: PlatformFixture =
+            serde_json::from_str(include_str!("../fixtures/windows_readonly.json")).unwrap();
+        let device = HardwareDeviceInfo {
+            id: "fixture:npu0".into(),
+            vendor: "synthetic".into(),
+            name: "test NPU".into(),
+            driver: None,
+        };
+        fixture.npu_samples.push(NpuTelemetrySample {
+            device,
+            utilization_percent: None,
+            sampled_at_unix_ms: 1,
+        });
+        fixture.hardware_matrices.push(DeviceCapabilityMatrix {
+            os: HostOs::Windows,
+            vendor: HardwareVendor::Other("synthetic".into()),
+            device_id: "fixture:npu0".into(),
+            capabilities: HardwareCapabilitySet::new("fixture:npu0")
+                .with_device_kind(HardwareDeviceKind::Npu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::DeviceIdentity,
+                ))
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::ProviderSelection,
+                )),
+            thermal_limit_celsius: None,
+        });
+        let platform = Arc::new(SimulatedPlatform::from_fixture(fixture).unwrap());
+        let guard = GuardedHardwareActuator::new(
+            platform.hardware_matrices()[0].clone(),
+            Some(platform.clone()),
+        );
+        let result = guard
+            .apply_authorized(
+                &HardwareExecutionRequest {
+                    device_id: "fixture:npu0".into(),
+                    hint: HardwareExecutionHint::AutoMode,
+                },
+                &ActuationPermit {
+                    device_id: "fixture:npu0".into(),
+                    capability: HardwareCapability::ProviderSelection,
+                    expires_at_unix_ms: u64::MAX,
+                    model_only: true,
+                },
+                1,
+            )
+            .unwrap();
+        assert!(result.status.is_applied());
+        assert_eq!(
+            platform.hardware_hint("fixture:npu0").unwrap(),
+            Some(HardwareExecutionHint::AutoMode)
+        );
+        assert!(platform
+            .release("fixture:npu0")
+            .unwrap()
+            .status
+            .is_applied());
+        assert_eq!(platform.hardware_hint("fixture:npu0").unwrap(), None);
     }
 }

@@ -1,5 +1,16 @@
 use crate::errors::ContractResult;
 use crate::policy::resource_policy::PowerMode;
+use std::sync::{Mutex, MutexGuard};
+
+static CONTROL_TRANSACTION: Mutex<()> = Mutex::new(());
+
+/// Shared by policy and plugin control paths touching the same system resources.
+/// Hold across capture, apply, readback and restoration; do not acquire recursively.
+pub fn control_transaction_lock() -> ContractResult<MutexGuard<'static, ()>> {
+    CONTROL_TRANSACTION.lock().map_err(|_| {
+        crate::errors::ContractError::LockPoisoned("resource control transaction".into())
+    })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PowerStateSnapshot {
@@ -10,6 +21,11 @@ pub struct PowerStateSnapshot {
 
 /// System-level power policy is abstract.
 pub trait IPowerController: Send + Sync {
+    /// Coarse PowerMode projection alone does not preserve a custom native state.
+    /// Native adapters opt in only when their snapshot preserves the exact state.
+    fn supports_exact_state(&self) -> bool {
+        false
+    }
     /// Apply the power mode. Returns the mode in effect (the platform may be downgraded).
     fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode>;
 

@@ -1,17 +1,16 @@
 use aicore_contracts::{
     errors::ContractResult,
     traits::hardware_executor::{
-        HardwareExecutionHint, HardwareExecutionRequest, HardwareExecutionResult,
-        HardwareExecutionStatus, IHardwareExecutor,
+        HardwareExecutionRequest, HardwareExecutionResult, HardwareExecutionStatus,
+        IHardwareExecutor,
     },
 };
-use std::process::Command;
-use std::time::Instant;
 
 /// Windows hardware implementer.
 ///
 /// Universal GPU/NPU controls have no cross-vendor standard, so use capability-gated implementations:
-/// - NVIDIA: Provide power consumption cap control through nvidia-smi.
+/// - Native writes require exact reversible state and independent readback;
+///   these are not provided by the current generic NVIDIA command path.
 /// - Other devices: return `NotSupported` explicitly and do not forge execution success.
 pub struct WindowsHardwareExecutor;
 impl WindowsHardwareExecutor {
@@ -25,62 +24,21 @@ impl Default for WindowsHardwareExecutor {
     }
 }
 
-fn nvidia_apply(device_id: &str, hint: &HardwareExecutionHint) -> Option<HardwareExecutionResult> {
-    let index = device_id.strip_prefix("nvidia:")?;
-    let start = Instant::now();
-    match hint {
-        HardwareExecutionHint::MaxPowerWatts(w) => {
-            let out = Command::new("nvidia-smi")
-                .args(["-i", index, "-pl", &format!("{:.0}", w)])
-                .output();
-            let status = match out {
-                Ok(o) if o.status.success() => HardwareExecutionStatus::Applied,
-                Ok(o) => HardwareExecutionStatus::Failed {
-                    reason: String::from_utf8_lossy(&o.stderr).trim().to_string(),
-                },
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    HardwareExecutionStatus::NotSupported {
-                        reason: "nvidia-smi not available".to_string(),
-                    }
-                },
-                Err(e) => HardwareExecutionStatus::Failed {
-                    reason: e.to_string(),
-                },
-            };
-            Some(HardwareExecutionResult {
-                device_id: device_id.to_string(),
-                status,
-                latency_ms: start.elapsed().as_millis() as u64,
-            })
-        },
-        HardwareExecutionHint::AutoMode => Some(HardwareExecutionResult {
-            device_id: device_id.to_string(),
-            status: HardwareExecutionStatus::Skipped {
-                reason: "NVIDIA GPU workload mode is not changed by generic auto hint".to_string(),
-            },
-            latency_ms: start.elapsed().as_millis() as u64,
-        }),
-        _ => None,
-    }
-}
-
 impl IHardwareExecutor for WindowsHardwareExecutor {
     fn apply(&self, req: &HardwareExecutionRequest) -> ContractResult<HardwareExecutionResult> {
-        if let Some(r) = nvidia_apply(&req.device_id, &req.hint) {
-            return Ok(r);
-        }
         Ok(HardwareExecutionResult {
             device_id: req.device_id.clone(),
             status: HardwareExecutionStatus::NotSupported {
-                reason: "no supported vendor-specific Windows hardware control path".to_string(),
+                reason: "Windows vendor control lacks exact original-state capture, independent readback and restoration".into(),
             },
             latency_ms: 0,
         })
     }
+
     fn release(&self, device_id: &str) -> ContractResult<HardwareExecutionResult> {
         Ok(HardwareExecutionResult {
             device_id: device_id.to_string(),
-            status: HardwareExecutionStatus::Skipped {
+            status: HardwareExecutionStatus::NotSupported {
                 reason: "release is capability-specific; no safe universal restore value"
                     .to_string(),
             },
@@ -89,5 +47,29 @@ impl IHardwareExecutor for WindowsHardwareExecutor {
     }
     fn executor_name(&self) -> &'static str {
         "windows_hardware_executor"
+    }
+}
+
+#[cfg(test)]
+mod p0_tests {
+    use super::*;
+    use aicore_contracts::traits::hardware_executor::HardwareExecutionHint;
+    #[test]
+    fn p0_native_release_and_auto_refuse_missing_original_state() {
+        let executor = WindowsHardwareExecutor::new();
+        let result = executor
+            .apply(&HardwareExecutionRequest {
+                device_id: "nvidia:0".into(),
+                hint: HardwareExecutionHint::AutoMode,
+            })
+            .unwrap();
+        assert!(matches!(
+            result.status,
+            HardwareExecutionStatus::NotSupported { .. }
+        ));
+        assert!(matches!(
+            executor.release("nvidia:0").unwrap().status,
+            HardwareExecutionStatus::NotSupported { .. }
+        ));
     }
 }

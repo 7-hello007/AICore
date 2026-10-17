@@ -12,6 +12,7 @@ use aicore_contracts::{
     traits::{
         ai_runtime::IAiRuntime,
         runtime_binder::{BindingRequest, BindingResult, IRuntimeBinder},
+        safe_actuator::{ActuationPermit, ISafeHardwareActuator},
     },
 };
 
@@ -29,6 +30,8 @@ pub struct DefaultRuntimeBinder {
     hardware: Vec<HardwareCapabilitySet>,
     gpu_executor: Option<Arc<dyn IHardwareExecutor>>,
     npu_executor: Option<Arc<dyn IHardwareExecutor>>,
+    gpu_actuator: Option<(Arc<dyn ISafeHardwareActuator>, ActuationPermit)>,
+    npu_actuator: Option<(Arc<dyn ISafeHardwareActuator>, ActuationPermit)>,
 }
 
 impl DefaultRuntimeBinder {
@@ -39,6 +42,8 @@ impl DefaultRuntimeBinder {
             hardware: Vec::new(),
             gpu_executor: None,
             npu_executor: None,
+            gpu_actuator: None,
+            npu_actuator: None,
         }
     }
 
@@ -62,6 +67,25 @@ impl DefaultRuntimeBinder {
 
     pub fn with_npu_executor(mut self, exec: Arc<dyn IHardwareExecutor>) -> Self {
         self.npu_executor = Some(exec);
+        self
+    }
+
+    /// Hardware authorization is supplied by the control layer, never minted by routing.
+    pub fn with_gpu_actuator(
+        mut self,
+        actuator: Arc<dyn ISafeHardwareActuator>,
+        permit: ActuationPermit,
+    ) -> Self {
+        self.gpu_actuator = Some((actuator, permit));
+        self
+    }
+
+    pub fn with_npu_actuator(
+        mut self,
+        actuator: Arc<dyn ISafeHardwareActuator>,
+        permit: ActuationPermit,
+    ) -> Self {
+        self.npu_actuator = Some((actuator, permit));
         self
     }
 
@@ -104,7 +128,10 @@ impl Default for DefaultRuntimeBinder {
 
 impl IRuntimeBinder for DefaultRuntimeBinder {
     fn preparation_safe(&self) -> bool {
-        self.gpu_executor.is_none() && self.npu_executor.is_none()
+        self.gpu_actuator.is_none()
+            && self.npu_actuator.is_none()
+            && self.gpu_executor.is_none()
+            && self.npu_executor.is_none()
     }
 
     fn bind_and_execute(&self, request: &BindingRequest) -> ContractResult<BindingResult> {
@@ -230,71 +257,23 @@ impl DefaultRuntimeBinder {
             });
         }
 
-        let exec = match &self.gpu_executor {
-            Some(e) => e,
-            None => {
-                return Ok(BindingResult {
-                    route_id: request.route.route_id.clone(),
-                    source: RuntimeRouteSource::Gpu,
-                    executed: false,
-                    inference: None,
-                    reason: "gpu capability present but no executor registered".to_string(),
-                    latency_ms: start.elapsed().as_millis() as u64,
-                });
-            },
-        };
-
-        let Some(device_id) = self
-            .hardware
-            .iter()
-            .find(|h| {
-                h.device_kind == HardwareDeviceKind::Gpu
-                    && h.is_supported(HardwareCapability::DeviceIdentity)
-            })
-            .map(|h| h.device_name.clone())
-        else {
-            return Ok(BindingResult {
-                route_id: request.route.route_id.clone(),
-                source: RuntimeRouteSource::Gpu,
-                executed: false,
-                inference: None,
-                reason: "no identified GPU device".into(),
-                latency_ms: start.elapsed().as_millis() as u64,
-            });
-        };
         let hint = match request.context.workload_type {
             aicore_contracts::context::workload::WorkloadType::AiInference => {
-                HardwareExecutionHint::WorkloadPreference("compute".to_string())
+                HardwareExecutionHint::WorkloadPreference("compute".into())
             },
             aicore_contracts::context::workload::WorkloadType::Rendering
             | aicore_contracts::context::workload::WorkloadType::VideoEditing => {
-                HardwareExecutionHint::WorkloadPreference("graphics".to_string())
+                HardwareExecutionHint::WorkloadPreference("graphics".into())
             },
-            _ => HardwareExecutionHint::WorkloadPreference("auto".to_string()),
+            _ => HardwareExecutionHint::WorkloadPreference("auto".into()),
         };
-        let exec_req = HardwareExecutionRequest { device_id, hint };
-
-        match exec.apply(&exec_req) {
-            Ok(result) => {
-                let executed = result.status.is_applied();
-                Ok(BindingResult {
-                    route_id: request.route.route_id.clone(),
-                    source: RuntimeRouteSource::Gpu,
-                    executed,
-                    inference: None,
-                    reason: format!("gpu executor: {:?}", result.status),
-                    latency_ms: start.elapsed().as_millis() as u64,
-                })
-            },
-            Err(e) => Ok(BindingResult {
-                route_id: request.route.route_id.clone(),
-                source: RuntimeRouteSource::Gpu,
-                executed: false,
-                inference: None,
-                reason: format!("gpu executor error: {}", e),
-                latency_ms: start.elapsed().as_millis() as u64,
-            }),
-        }
+        self.bind_authorized_hardware(
+            request,
+            start,
+            HardwareDeviceKind::Gpu,
+            hint,
+            &self.gpu_actuator,
+        )
     }
 
     fn bind_npu(&self, request: &BindingRequest, start: Instant) -> ContractResult<BindingResult> {
@@ -309,64 +288,138 @@ impl DefaultRuntimeBinder {
             });
         }
 
-        let exec = match &self.npu_executor {
-            Some(e) => e,
-            None => {
-                return Ok(BindingResult {
-                    route_id: request.route.route_id.clone(),
-                    source: RuntimeRouteSource::Npu,
-                    executed: false,
-                    inference: None,
-                    reason: "npu capability present but no executor registered".to_string(),
-                    latency_ms: start.elapsed().as_millis() as u64,
-                });
-            },
-        };
+        self.bind_authorized_hardware(
+            request,
+            start,
+            HardwareDeviceKind::Npu,
+            HardwareExecutionHint::AutoMode,
+            &self.npu_actuator,
+        )
+    }
 
-        let Some(device_id) = self
-            .hardware
-            .iter()
-            .find(|h| {
-                h.device_kind == HardwareDeviceKind::Npu
-                    && h.is_supported(HardwareCapability::DeviceIdentity)
+    fn bind_authorized_hardware(
+        &self,
+        request: &BindingRequest,
+        start: Instant,
+        kind: HardwareDeviceKind,
+        hint: HardwareExecutionHint,
+        binding: &Option<(Arc<dyn ISafeHardwareActuator>, ActuationPermit)>,
+    ) -> ContractResult<BindingResult> {
+        let mut result = BindingResult {
+            route_id: request.route.route_id.clone(),
+            source: request.route.source,
+            executed: false,
+            inference: None,
+            reason:
+                "hardware capability present but no executor registered with guarded authorization"
+                    .into(),
+            latency_ms: 0,
+        };
+        if let Some((actuator, permit)) = binding {
+            if self.hardware.iter().any(|caps| {
+                caps.device_name == permit.device_id
+                    && caps.device_kind == kind
+                    && caps.is_supported(HardwareCapability::DeviceIdentity)
+            }) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(u64::MAX);
+                let hardware_request = HardwareExecutionRequest {
+                    device_id: permit.device_id.clone(),
+                    hint,
+                };
+                match actuator.apply_authorized(&hardware_request, permit, now) {
+                    Ok(outcome) => {
+                        result.executed = outcome.device_id == hardware_request.device_id
+                            && outcome.status.is_applied();
+                        result.reason = format!("guarded hardware executor: {:?}", outcome.status);
+                    },
+                    Err(error) => {
+                        result.reason = format!("guarded hardware executor error: {error}")
+                    },
+                }
+            } else {
+                result.reason = "guarded permit has no matching discovered device".into();
+            }
+        }
+        result.latency_ms = start.elapsed().as_millis() as u64;
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod p0_tests {
+    use super::*;
+    use aicore_contracts::{
+        context::{snapshot::ContextSnapshot, workload::WorkloadType},
+        errors::ContractResult,
+        runtime::route::RuntimeRoute,
+        traits::hardware_executor::{HardwareExecutionResult, HardwareExecutionStatus},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct LegacyBackend(Arc<AtomicUsize>);
+    impl IHardwareExecutor for LegacyBackend {
+        fn apply(&self, req: &HardwareExecutionRequest) -> ContractResult<HardwareExecutionResult> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(HardwareExecutionResult {
+                device_id: req.device_id.clone(),
+                status: HardwareExecutionStatus::Applied,
+                latency_ms: 0,
             })
-            .map(|h| h.device_name.clone())
-        else {
-            return Ok(BindingResult {
-                route_id: request.route.route_id.clone(),
-                source: RuntimeRouteSource::Npu,
-                executed: false,
-                inference: None,
-                reason: "no identified NPU device".into(),
-                latency_ms: start.elapsed().as_millis() as u64,
-            });
-        };
-
-        let exec_req = HardwareExecutionRequest {
-            device_id,
-            hint: HardwareExecutionHint::AutoMode,
-        };
-
-        match exec.apply(&exec_req) {
-            Ok(result) => {
-                let executed = result.status.is_applied();
-                Ok(BindingResult {
-                    route_id: request.route.route_id.clone(),
-                    source: RuntimeRouteSource::Npu,
-                    executed,
-                    inference: None,
-                    reason: format!("npu executor: {:?}", result.status),
-                    latency_ms: start.elapsed().as_millis() as u64,
+        }
+        fn release(&self, _: &str) -> ContractResult<HardwareExecutionResult> {
+            unreachable!()
+        }
+        fn executor_name(&self) -> &'static str {
+            "legacy"
+        }
+    }
+    #[test]
+    fn p0_binder_never_writes_through_unpermitted_legacy_backend() {
+        for source in [RuntimeRouteSource::Gpu, RuntimeRouteSource::Npu] {
+            let writes = Arc::new(AtomicUsize::new(0));
+            let id = if source == RuntimeRouteSource::Gpu {
+                "gpu:test"
+            } else {
+                "npu:test"
+            };
+            let caps = HardwareCapabilitySet::new(id)
+                .with_device_kind(if source == RuntimeRouteSource::Gpu {
+                    HardwareDeviceKind::Gpu
+                } else {
+                    HardwareDeviceKind::Npu
                 })
-            },
-            Err(e) => Ok(BindingResult {
-                route_id: request.route.route_id.clone(),
-                source: RuntimeRouteSource::Npu,
-                executed: false,
-                inference: None,
-                reason: format!("npu executor error: {}", e),
-                latency_ms: start.elapsed().as_millis() as u64,
-            }),
+                .with(
+                    aicore_contracts::hardware::capability::HardwareCapabilityEntry::supported(
+                        HardwareCapability::DeviceIdentity,
+                    ),
+                );
+            let backend = Arc::new(LegacyBackend(writes.clone()));
+            let binder = DefaultRuntimeBinder::new()
+                .with_hardware(caps)
+                .with_gpu_executor(backend.clone())
+                .with_npu_executor(backend);
+            let result = binder
+                .bind_and_execute(&BindingRequest {
+                    route: RuntimeRoute {
+                        route_id: "p0".into(),
+                        workload_type: WorkloadType::AiInference,
+                        source,
+                        applied: false,
+                        reason: "test".into(),
+                        confidence: 1.0,
+                        decided_at_unix_secs: 0,
+                    },
+                    context: ContextSnapshot::default(),
+                    inference: None,
+                })
+                .unwrap();
+            assert!(
+                !result.executed,
+                "binder cannot mint hardware authorization"
+            );
+            assert_eq!(writes.load(Ordering::SeqCst), 0);
         }
     }
 }

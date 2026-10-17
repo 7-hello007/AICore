@@ -22,7 +22,8 @@ use aicore_contracts::traits::process_controller::IProcessController;
 use aicore_contracts::traits::telemetry_provider::ITelemetryProvider;
 use aicore_contracts::traits::{
     hardware_executor::{HardwareExecutionHint, HardwareExecutionRequest},
-    safe_actuator::ActuationPermit,
+    power_controller::IPowerController,
+    safe_actuator::{ActuationPermit, ISafeHardwareActuator},
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +47,15 @@ const POWER_CONTROL_INTERFACE: &str = "power.profile_v1";
 /// Independent platform readback gate. The plugin cannot supply its own
 /// verifier; a caller must bind an adapter-backed implementation explicitly.
 pub trait IPluginControlReadback: Send + Sync {
+    /// Supply the same guarded transaction used by native control. Readback-only
+    /// plugin acknowledgements cannot authorize or restore hardware.
+    fn hardware_actuator(&self) -> Option<&dyn ISafeHardwareActuator> {
+        None
+    }
+    /// Independently owned adapter preserving the exact original power state.
+    fn power_controller(&self) -> Option<&dyn IPowerController> {
+        None
+    }
     fn can_verify_hardware(&self, kind: HardwareDeviceKind, device_id: &str) -> bool;
     fn hardware_matches(&self, request: &HardwareExecutionRequest) -> ContractResult<bool>;
     fn can_verify_power(&self) -> bool;
@@ -540,39 +550,20 @@ impl PluginActivationManager {
                 "hardware capability, permit or independent readback unavailable".into(),
             ));
         }
-        let handle = self.control_handle(plugin_id, interface)?;
-        match self.host.call(
-            &handle,
-            &HostRequest::SetHardware {
-                device_kind: kind,
-                device_id: request.device_id.clone(),
-                hint: request.hint.clone(),
+        // Resolving this handle enforces the active operator-pinned interface.
+        self.control_handle(plugin_id, interface)?;
+        let actuator = readback.hardware_actuator().ok_or_else(|| {
+            ActivationError::Rejected("guarded reversible hardware actuator unavailable".into())
+        })?;
+        match actuator.apply_authorized(request, permit, now_unix_ms) {
+            Ok(result) if result.device_id == request.device_id && result.status.is_applied() => {
+                Ok(())
             },
-        ) {
-            Ok(HostResponse::HardwareSet {
-                device_kind: acknowledged_kind,
-                device_id,
-                hint,
-            }) if acknowledged_kind == kind
-                && device_id == request.device_id
-                && hint == request.hint => {},
-            Ok(_) => {
-                self.mark_failed(plugin_id, "incorrect hardware acknowledgement");
-                return Err(ActivationError::Rejected(
-                    "incorrect hardware acknowledgement".into(),
-                ));
-            },
-            Err(error) => {
-                self.mark_failed(plugin_id, &error.to_string());
-                return Err(ActivationError::Host(error.to_string()));
-            },
-        }
-        match readback.hardware_matches(request) {
-            Ok(true) => Ok(()),
-            Ok(false) | Err(_) => {
-                self.mark_failed(plugin_id, "hardware readback failed");
-                Err(ActivationError::Rejected("hardware readback failed".into()))
-            },
+            Ok(result) => Err(ActivationError::Rejected(format!(
+                "guarded hardware operation failed: {:?}",
+                result.status
+            ))),
+            Err(error) => Err(ActivationError::Host(error.to_string())),
         }
     }
 
@@ -588,26 +579,48 @@ impl PluginActivationManager {
             ));
         }
         let handle = self.control_handle(plugin_id, POWER_CONTROL_INTERFACE)?;
-        match self.host.call(&handle, &HostRequest::SetPower { mode }) {
-            Ok(HostResponse::PowerSet { mode: acknowledged }) if acknowledged == mode => {},
-            Ok(_) => {
-                self.mark_failed(plugin_id, "incorrect power acknowledgement");
-                return Err(ActivationError::Rejected(
-                    "incorrect power acknowledgement".into(),
-                ));
-            },
-            Err(error) => {
-                self.mark_failed(plugin_id, &error.to_string());
-                return Err(ActivationError::Host(error.to_string()));
-            },
+        let controller = readback.power_controller().ok_or_else(|| {
+            ActivationError::Rejected(
+                "independent exact power state capture/restoration unavailable".into(),
+            )
+        })?;
+        if !controller.supports_exact_state() {
+            return Err(ActivationError::Rejected(
+                "controller provides no exact reversible power state".into(),
+            ));
         }
-        match readback.power_matches(mode) {
-            Ok(true) => Ok(()),
-            Ok(false) | Err(_) => {
-                self.mark_failed(plugin_id, "power readback failed");
-                Err(ActivationError::Rejected("power readback failed".into()))
-            },
+        let _transaction = aicore_contracts::traits::power_controller::control_transaction_lock()
+            .map_err(|_| {
+            ActivationError::Lifecycle("plugin power transaction lock poisoned".into())
+        })?;
+        let original = controller.capture_state().map_err(|error| {
+            ActivationError::Rejected(format!("original power state unavailable: {error}"))
+        })?;
+        let response = self.host.call(&handle, &HostRequest::SetPower { mode });
+        let acknowledged =
+            matches!(response, Ok(HostResponse::PowerSet {mode: observed}) if observed == mode);
+        if acknowledged
+            && readback.power_matches(mode).unwrap_or(false)
+            && controller
+                .get_profile()
+                .map(|observed| observed == mode)
+                .unwrap_or(false)
+        {
+            return Ok(());
         }
+        // An incorrect acknowledgement or host error can follow a partial write.
+        let restore_result = controller.restore_state(&original);
+        let final_state = controller.capture_state();
+        let restored = restore_result.is_ok()
+            && final_state
+                .map(|observed| observed == original)
+                .unwrap_or(false);
+        self.mark_failed(plugin_id, "power apply/readback failed");
+        Err(ActivationError::Rejected(if restored {
+            "power apply/readback failed; exact original restored".into()
+        } else {
+            "power apply/readback failed; restoration NOT VERIFIED".into()
+        }))
     }
 
     pub fn bound_process_priority_ids(&self) -> Result<Vec<String>, ActivationError> {
@@ -967,6 +980,8 @@ mod tests {
         priority_calls: AtomicUsize,
         hardware_calls: AtomicUsize,
         power_calls: AtomicUsize,
+        power_state: Arc<Mutex<Option<PowerMode>>>,
+        wrong_power_ack: AtomicBool,
     }
 
     impl IPluginHost for MockHost {
@@ -1047,7 +1062,16 @@ mod tests {
                 },
                 HostRequest::SetPower { mode } => {
                     self.power_calls.fetch_add(1, Ordering::SeqCst);
-                    HostResponse::PowerSet { mode: *mode }
+                    if self.power_state.lock().unwrap().is_some() {
+                        *self.power_state.lock().unwrap() = Some(*mode);
+                    }
+                    if self.wrong_power_ack.load(Ordering::SeqCst) {
+                        HostResponse::Error {
+                            message: "partial power failure".into(),
+                        }
+                    } else {
+                        HostResponse::PowerSet { mode: *mode }
+                    }
                 },
                 HostRequest::Shutdown => HostResponse::ShuttingDown,
             })
@@ -1384,6 +1408,11 @@ mod tests {
             vendor: HardwareVendor::Other("mock".into()),
             device_id: id.into(),
             capabilities: HardwareCapabilitySet::new(id)
+                .with_device_kind(if id == "gpu:mock" {
+                    HardwareDeviceKind::Gpu
+                } else {
+                    HardwareDeviceKind::Npu
+                })
                 .with(HardwareCapabilityEntry::supported(capability)),
             thermal_limit_celsius: None,
         };
@@ -1425,73 +1454,128 @@ mod tests {
                 }
             )
             .is_err());
-        manager
-            .set_hardware(
-                "echo",
-                HardwareDeviceKind::Gpu,
-                &gpu,
-                HardwareControlContext {
-                    matrix: &gpu_matrix,
-                    permit: &gpu_permit,
-                    now_unix_ms: 10,
-                    readback: &readback,
-                },
-            )
-            .unwrap();
-        let npu = HardwareExecutionRequest {
-            device_id: "npu:mock".into(),
-            hint: HardwareExecutionHint::ComputeMode,
-        };
-        let npu_matrix = matrix("npu:mock", HardwareCapability::ProviderSelection);
-        let npu_permit = ActuationPermit {
-            device_id: "npu:mock".into(),
-            capability: HardwareCapability::ProviderSelection,
-            expires_at_unix_ms: 100,
-            model_only: false,
-        };
-        manager
-            .set_hardware(
-                "echo",
-                HardwareDeviceKind::Npu,
-                &npu,
-                HardwareControlContext {
-                    matrix: &npu_matrix,
-                    permit: &npu_permit,
-                    now_unix_ms: 10,
-                    readback: &readback,
-                },
-            )
-            .unwrap();
-        manager
-            .set_power("echo", PowerMode::Balanced, &readback)
-            .unwrap();
-        assert_eq!(host.hardware_calls.load(Ordering::SeqCst), 2);
-        assert_eq!(host.power_calls.load(Ordering::SeqCst), 1);
-
-        let mismatch = MockReadback {
-            available: true,
-            matches: false,
-        };
-        assert!(manager
-            .set_power("echo", PowerMode::Balanced, &mismatch)
-            .is_err());
-        assert_eq!(
-            manager.registry.get("echo").unwrap().unwrap().state,
-            PluginState::Failed
+        assert!(
+            manager
+                .set_hardware(
+                    "echo",
+                    HardwareDeviceKind::Gpu,
+                    &gpu,
+                    HardwareControlContext {
+                        matrix: &gpu_matrix,
+                        permit: &gpu_permit,
+                        now_unix_ms: 10,
+                        readback: &readback
+                    }
+                )
+                .is_err(),
+            "readback-only plugin path cannot bypass the guarded reversible actuator"
         );
+        assert_eq!(host.hardware_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn p0_plugin_power_readback_alone_cannot_mutate_without_original_state() {
+        let mut fixture = Fixture::new();
+        fixture.discovered.manifest.kind = PluginKind::Adapter;
+        fixture.discovered.manifest.interfaces = vec![POWER_CONTROL_INTERFACE.into()];
+        fixture.discovered.manifest.permissions = vec![PluginPermission::PowerControl];
+        let bytes = serde_json::to_vec(&fixture.discovered.manifest).unwrap();
+        std::fs::write(&fixture.pin.manifest_path, &bytes).unwrap();
+        fixture.pin.manifest_sha256 = SignatureVerifier::compute_sha256_from_bytes(&bytes).hash_hex;
+        fixture.pin.allowed_interfaces = fixture.discovered.manifest.interfaces.clone();
+        fixture.pin.allowed_permissions = fixture.discovered.manifest.permissions.clone();
+        fixture.pin.allow_control = true;
+        let host = Arc::new(MockHost::default());
+        let manager = manager(&fixture, host.clone());
+        manager.activate(&fixture.discovered, &fixture.pin).unwrap();
+        let readback = MockReadback {
+            available: true,
+            matches: true,
+        };
         assert!(manager
-            .set_hardware(
-                "echo",
-                HardwareDeviceKind::Gpu,
-                &gpu,
-                HardwareControlContext {
-                    matrix: &gpu_matrix,
-                    permit: &gpu_permit,
-                    now_unix_ms: 10,
-                    readback: &readback
-                }
-            )
+            .set_power("echo", PowerMode::Balanced, &readback)
             .is_err());
+        assert_eq!(host.power_calls.load(Ordering::SeqCst), 0);
+    }
+
+    struct TestPower(Arc<Mutex<Option<PowerMode>>>, bool);
+    impl IPowerController for TestPower {
+        fn supports_exact_state(&self) -> bool {
+            self.1
+        }
+        fn set_profile(&self, mode: PowerMode) -> ContractResult<PowerMode> {
+            *self.0.lock().unwrap() = Some(mode);
+            Ok(mode)
+        }
+        fn get_profile(&self) -> ContractResult<PowerMode> {
+            self.0
+                .lock()
+                .unwrap()
+                .ok_or_else(|| ContractError::CapabilityUnavailable("absent".into()))
+        }
+        fn capabilities(&self) -> Vec<&'static str> {
+            vec!["power.profile.read", "power.profile.write"]
+        }
+        fn platform_name(&self) -> &'static str {
+            "test_power"
+        }
+    }
+    struct CapablePowerReadback {
+        controller: TestPower,
+        matches: bool,
+    }
+    impl IPluginControlReadback for CapablePowerReadback {
+        fn power_controller(&self) -> Option<&dyn IPowerController> {
+            Some(&self.controller)
+        }
+        fn can_verify_hardware(&self, _: HardwareDeviceKind, _: &str) -> bool {
+            false
+        }
+        fn hardware_matches(&self, _: &HardwareExecutionRequest) -> ContractResult<bool> {
+            Ok(false)
+        }
+        fn can_verify_power(&self) -> bool {
+            true
+        }
+        fn power_matches(&self, _: PowerMode) -> ContractResult<bool> {
+            Ok(self.matches)
+        }
+    }
+    #[test]
+    fn p0_pinned_plugin_power_verifies_and_restores_partial_failure() {
+        for (fail, exact) in [(false, true), (true, true), (false, false)] {
+            let mut fixture = Fixture::new();
+            fixture.discovered.manifest.kind = PluginKind::Adapter;
+            fixture.discovered.manifest.interfaces = vec![POWER_CONTROL_INTERFACE.into()];
+            fixture.discovered.manifest.permissions = vec![PluginPermission::PowerControl];
+            let bytes = serde_json::to_vec(&fixture.discovered.manifest).unwrap();
+            std::fs::write(&fixture.pin.manifest_path, &bytes).unwrap();
+            fixture.pin.manifest_sha256 =
+                SignatureVerifier::compute_sha256_from_bytes(&bytes).hash_hex;
+            fixture.pin.allowed_interfaces = fixture.discovered.manifest.interfaces.clone();
+            fixture.pin.allowed_permissions = fixture.discovered.manifest.permissions.clone();
+            fixture.pin.allow_control = true;
+            let host = Arc::new(MockHost::default());
+            *host.power_state.lock().unwrap() = Some(PowerMode::Balanced);
+            host.wrong_power_ack.store(fail, Ordering::SeqCst);
+            let manager = manager(&fixture, host.clone());
+            manager.activate(&fixture.discovered, &fixture.pin).unwrap();
+            let readback = CapablePowerReadback {
+                controller: TestPower(host.power_state.clone(), exact),
+                matches: true,
+            };
+            let result = manager.set_power("echo", PowerMode::Performance, &readback);
+            assert_eq!(result.is_ok(), !fail && exact);
+            assert_eq!(host.power_calls.load(Ordering::SeqCst), usize::from(exact));
+            assert_eq!(
+                readback.controller.get_profile().unwrap(),
+                if fail || !exact {
+                    PowerMode::Balanced
+                } else {
+                    PowerMode::Performance
+                }
+            );
+        }
     }
 
     #[test]

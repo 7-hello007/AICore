@@ -643,6 +643,32 @@ fn build_runtime_for_mode_with_simulation(
                 as Arc<dyn aicore_contracts::traits::hardware_executor::IHardwareExecutor>;
             for matrix in simulator.hardware_matrices() {
                 platform_binder = platform_binder.with_hardware(matrix.capabilities.clone());
+                // Permits here are confined to the explicitly selected simulator.
+                use aicore_contracts::{
+                    hardware::capability::{HardwareCapability, HardwareDeviceKind},
+                    traits::safe_actuator::ActuationPermit,
+                };
+                let capability = match matrix.capabilities.device_kind {
+                    HardwareDeviceKind::Gpu => HardwareCapability::WorkloadHint,
+                    HardwareDeviceKind::Npu => HardwareCapability::ProviderSelection,
+                    _ => continue,
+                };
+                let permit = ActuationPermit {
+                    device_id: matrix.device_id.clone(),
+                    capability,
+                    expires_at_unix_ms: u64::MAX,
+                    model_only: true,
+                };
+                let kind = matrix.capabilities.device_kind;
+                let actuator = Arc::new(aicore_core::safe_actuator::GuardedHardwareActuator::new(
+                    matrix.clone(),
+                    Some(exec.clone()),
+                ));
+                platform_binder = match kind {
+                    HardwareDeviceKind::Gpu => platform_binder.with_gpu_actuator(actuator, permit),
+                    HardwareDeviceKind::Npu => platform_binder.with_npu_actuator(actuator, permit),
+                    _ => unreachable!(),
+                };
             }
             platform_binder = platform_binder
                 .with_gpu_executor(exec.clone())
@@ -729,11 +755,8 @@ fn build_runtime_for_mode_with_simulation(
                     let provider = std::env::var("AICORE_ACCELERATOR_PROVIDER").unwrap_or_default();
                     let (device, caps) = match provider.as_str() {
                         "DmlExecutionProvider" => {
-                            let device = telemetry
-                                .gpu_devices()
-                                .into_iter()
-                                .find(|d| d.id == format!("gpu:dxgi:{ordinal}"))
-                                .ok_or_else(|| {
+                            let device =
+                                telemetry.gpu_device_for_ordinal(ordinal).ok_or_else(|| {
                                     aicore_contracts::errors::ContractError::CapabilityUnavailable(
                                         "configured DXGI GPU absent".into(),
                                     )
@@ -763,7 +786,7 @@ fn build_runtime_for_mode_with_simulation(
                             ))
                         },
                     };
-                    let matrix = DeviceCapabilityMatrix::from_discovered(
+                    let mut matrix = DeviceCapabilityMatrix::from_discovered(
                         aicore_contracts::hardware::matrix::HostOs::Windows,
                         &device,
                         caps,
@@ -773,6 +796,7 @@ fn build_runtime_for_mode_with_simulation(
                             "device identity mismatch".into(),
                         )
                     })?;
+                    matrix.vendor = telemetry.vendor_for_device(&device.id);
                     let mut cpu = DefaultRuntimeBinder::new();
                     if let Some(runtime) = shared_ai_runtime.clone() {
                         if let Some(handle) = runtime
@@ -1082,6 +1106,10 @@ fn build_hardware_matrices() -> Vec<DeviceCapabilityMatrix> {
                 &device,
                 capabilities.gpu_capability(&device.id),
             )
+            .map(|mut matrix| {
+                matrix.vendor = telemetry.vendor_for_device(&device.id);
+                matrix
+            })
         })
         .chain(telemetry.npu_devices().into_iter().filter_map(|device| {
             DeviceCapabilityMatrix::from_discovered(
@@ -1089,6 +1117,10 @@ fn build_hardware_matrices() -> Vec<DeviceCapabilityMatrix> {
                 &device,
                 capabilities.npu_capability(&device.id),
             )
+            .map(|mut matrix| {
+                matrix.vendor = telemetry.vendor_for_device(&device.id);
+                matrix
+            })
         }))
         .collect()
 }
@@ -1112,6 +1144,10 @@ fn build_hardware_matrices() -> Vec<DeviceCapabilityMatrix> {
                 &device,
                 capabilities.gpu_capability(&device.id),
             )
+            .map(|mut matrix| {
+                matrix.vendor = telemetry.vendor_for_device(&device.id);
+                matrix
+            })
         })
         .chain(telemetry.npu_devices().into_iter().filter_map(|device| {
             DeviceCapabilityMatrix::from_discovered(
@@ -1119,6 +1155,10 @@ fn build_hardware_matrices() -> Vec<DeviceCapabilityMatrix> {
                 &device,
                 capabilities.npu_capability(&device.id),
             )
+            .map(|mut matrix| {
+                matrix.vendor = telemetry.vendor_for_device(&device.id);
+                matrix
+            })
         }))
         .collect()
 }
@@ -1367,7 +1407,7 @@ mod simulated_platform_tests {
         let trace = transparent.execute_transparent(&proposed, &targets, Some(&previous));
         assert!(trace.rollback.triggered);
         assert_eq!(trace.rollback.succeeded, Some(true));
-        assert_eq!(trace.final_status, ExecutionOverallStatus::NoOp);
+        assert_eq!(trace.final_status, ExecutionOverallStatus::AllFailed);
         assert_eq!(simulator.get_priority(pid).unwrap(), original);
     }
 

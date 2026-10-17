@@ -1,7 +1,5 @@
-use std::process::Command;
-
 use aicore_contracts::hardware::capability::{
-    HardwareCapability, HardwareCapabilityEntry, HardwareCapabilitySet,
+    HardwareCapability, HardwareCapabilityEntry, HardwareCapabilitySet, HardwareDeviceKind,
 };
 
 /// Windows hardware capability detection.
@@ -12,55 +10,52 @@ impl WindowsHardwareCapabilityProvider {
     pub fn new() -> Self {
         Self
     }
-    fn nvidia_available() -> bool {
-        Command::new("nvidia-smi")
-            .arg("-L")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
     pub fn gpu_capability(&self, device_id: &str) -> HardwareCapabilitySet {
+        use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
+        let provider = super::telemetry::WindowsHardwareTelemetryProvider::new();
         let mut set = HardwareCapabilitySet::new(device_id);
-        if device_id.starts_with("gpu:dxgi:") {
-            use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
-            return if super::telemetry::WindowsHardwareTelemetryProvider::new()
-                .gpu_devices()
-                .iter()
-                .any(|d| d.id == device_id)
-            {
-                set.with(HardwareCapabilityEntry::supported(
-                    HardwareCapability::DeviceIdentity,
-                ))
-            } else {
-                set.with(HardwareCapabilityEntry::unsupported(
-                    HardwareCapability::DeviceIdentity,
-                    "DXGI adapter absent",
-                ))
-            };
-        }
-        if device_id.starts_with("nvidia:") && Self::nvidia_available() {
-            set = set.with(HardwareCapabilityEntry::supported(
+        if !provider
+            .gpu_devices()
+            .iter()
+            .any(|device| device.id == device_id)
+        {
+            return set.with(HardwareCapabilityEntry::unsupported(
                 HardwareCapability::DeviceIdentity,
-            ));
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::UtilizationTelemetry,
-            ));
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::MemoryTelemetry,
-            ));
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::TemperatureTelemetry,
-            ));
-            set = set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::VendorControl,
-            ));
-        } else {
-            set = set.with(HardwareCapabilityEntry::unsupported(
-                HardwareCapability::DeviceIdentity,
-                "no supported vendor hardware provider detected",
+                "exact device identity absent from provider enumeration",
             ));
         }
-        set
+        set =
+            set.with_device_kind(HardwareDeviceKind::Gpu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::DeviceIdentity,
+                ));
+        // Detection is separate from a successful telemetry observation.
+        if let Ok(sample) = provider.sample_gpu(device_id) {
+            if sample.device.id == device_id {
+                for (capability, available) in [
+                    (
+                        HardwareCapability::UtilizationTelemetry,
+                        sample.utilization_percent.is_some(),
+                    ),
+                    (
+                        HardwareCapability::MemoryTelemetry,
+                        sample.memory_total_mb.is_some(),
+                    ),
+                    (
+                        HardwareCapability::TemperatureTelemetry,
+                        sample.temperature_celsius.is_some(),
+                    ),
+                ] {
+                    if available {
+                        set = set.with(HardwareCapabilityEntry::supported(capability));
+                    }
+                }
+            }
+        }
+        set.with(HardwareCapabilityEntry::unsupported(
+            HardwareCapability::VendorControl,
+            "command presence does not establish reversible independently verified control",
+        ))
     }
     pub fn npu_capability(&self, device_id: &str) -> HardwareCapabilitySet {
         use aicore_contracts::traits::hardware_telemetry::IHardwareTelemetryProvider;
@@ -70,9 +65,10 @@ impl WindowsHardwareCapabilityProvider {
             .iter()
             .any(|d| d.id == device_id)
         {
-            set.with(HardwareCapabilityEntry::supported(
-                HardwareCapability::DeviceIdentity,
-            ))
+            set.with_device_kind(HardwareDeviceKind::Npu)
+                .with(HardwareCapabilityEntry::supported(
+                    HardwareCapability::DeviceIdentity,
+                ))
         } else {
             set.with(HardwareCapabilityEntry::unsupported(
                 HardwareCapability::DeviceIdentity,

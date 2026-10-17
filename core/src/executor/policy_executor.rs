@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -10,8 +11,9 @@ use aicore_contracts::{
     },
     policy::{priority::PolicyPriority, resource_policy::ResourcePolicy},
     traits::{
-        policy_executor::IPolicyExecutor, power_controller::IPowerController,
-        process_controller::IProcessController,
+        policy_executor::IPolicyExecutor,
+        power_controller::IPowerController,
+        process_controller::{IProcessController, ProcessPrioritySnapshot},
     },
 };
 
@@ -24,8 +26,8 @@ use aicore_contracts::{
 ///
 /// GPU/NPU actions belong to Runtime Router / Hardware Executor; CPU affinity to ProcessController.
 pub struct DefaultPolicyExecutor {
-    process: Option<Arc<dyn IProcessController>>,
-    power: Option<Arc<dyn IPowerController>>,
+    pub(super) process: Option<Arc<dyn IProcessController>>,
+    pub(super) power: Option<Arc<dyn IPowerController>>,
 }
 
 impl DefaultPolicyExecutor {
@@ -39,6 +41,44 @@ impl DefaultPolicyExecutor {
 
 impl IPolicyExecutor for DefaultPolicyExecutor {
     fn execute(&self, policy: &ResourcePolicy, targets: &ExecutionTargets) -> ExecutionResult {
+        match self.begin_transaction(policy, targets) {
+            Ok(Some(mut transaction)) => {
+                let mut result = transaction.apply();
+                if result.outcomes.iter().any(|o| o.status.is_real_failure()) {
+                    result.outcomes.extend(transaction.restore());
+                    // Restoration never turns the failed requested operation into success.
+                    result.overall_status = ExecutionOverallStatus::AllFailed;
+                }
+                result
+            },
+            Ok(None) => unreachable!("default executor always captures a transaction"),
+            Err(error) => capture_failed(policy, error),
+        }
+    }
+
+    fn begin_transaction(
+        &self,
+        policy: &ResourcePolicy,
+        targets: &ExecutionTargets,
+    ) -> aicore_contracts::errors::ContractResult<
+        Option<Box<dyn aicore_contracts::traits::policy_executor::IPolicyTransaction + '_>>,
+    > {
+        super::transaction::capture(self, policy, targets).map(Some)
+    }
+
+    fn name(&self) -> &'static str {
+        "default_policy_executor"
+    }
+}
+
+impl DefaultPolicyExecutor {
+    pub(super) fn apply_captured(
+        &self,
+        policy: &ResourcePolicy,
+        targets: &ExecutionTargets,
+        originals: &BTreeMap<u32, ProcessPrioritySnapshot>,
+        power_captured: bool,
+    ) -> ExecutionResult {
         let started = now_unix_ms();
         let mut outcomes: Vec<ExecutionOutcome> = Vec::new();
 
@@ -50,6 +90,13 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
                 status: ExecutionStatus::Skipped,
                 message: "application preparation is process-only".into(),
             });
+        } else if self.power.is_some() && !power_captured {
+            outcomes.push(ExecutionOutcome {
+                resource: "power.profile".into(),
+                target: "system".into(),
+                status: ExecutionStatus::NotSupported,
+                message: "exact original power state unavailable; no power write attempted".into(),
+            });
         } else if let Some(power) = &self.power {
             match power.set_profile(policy.power.mode) {
                 Ok(applied) => outcomes.push(ExecutionOutcome {
@@ -58,7 +105,7 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
                     status: if applied == policy.power.mode {
                         ExecutionStatus::Success
                     } else {
-                        ExecutionStatus::Skipped
+                        ExecutionStatus::Failed
                     },
                     message: format!("requested={:?} applied={:?}", policy.power.mode, applied),
                 }),
@@ -77,7 +124,9 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
         if let Some(process) = &self.process {
             let fg_priority = policy.cpu.priority;
             for pid in &targets.foreground_pids {
-                match process.set_priority(*pid, fg_priority) {
+                match original_for(originals, *pid)
+                    .and_then(|saved| process.set_priority_captured(saved, fg_priority))
+                {
                     Ok(()) => outcomes.push(ExecutionOutcome {
                         resource: "process.priority".to_string(),
                         target: format!("pid={}", pid),
@@ -103,7 +152,9 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
                         .iter()
                         .chain(targets.background_pids.iter())
                     {
-                        match process.set_affinity(*pid, &mask) {
+                        match original_for(originals, *pid)
+                            .and_then(|saved| process.set_affinity_captured(saved, &mask))
+                        {
                             Ok(()) => outcomes.push(ExecutionOutcome {
                                 resource: "process.affinity".to_string(),
                                 target: format!("pid={}", pid),
@@ -134,7 +185,9 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
                     if targets.foreground_pids.contains(pid) {
                         continue;
                     }
-                    match process.set_priority(*pid, PolicyPriority::Background) {
+                    match original_for(originals, *pid).and_then(|saved| {
+                        process.set_priority_captured(saved, PolicyPriority::Background)
+                    }) {
                         Ok(()) => outcomes.push(ExecutionOutcome {
                             resource: "process.throttle".to_string(),
                             target: format!("pid={}", pid),
@@ -169,13 +222,37 @@ impl IPolicyExecutor for DefaultPolicyExecutor {
             outcomes,
         }
     }
+}
 
-    fn name(&self) -> &'static str {
-        "default_policy_executor"
+fn original_for(
+    originals: &BTreeMap<u32, ProcessPrioritySnapshot>,
+    pid: u32,
+) -> Result<&ProcessPrioritySnapshot, ContractError> {
+    originals
+        .get(&pid)
+        .ok_or_else(|| ContractError::ContractInvalid("process original identity missing".into()))
+}
+
+pub(super) fn capture_failed(policy: &ResourcePolicy, error: ContractError) -> ExecutionResult {
+    let outcomes = vec![outcome_from_error(
+        "execution.capture",
+        "transaction",
+        error,
+    )];
+    ExecutionResult {
+        policy_id: policy.policy_id.clone(),
+        overall_status: ExecutionOverallStatus::from_outcomes(&outcomes),
+        started_at_unix_ms: now_unix_ms(),
+        finished_at_unix_ms: now_unix_ms(),
+        outcomes,
     }
 }
 
-fn outcome_from_error(resource: &str, target: &str, err: ContractError) -> ExecutionOutcome {
+pub(super) fn outcome_from_error(
+    resource: &str,
+    target: &str,
+    err: ContractError,
+) -> ExecutionOutcome {
     let (status, message) = match err {
         ContractError::PermissionDenied(m) => (ExecutionStatus::PermissionDenied, m),
         ContractError::NotSupported(m) => (ExecutionStatus::NotSupported, m),

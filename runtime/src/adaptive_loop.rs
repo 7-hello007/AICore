@@ -73,10 +73,30 @@ impl Drop for PreparedTaskGuard {
         if self.armed {
             if let Some(queue) = &self.queue {
                 for task in &self.tasks {
-                    if let Err(error) =
-                        queue.fail(&task.task_id, "prepared policy expired or discarded".into())
-                    {
-                        tracing::warn!(component="adaptive_loop", event="prepared_task_cleanup_failed", task_id=%task.task_id, error=%error);
+                    // Retry one transient queue error, rechecking the state
+                    // each time. The queue's atomic transition also protects
+                    // a terminal state reached after this read.
+                    for _ in 0..2 {
+                        match queue.get(&task.task_id) {
+                            Ok(Some(current))
+                                if current.state
+                                    == aicore_contracts::task::lifecycle::TaskState::Running =>
+                            {
+                                match queue.fail(
+                                    &task.task_id,
+                                    "prepared policy expired or discarded".into(),
+                                ) {
+                                    Ok(()) => break,
+                                    Err(error) => {
+                                        tracing::warn!(component="adaptive_loop", event="prepared_task_cleanup_failed", task_id=%task.task_id, error=%error);
+                                    },
+                                }
+                            },
+                            Ok(_) => break,
+                            Err(error) => {
+                                tracing::warn!(component="adaptive_loop", event="prepared_task_cleanup_failed", task_id=%task.task_id, error=%error);
+                            },
+                        }
                     }
                 }
             }
@@ -609,24 +629,27 @@ impl AdaptiveLoop {
         // A tick performs only one task to avoid that one policy is wrongly used for multiple tasks before all is marked.
         const MAX_TASKS_PER_TICK: usize = 1;
         let mut tasks = PreparedTaskGuard {
-            tasks: self.dequeue_tasks(MAX_TASKS_PER_TICK),
+            // L1 owns this tick when present. Leave queued work pending until
+            // a later tick can use its own context, constraints and targets.
+            tasks: if tier_task.is_some() {
+                Vec::new()
+            } else {
+                self.dequeue_tasks(MAX_TASKS_PER_TICK)
+            },
             queue: self.task_queue.clone(),
             armed: true,
         };
         let active_tasks = &tasks.tasks;
         let active_task = active_tasks.first();
-        let application_id = tier_task
+        let task_contract = tier_task
             .as_ref()
-            .or_else(|| active_task.map(|task| &task.contract))
-            .map(|contract| contract.application_id.clone());
+            .or_else(|| active_task.map(|task| &task.contract));
+        let application_id = task_contract.map(|contract| contract.application_id.clone());
         let memory_ctx = self.build_memory_context();
         let (mut context, prediction) =
             self.apply_prediction(context, &state, &memory_ctx, application_id.clone());
-        if let Some(contract) = tier_task.as_ref() {
+        if let Some(contract) = task_contract {
             context = apply_task_contract(context, contract);
-        }
-        if let Some(task) = active_task {
-            context = apply_task_hints(context, task);
         }
         if !active_tasks.is_empty() {
             tracing::info!(
@@ -692,10 +715,7 @@ impl AdaptiveLoop {
         }
 
         // TaskContract is an explicit application constraint that must be re-imposed after any Tier policy override.
-        if let Some(contract) = tier_task
-            .as_ref()
-            .or_else(|| active_task.map(|task| &task.contract))
-        {
+        if let Some(contract) = task_contract {
             apply_task_contract_to_policy(&mut policy, contract);
         }
 
@@ -732,12 +752,14 @@ impl AdaptiveLoop {
         let validation = self.validator.validate(&policy);
         if !validation.accepted {
             self.metrics.record_policy_rejected();
+            let mut cleanup_required = false;
             if let Some(queue) = &self.task_queue {
                 for task in active_tasks {
                     if let Err(error) = queue.fail(
                         &task.task_id,
                         format!("policy rejected: {:?}", validation.issues),
                     ) {
+                        cleanup_required = true;
                         tracing::warn!(
                             component = "adaptive_loop",
                             event = "task_finish_failed",
@@ -748,7 +770,7 @@ impl AdaptiveLoop {
                     }
                 }
             }
-            tasks.armed = false;
+            tasks.armed = cleanup_required;
             let mode_after = self.safe_mode.record_failure();
             let duration_ms = start.elapsed().as_millis() as u64;
             self.metrics.record_tick(false, duration_ms);
@@ -885,7 +907,9 @@ impl AdaptiveLoop {
                                 Self::now_unix_ms() >= deadline.saturating_mul(1000)
                             }) => {},
                     _ => {
-                        tasks.armed = false;
+                        // Keep cleanup armed: expiry or a failed status read
+                        // must close a still-Running task. Queue transitions
+                        // atomically preserve any concurrent terminal state.
                         return self.neutral_tick("prepared task was revoked before apply");
                     },
                 }
@@ -930,10 +954,6 @@ impl AdaptiveLoop {
                 }
             });
             result.overall_status = trace.final_status;
-            // A successful rollback is NoOp, avoiding a false SafeMode failure.
-            if trace.rollback.triggered && trace.rollback.succeeded == Some(true) {
-                result.overall_status = ExecutionOverallStatus::NoOp;
-            }
             (result, Some(trace))
         } else {
             (self.executor.execute(&policy, &effective_targets), None)
@@ -1029,6 +1049,7 @@ impl AdaptiveLoop {
         }
 
         // 7.5 Task: All tasks consumed by this tick have been completed/failed to avoid long queue build-up.
+        let mut cleanup_required = false;
         if let Some(queue) = &self.task_queue {
             for task in &active_tasks {
                 let result = if exec_success {
@@ -1036,10 +1057,11 @@ impl AdaptiveLoop {
                 } else if exec_failure {
                     queue.fail(&task.task_id, format!("{:?}", overall))
                 } else {
-        // NoOp did not execute an action, so the task cannot be marked Completed.
+                    // NoOp did not execute an action, so the task cannot be marked Completed.
                     queue.fail(&task.task_id, "NoOp: no action executed".to_string())
                 };
                 if let Err(e) = result {
+                    cleanup_required = true;
                     tracing::warn!(
                         component = "adaptive_loop",
                         event = "task_finish_failed",
@@ -1050,6 +1072,7 @@ impl AdaptiveLoop {
                 }
             }
         }
+        tasks.armed = cleanup_required;
 
         // 8. Learn: Writing history (if enabled)
         let mut recorded = false;
@@ -1100,7 +1123,6 @@ impl AdaptiveLoop {
             "tick finished"
         );
 
-        tasks.armed = false;
         TickOutcome {
             tick_id,
             trace_id: trace.trace_id.clone(),
@@ -1208,29 +1230,6 @@ fn apply_task_contract(
         context.confidence = 1.0;
     }
     if let Some(latency) = contract.latency {
-        context.interaction_level = match latency {
-            LatencySensitivity::Critical | LatencySensitivity::High => {
-                InteractionLevel::Interactive
-            },
-            LatencySensitivity::Medium => InteractionLevel::Passive,
-            LatencySensitivity::Low => InteractionLevel::Idle,
-        };
-    }
-    context
-}
-
-fn apply_task_hints(
-    mut context: aicore_contracts::context::snapshot::ContextSnapshot,
-    task: &aicore_contracts::task::queued::QueuedTask,
-) -> aicore_contracts::context::snapshot::ContextSnapshot {
-    use aicore_contracts::context::workload::InteractionLevel;
-    use aicore_contracts::task::preferences::LatencySensitivity;
-
-    if let Some(w) = task.contract.task {
-        context.workload_type = w;
-        context.confidence = 1.0;
-    }
-    if let Some(latency) = task.contract.latency {
         context.interaction_level = match latency {
             LatencySensitivity::Critical | LatencySensitivity::High => {
                 InteractionLevel::Interactive

@@ -22,14 +22,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project = std::env::current_dir()?;
     let ordinal = std::env::var("AICORE_ACCELERATOR_DEVICE_ID")?.parse::<u32>()?;
     let device = WindowsHardwareTelemetryProvider::new()
-        .gpu_devices()
-        .into_iter()
-        .find(|d| d.id == format!("gpu:dxgi:{ordinal}"))
+        .gpu_device_for_ordinal(ordinal)
         .ok_or("configured hardware DXGI device absent")?;
     println!("NATIVE BEFORE target={:?} original=no AICore inference session proposed=isolated ONNX GPU inference rollback=unload model, release queue lease and exit child session; no power/clock setter",device);
     let caps = WindowsHardwareCapabilityProvider::new().gpu_capability(&device.id);
-    let matrix = DeviceCapabilityMatrix::from_discovered(HostOs::Windows, &device, caps)
+    let mut matrix = DeviceCapabilityMatrix::from_discovered(HostOs::Windows, &device, caps)
         .ok_or("matrix mismatch")?;
+    matrix.vendor = WindowsHardwareTelemetryProvider::new().vendor_for_device(&device.id);
     let binder = aicore_runtime::queued_model_binder::configured_accelerator_binder(
         &project,
         matrix,

@@ -1,6 +1,15 @@
-//! GPU real-time chain integration test (Mock with real platform).
+//! Memory-only GPU routing with the production binder and guarded actuator.
+//! No native hardware discovery, setter, or command is executed.
 
-use std::sync::Arc;
+use aicore_contracts::{
+    hardware::matrix::{DeviceCapabilityMatrix, HardwareVendor, HostOs},
+    traits::{
+        hardware_executor::{HardwareExecutionHint, HardwareStateSnapshot},
+        safe_actuator::{ActuationPermit, ISafeHardwareActuator},
+    },
+};
+use aicore_core::safe_actuator::GuardedHardwareActuator;
+use std::sync::{Arc, Mutex};
 
 use aicore_contracts::{
     context::snapshot::ContextSnapshot,
@@ -19,13 +28,44 @@ use aicore_runtime_router::DefaultRuntimeBinder;
 /// Mark Hardware Executor: Configures the return state.
 struct MockExecutor {
     status: HardwareExecutionStatus,
+    state: Mutex<Option<HardwareExecutionHint>>,
 }
 
 impl IHardwareExecutor for MockExecutor {
+    fn is_model_only(&self) -> bool {
+        true
+    }
+    fn supports_reversible_state(&self) -> bool {
+        true
+    }
+    fn read_hardware_state(
+        &self,
+        id: &str,
+    ) -> aicore_contracts::errors::ContractResult<HardwareStateSnapshot> {
+        Ok(HardwareStateSnapshot {
+            device_id: id.into(),
+            hint: self.state.lock().unwrap().clone(),
+        })
+    }
+    fn restore_hardware_state(
+        &self,
+        state: &HardwareStateSnapshot,
+    ) -> aicore_contracts::errors::ContractResult<HardwareExecutionResult> {
+        *self.state.lock().unwrap() = state.hint.clone();
+        Ok(HardwareExecutionResult {
+            device_id: state.device_id.clone(),
+            status: HardwareExecutionStatus::Applied,
+            latency_ms: 0,
+        })
+    }
+
     fn apply(
         &self,
         req: &HardwareExecutionRequest,
     ) -> aicore_contracts::errors::ContractResult<HardwareExecutionResult> {
+        if self.status.is_applied() {
+            *self.state.lock().unwrap() = Some(req.hint.clone());
+        }
         Ok(HardwareExecutionResult {
             device_id: req.device_id.clone(),
             status: self.status.clone(),
@@ -60,8 +100,34 @@ fn gpu_route() -> RuntimeRoute {
 }
 
 fn gpu_caps() -> HardwareCapabilitySet {
-    HardwareCapabilitySet::new("drm:card0").with(HardwareCapabilityEntry::supported(
-        HardwareCapability::DeviceIdentity,
+    HardwareCapabilitySet::new("drm:card0")
+        .with_device_kind(aicore_contracts::hardware::capability::HardwareDeviceKind::Gpu)
+        .with(HardwareCapabilityEntry::supported(
+            HardwareCapability::DeviceIdentity,
+        ))
+        .with(HardwareCapabilityEntry::supported(
+            HardwareCapability::WorkloadHint,
+        ))
+}
+
+fn permit() -> ActuationPermit {
+    ActuationPermit {
+        device_id: "drm:card0".into(),
+        capability: HardwareCapability::WorkloadHint,
+        expires_at_unix_ms: u64::MAX,
+        model_only: true,
+    }
+}
+fn guarded_executor(executor: Arc<dyn IHardwareExecutor>) -> Arc<dyn ISafeHardwareActuator> {
+    Arc::new(GuardedHardwareActuator::new(
+        DeviceCapabilityMatrix {
+            os: HostOs::Windows,
+            vendor: HardwareVendor::Other("model test".into()),
+            device_id: "drm:card0".into(),
+            capabilities: gpu_caps(),
+            thermal_limit_celsius: None,
+        },
+        Some(executor),
     ))
 }
 
@@ -69,12 +135,11 @@ fn gpu_caps() -> HardwareCapabilitySet {
 fn gpu_route_with_capability_and_applied_executor() {
     let exec = Arc::new(MockExecutor {
         status: HardwareExecutionStatus::Applied,
+        state: Mutex::new(None),
     });
     let binder = DefaultRuntimeBinder::new()
         .with_hardware(gpu_caps())
-        .with_gpu_executor(exec);
-
-    assert!(binder.has_gpu_executor());
+        .with_gpu_actuator(guarded_executor(exec), permit());
 
     let binding = binder
         .bind_and_execute(&BindingRequest {
@@ -86,7 +151,7 @@ fn gpu_route_with_capability_and_applied_executor() {
 
     assert!(binding.executed);
     assert_eq!(binding.source, RuntimeRouteSource::Gpu);
-    assert!(binding.reason.contains("gpu executor"));
+    assert!(binding.reason.contains("guarded hardware executor"));
 }
 
 #[test]
@@ -95,10 +160,11 @@ fn gpu_route_with_not_supported_executor_does_not_execute() {
         status: HardwareExecutionStatus::NotSupported {
             reason: "no sysfs".to_string(),
         },
+        state: Mutex::new(None),
     });
     let binder = DefaultRuntimeBinder::new()
         .with_hardware(gpu_caps())
-        .with_gpu_executor(exec);
+        .with_gpu_actuator(guarded_executor(exec), permit());
 
     let binding = binder
         .bind_and_execute(&BindingRequest {
@@ -109,7 +175,10 @@ fn gpu_route_with_not_supported_executor_does_not_execute() {
         .unwrap();
 
     assert!(!binding.executed);
-    assert!(binding.reason.contains("NotSupported") || binding.reason.contains("gpu executor"));
+    assert!(
+        binding.reason.contains("NotSupported")
+            || binding.reason.contains("guarded hardware executor")
+    );
 }
 
 #[test]
@@ -148,10 +217,13 @@ fn gpu_route_without_capability_does_not_execute() {
 fn already_in_state_counts_as_executed() {
     let exec = Arc::new(MockExecutor {
         status: HardwareExecutionStatus::AlreadyInState,
+        state: Mutex::new(Some(HardwareExecutionHint::WorkloadPreference(
+            "auto".into(),
+        ))),
     });
     let binder = DefaultRuntimeBinder::new()
         .with_hardware(gpu_caps())
-        .with_gpu_executor(exec);
+        .with_gpu_actuator(guarded_executor(exec), permit());
 
     let binding = binder
         .bind_and_execute(&BindingRequest {

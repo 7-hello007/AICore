@@ -309,7 +309,8 @@ mod tests {
     #[test]
     fn capacity_deadline_thermal_cancel_and_lease_cleanup() {
         let scheduler = AcceleratorScheduler::new(3).unwrap();
-        let mut caps = HardwareCapabilitySet::new("gpu:test");
+        let mut caps =
+            HardwareCapabilitySet::new("gpu:test").with_device_kind(HardwareDeviceKind::Gpu);
         caps.entries.push(HardwareCapabilityEntry::supported(
             HardwareCapability::WorkloadHint,
         ));

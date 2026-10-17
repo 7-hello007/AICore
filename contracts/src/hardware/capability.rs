@@ -62,7 +62,9 @@ impl HardwareCapability {
     }
 }
 
-/// Status of individual hardware capabilities.
+/// Status of individual hardware capabilities. `supported` describes the
+/// provider's implemented/observed capability, never authorization, a current
+/// availability guarantee, an applied operation, or independent verification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareCapabilityEntry {
     pub capability: HardwareCapability,
@@ -111,21 +113,17 @@ pub struct HardwareCapabilitySet {
 impl HardwareCapabilitySet {
     pub fn new(device_name: impl Into<String>) -> Self {
         let device_name = device_name.into();
-        let device_kind = if device_name.starts_with("drm:")
-            || device_name.starts_with("nvidia:")
-            || device_name.starts_with("gpu:")
-        {
-            HardwareDeviceKind::Gpu
-        } else if device_name.starts_with("npu:") || device_name.starts_with("accel:") {
-            HardwareDeviceKind::Npu
-        } else {
-            HardwareDeviceKind::Unknown
-        };
         Self {
             device_name,
-            device_kind,
+            device_kind: HardwareDeviceKind::Unknown,
             entries: Vec::new(),
         }
+    }
+
+    /// Set by the discovering provider, never inferred from an untrusted ID.
+    pub fn with_device_kind(mut self, kind: HardwareDeviceKind) -> Self {
+        self.device_kind = kind;
+        self
     }
 
     pub fn with(mut self, entry: HardwareCapabilityEntry) -> Self {
@@ -153,5 +151,25 @@ impl HardwareCapabilitySet {
             .filter(|e| e.supported && e.capability.is_telemetry())
             .map(|e| e.capability)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod p0_identity_tests {
+    use super::*;
+    #[test]
+    fn p0_id_prefix_does_not_authorize_a_device_kind() {
+        for id in [
+            "gpu:spoof",
+            "nvidia:all",
+            "drm:card0",
+            "npu:spoof",
+            "accel:0",
+        ] {
+            assert_eq!(
+                HardwareCapabilitySet::new(id).device_kind,
+                HardwareDeviceKind::Unknown
+            );
+        }
     }
 }

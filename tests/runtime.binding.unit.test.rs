@@ -178,9 +178,11 @@ fn gpu_route_without_capability_not_executed() {
 #[test]
 fn gpu_route_with_capability_but_no_executor_degraded() {
     // Phase 4: GPU capacity but not registered executor downgrade (not executed).
-    let caps = HardwareCapabilitySet::new("gpu:test").with(HardwareCapabilityEntry::supported(
-        HardwareCapability::DeviceIdentity,
-    ));
+    let caps = HardwareCapabilitySet::new("gpu:test")
+        .with_device_kind(aicore_contracts::hardware::capability::HardwareDeviceKind::Gpu)
+        .with(HardwareCapabilityEntry::supported(
+            HardwareCapability::DeviceIdentity,
+        ));
     let b = DefaultRuntimeBinder::new().with_hardware(caps);
     let req = BindingRequest {
         route: route(RuntimeRouteSource::Gpu),

@@ -207,6 +207,9 @@ mod imp {
 }
 
 impl IPowerController for WindowsPowerController {
+    fn supports_exact_state(&self) -> bool {
+        cfg!(target_os = "windows")
+    }
     fn capture_state(&self) -> ContractResult<PowerStateSnapshot> {
         #[cfg(target_os = "windows")]
         {

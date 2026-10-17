@@ -20,6 +20,19 @@ pub enum HardwareVendor {
     Other(String),
 }
 
+impl HardwareVendor {
+    /// PCI identity supplied by an OS/provider record, not display text.
+    pub fn from_pci_vendor_id(vendor_id: u32) -> Self {
+        match vendor_id {
+            0x10de => Self::Nvidia,
+            0x1002 => Self::Amd,
+            0x8086 => Self::Intel,
+            0x17cb => Self::Qualcomm,
+            other => Self::Other(format!("PCI:{other:04x}")),
+        }
+    }
+}
+
 /// Declaration, not proof: adapters must populate supported entries from
 /// real platform discovery and tests must validate them on target hosts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,13 +59,9 @@ impl DeviceCapabilityMatrix {
         if device.id != capabilities.device_name || device.id.is_empty() {
             return None;
         }
-        let vendor = match device.vendor.to_ascii_lowercase().as_str() {
-            "nvidia" => HardwareVendor::Nvidia,
-            "amd" | "advanced micro devices" => HardwareVendor::Amd,
-            "intel" => HardwareVendor::Intel,
-            "qualcomm" => HardwareVendor::Qualcomm,
-            _ => HardwareVendor::Other(device.vendor.clone()),
-        };
+        // Display/manufacturer strings are descriptive, not typed authority.
+        // Providers may set a typed vendor only from OS/provider numeric identity.
+        let vendor = HardwareVendor::Other(device.vendor.clone());
         Some(Self {
             os,
             vendor,
@@ -86,8 +95,29 @@ mod tests {
             HardwareCapabilitySet::new("drm:card0"),
         )
         .unwrap();
-        assert_eq!(matrix.vendor, HardwareVendor::Amd);
+        assert_eq!(matrix.vendor, HardwareVendor::Other("AMD".into()));
         assert!(!matrix.supports(HardwareCapability::VendorControl));
         assert_eq!(matrix.thermal_limit_celsius, None);
+    }
+}
+
+#[cfg(test)]
+mod p0_vendor_tests {
+    use super::*;
+    #[test]
+    fn p0_display_vendor_is_not_typed_identity_authority() {
+        let device = HardwareDeviceInfo {
+            id: "spoof".into(),
+            vendor: "NVIDIA".into(),
+            name: "spoof".into(),
+            driver: None,
+        };
+        let matrix = DeviceCapabilityMatrix::from_discovered(
+            HostOs::Windows,
+            &device,
+            HardwareCapabilitySet::new("spoof"),
+        )
+        .unwrap();
+        assert!(matches!(matrix.vendor, HardwareVendor::Other(_)));
     }
 }
